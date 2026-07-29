@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BattleBot Arena</title>
+    <link rel="icon" type="image/png" href="../favicon.png" />
+    <link rel="apple-touch-icon" href="../favicon.png" />
+    <link rel="stylesheet" href="./styles/base.css" />
+    <link rel="stylesheet" href="./styles/screens.css" />
+    <link rel="stylesheet" href="./styles/hud.css" />
+  </head>
+  <body data-screen="title">
+    <canvas id="scene"></canvas>
+    <button id="btn-fullscreen" type="button" title="Fullscreen" aria-label="Toggle fullscreen"
+      style="position:fixed;top:14px;right:14px;z-index:60;width:40px;height:40px;background:rgba(10,12,16,0.72);border:1px solid rgba(255,255,255,0.22);color:#fff;font:700 18px/1 system-ui;cursor:pointer;border-radius:4px;">⛶</button>
+    <div id="app">
+      <!-- ================================================== TITLE -->
+      <section id="screen-title" class="screen screen-title is-active" data-screen-name="title" aria-hidden="false">
+        <div class="screen-backdrop"></div>
+        <div class="title-inner">
+          <svg class="title-gear" viewBox="0 0 100 100" aria-hidden="true">
+            <g fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="50" cy="50" r="30" />
+              <circle cx="50" cy="50" r="10" />
+              <g id="saw-teeth">
+                <path d="M50 12 L54 20 L46 20 Z" fill="currentColor" stroke="none" />
+              </g>
+              <use href="#saw-teeth" transform="rotate(30 50 50)" />
+              <use href="#saw-teeth" transform="rotate(60 50 50)" />
+              <use href="#saw-teeth" transform="rotate(90 50 50)" />
+              <use href="#saw-teeth" transform="rotate(120 50 50)" />
+              <use href="#saw-teeth" transform="rotate(150 50 50)" />
+              <use href="#saw-teeth" transform="rotate(180 50 50)" />
+              <use href="#saw-teeth" transform="rotate(210 50 50)" />
+              <use href="#saw-teeth" transform="rotate(240 50 50)" />
+              <use href="#saw-teeth" transform="rotate(270 50 50)" />
+              <use href="#saw-teeth" transform="rotate(300 50 50)" />
+              <use href="#saw-teeth" transform="rotate(330 50 50)" />
+            </g>
+          </svg>
+          <span class="kicker">ROBOT COMBAT LEAGUE</span>
+          <h1 class="title-logo">
+            <span class="title-logo-main" data-text="BATTLEBOT">BATTLEBOT</span>
+            <span class="title-logo-sub"><i class="stripe" aria-hidden="true"></i><b>ARENA</b><i class="stripe" aria-hidden="true"></i></span>
+          </h1>
+          <p class="title-tagline">3 MINUTES &middot; 2 MACHINES &middot; 1 LEFT STANDING</p>
+          <div class="title-actions">
+            <button id="btn-title-fight" class="btn btn-primary btn-xl" type="button"><span>ENTER THE ARENA</span></button>
+            <div class="title-secondary">
+              <button id="btn-title-settings" class="btn btn-sm" type="button"><span>SETTINGS</span></button>
+              <button id="btn-title-sound" class="btn btn-sm btn-toggle" type="button" aria-pressed="false"><span data-toggle-label>SOUND: OFF</span></button>
+            </div>
+          </div>
+        </div>
+        <div class="title-footnote">W/S DRIVE &middot; A/D TURN &middot; SPACE WEAPON &middot; GAMEPAD READY</div>
+      </section>
+
+      <!-- ============================================= BOT SELECT -->
+      <section id="screen-botSelect" class="screen screen-select" data-screen-name="botSelect" aria-hidden="true">
+        <div class="screen-backdrop"></div>
+        <header class="select-head">
+          <button id="btn-select-back" class="btn btn-sm" type="button"><span>&#9668; TITLE</span></button>
+          <h2 id="sel-step" class="select-step">STEP 1 — CHOOSE YOUR BOT</h2>
+          <div class="difficulty" role="group" aria-label="AI difficulty">
+            <span class="difficulty-label">AI LEVEL</span>
+            <span class="difficulty-buttons">
+              <button type="button" data-difficulty="easy">EASY</button>
+              <button type="button" data-difficulty="normal">NORMAL</button>
+              <button type="button" data-difficulty="hard">HARD</button>
+            </span>
+          </div>
+        </header>
+        <div class="vs-strip">
+          <button id="slot-player" class="vs-slot vs-slot-player is-armed" type="button" data-role="YOU">
+            <span class="vs-slot-body"></span>
+          </button>
+          <div class="vs-mid">
+            <span class="vs-label">VS</span>
+            <button id="btn-fight" class="btn btn-primary btn-xl" type="button" disabled><span>FIGHT</span></button>
+          </div>
+          <button id="slot-rival" class="vs-slot vs-slot-rival" type="button" data-role="RIVAL">
+            <span class="vs-slot-body"></span>
+          </button>
+        </div>
+        <div id="bot-grid" class="bot-grid" role="listbox" aria-label="Bot roster"></div>
+      </section>
+
+      <!-- ================================================== MATCH -->
+      <section id="screen-match" class="screen screen-match" data-screen-name="match" aria-hidden="true">
+        <div id="pause-overlay" hidden
+          style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;background:rgba(6,8,10,0.62);z-index:30;pointer-events:auto;">
+          <div style="font:italic 900 64px/1 'Arial Black',system-ui;letter-spacing:0.08em;color:#fff;text-shadow:0 4px 24px rgba(0,0,0,0.8);transform:skewX(-8deg);">PAUSED</div>
+          <div style="display:flex;flex-direction:column;gap:12px;min-width:280px;">
+            <button id="btn-pause-resume" class="btn btn-primary" type="button"><span>RESUME</span></button>
+            <button id="btn-pause-settings" class="btn" type="button"><span>SETTINGS</span></button>
+            <button id="btn-pause-exit" class="btn" type="button"><span>EXIT TO MENU</span></button>
+          </div>
+          <div style="font-size:12px;font-weight:700;letter-spacing:0.3em;color:#ffb320;">START / ESC TO RESUME</div>
+        </div>
+        <div class="hud-top">
+          <div class="hud-bot hud-bot-player">
+            <div id="hud-player-name" class="hud-bot-name">—</div>
+            <div class="hud-damage">
+              <div id="hud-player-fill" class="hud-damage-fill"></div>
+              <div id="hud-player-pct" class="hud-damage-pct">0%</div>
+            </div>
+            <div id="hud-player-tags" class="hud-tags"></div>
+          </div>
+          <div class="hud-clock-wrap">
+            <div id="hud-clock" class="hud-clock" aria-live="polite">3:00</div>
+            <div id="hud-phase" class="hud-phase">STAND BY</div>
+          </div>
+          <div class="hud-bot hud-bot-rival">
+            <div id="hud-rival-name" class="hud-bot-name">—</div>
+            <div class="hud-damage">
+              <div id="hud-rival-fill" class="hud-damage-fill"></div>
+              <div id="hud-rival-pct" class="hud-damage-pct">0%</div>
+            </div>
+            <div id="hud-rival-tags" class="hud-tags"></div>
+          </div>
+        </div>
+        <div id="hud-ticker" class="hud-ticker" aria-live="polite"></div>
+        <div id="hud-callout" class="hud-callout" aria-live="assertive" hidden><span>KILL SAWS ACTIVE</span></div>
+        <div id="hud-countdown" class="hud-countdown" hidden><span id="hud-countdown-num">3</span></div>
+        <div id="hud-banner" class="hud-banner" aria-live="assertive" hidden>KO!</div>
+        <div class="hud-hint">SPACE — WEAPON &middot; SHIFT — BRAKE &middot; ESC — PAUSE</div>
+      </section>
+
+      <!-- ================================================ RESULTS -->
+      <section id="screen-results" class="screen screen-results" data-screen-name="results" aria-hidden="true">
+        <div class="screen-backdrop"></div>
+        <div class="results-panel panel-cut">
+          <span id="res-kicker" data-tone="draw">FULL TIME</span>
+          <div id="res-image" class="res-image"></div>
+          <h2 id="res-winner-name">—</h2>
+          <div id="res-method">WINS BY KNOCKOUT</div>
+          <div id="res-line"></div>
+          <div class="results-actions">
+            <button id="btn-rematch" class="btn btn-primary" type="button"><span>REMATCH</span></button>
+            <button id="btn-change" class="btn" type="button"><span>CHANGE BOTS</span></button>
+            <button id="btn-res-title" class="btn" type="button"><span>EXIT</span></button>
+          </div>
+        </div>
+      </section>
+
+      <!-- =============================================== SETTINGS -->
+      <div id="settings-modal" class="modal" hidden>
+        <div class="modal-panel panel-cut">
+          <div class="modal-head">
+            <h3 class="modal-title">Settings</h3>
+            <button id="btn-settings-close" class="btn btn-sm" type="button"><span>CLOSE</span></button>
+          </div>
+          <div class="modal-body">
+            <div class="setting-row">
+              <span class="setting-label">Sound<span class="setting-hint">Synth engine, impacts, crowd</span></span>
+              <button id="set-sound" class="switch-btn" type="button" aria-pressed="false" data-toggle-label>OFF</button>
+            </div>
+            <div class="setting-row">
+              <span class="setting-label">Haptics<span class="setting-hint">Gamepad rumble on hits</span></span>
+              <button id="set-haptics" class="switch-btn" type="button" aria-pressed="false" data-toggle-label>OFF</button>
+            </div>
+            <div class="setting-row">
+              <span class="setting-label">Damage ticker<span class="setting-hint">Per-hit callouts in the HUD</span></span>
+              <button id="set-damage-events" class="switch-btn" type="button" aria-pressed="false" data-toggle-label>OFF</button>
+            </div>
+            <div class="setting-row">
+              <span class="setting-label">Camera</span>
+              <select id="set-camera" class="select" aria-label="Camera mode">
+                <option value="battle">Battle</option>
+                <option value="bot">Bot</option>
+                <option value="arena">Arena</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three/three.module.js",
+          "three/addons/": "./vendor/three/addons/",
+          "@dimforge/rapier3d-compat": "./vendor/rapier/rapier.es.js"
+        }
+      }
+    </script>
+    <script type="module">
+      // Boot: main.js (integrator-owned) wires renderer + sim + game + UI.
+      // If it is missing or fails to load, fall back to UI preview mode so the
+      // screens stay verifiable — createUI with a stub bus and logged actions.
+      try {
+        await import("./src/main.js");
+      } catch (err) {
+        console.warn("[BBA2] main.js unavailable — starting UI preview mode.", err);
+        const [{ createUI }, { createEventBus }] = await Promise.all([
+          import("./src/ui/ui.js"),
+          import("./src/shared/events.js"),
+        ]);
+        const bus = createEventBus();
+        const ui = createUI({
+          bus,
+          onAction: (action) => console.log("[BBA2 preview] action:", action),
+        });
+        window.__bba2Preview = { ui, bus };
+      }
+    </script>
+  </body>
+</html>

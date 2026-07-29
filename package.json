@@ -1,0 +1,20 @@
+{
+  "name": "battlebot-arena",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BattleBots-style 3D robot combat game — three.js + Rapier, no build step.",
+  "scripts": {
+    "start": "node server.mjs",
+    "dev": "node server.mjs",
+    "test": "node tools/sim-tests.mjs",
+    "test:sim": "node tools/sim-tests.mjs",
+    "feel": "node tools/feel-probe.mjs"
+  },
+  "devDependencies": {
+    "@dimforge/rapier3d-compat": "0.14.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
