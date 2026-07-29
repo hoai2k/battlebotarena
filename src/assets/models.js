@@ -307,16 +307,22 @@ export async function loadBotModel(spec, { onProgress } = {}) {
         if (!subNode && child.name?.startsWith("modelWeaponSub-")) subNode = child;
       });
       if (subNode) {
-        const parent = subNode.parent;
         const subBox = new THREE.Box3().setFromObject(subNode);
         const subCenter = new THREE.Vector3();
         if (!subBox.isEmpty()) subBox.getCenter(subCenter);
         const subPivot = new THREE.Group();
         subPivot.name = "weaponSubPivot";
-        parent.add(subPivot);
-        // Box3 center is world-space; bring it into the parent's frame.
-        parent.updateWorldMatrix(true, false);
-        subPivot.position.copy(parent.worldToLocal(subCenter.clone()));
+        // Parent to the WEAPON PIVOT, not to the sub node's GLB parent. The
+        // integrator spins this group about spec.weapon.axis, which is a game
+        // -space axis; nodes inside the GLB hierarchy still carry the
+        // normalization yaw, so under the GLB parent that axis lands rotated
+        // (sawblaze's disc span about vertical instead of in its own plane).
+        // weaponPivot is a plain group in game space, and the disc is bolted
+        // to the arm anyway, so it correctly swings with the arm from here.
+        weaponPivot.add(subPivot);
+        // Box3 center is world-space; bring it into the pivot's frame.
+        weaponPivot.updateWorldMatrix(true, false);
+        subPivot.position.copy(weaponPivot.worldToLocal(subCenter.clone()));
         subPivot.attach(subNode);
         weaponSub = subPivot;
       }
