@@ -1,0 +1,193 @@
+// BattleBot Arena v2 — player input + gamepad haptics.
+//
+// createInput({ on, playerIndex }) -> { readInput(), dispose() }
+// readInput() returns DriveInput { leftDrive, rightDrive, weapon, brake }.
+//
+// v1 mapping (main.js readControls):
+// - Keyboard: W/S drive both sides, A/D split (tank turn), Q/E extra turn
+//   (+-0.7), Space weapon, Shift brake.
+// - Gamepad: left stick Y = left side, right stick Y = right side (tank),
+//   RT (button 7) weapon, LB (button 4) brake. Deadzone 0.12. Stick input
+//   wins over keyboard when non-zero; weapon/brake are OR'd.
+//
+// Haptics (v1 triggerGamepadHaptic pattern): subscribe EV.IMPACT and
+// EV.WEAPON_HIT for the player's bot and pulse the pad's dual-rumble actuator
+// scaled by hit strength, with per-kind cooldowns and a priority gate so weak
+// rumbles never cut off strong ones. Gated by settings.hapticsEnabled.
+//
+// Module is import-safe under node: DOM/gamepad access only happens when a
+// window exists, and readInput() degrades to neutral input.
+
+import { EV } from "../shared/events.js";
+import { settings } from "../shared/settings.js";
+
+const DEADZONE = 0.12;
+const TRIGGER_THRESHOLD = 0.2;
+const EXTRA_TURN = 0.7;
+
+const HAPTIC_COLLISION_COOLDOWN_SECONDS = 0.05; // v1 values
+const HAPTIC_WEAPON_COOLDOWN_SECONDS = 0.04;
+
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const dead = (v) => (Math.abs(v) < DEADZONE ? 0 : v);
+
+const hasWindow = typeof window !== "undefined";
+
+function nowSeconds() {
+  return (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000;
+}
+
+function getGamepad(index) {
+  if (!hasWindow || typeof navigator === "undefined" || !navigator.getGamepads) return null;
+  return [...navigator.getGamepads()].filter(Boolean)[index] || null;
+}
+
+// v1 playGamepadHaptic: dual-rumble via vibrationActuator, pulse fallback.
+function playHaptic(pad, { duration = 80, strong = 0.35, weak = 0.25 } = {}) {
+  const actuator = pad?.vibrationActuator;
+  const strongMagnitude = clamp(strong, 0, 1);
+  const weakMagnitude = clamp(weak, 0, 1);
+  if (actuator?.playEffect) {
+    actuator.playEffect("dual-rumble", {
+      startDelay: 0,
+      duration,
+      strongMagnitude,
+      weakMagnitude,
+    }).catch(() => {});
+    return;
+  }
+  const fallback = pad?.hapticActuators?.[0];
+  fallback?.pulse?.(Math.max(strongMagnitude, weakMagnitude), duration).catch?.(() => {});
+}
+
+/**
+ * @param {object} args
+ * @param {Function} args.on bus subscribe (for haptics); optional
+ * @param {number} [args.playerIndex] which sim bot this player drives
+ * @param {number} [args.gamepadIndex] which physical pad to read/rumble
+ */
+export function createInput({ on, playerIndex = 0, gamepadIndex = 0 } = {}) {
+  const keys = new Set();
+  const unsubscribes = [];
+  const haptics = { collisionAt: 0, weaponAt: 0, activeUntil: 0, activePriority: 0 };
+
+  const onKeyDown = (event) => {
+    if (event.repeat) return;
+    keys.add(event.code);
+  };
+  const onKeyUp = (event) => keys.delete(event.code);
+  const onBlur = () => keys.clear();
+
+  if (hasWindow) {
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+  }
+
+  // --- haptics (v1 triggerGamepadHaptic port) -------------------------------
+
+  function pulse(type, { strong, weak, duration }) {
+    if (!settings.hapticsEnabled) return;
+    const pad = getGamepad(gamepadIndex);
+    if (!pad) return;
+    const now = nowSeconds();
+    const key = type === "weapon" ? "weaponAt" : "collisionAt";
+    const cooldown = type === "weapon" ? HAPTIC_WEAPON_COOLDOWN_SECONDS : HAPTIC_COLLISION_COOLDOWN_SECONDS;
+    const priority = Math.max(strong ?? 0.35, weak ?? 0.25);
+    const hasActive = now < haptics.activeUntil;
+    if (hasActive && priority < haptics.activePriority - 0.02) return;
+    if (now - haptics[key] < cooldown && priority <= haptics.activePriority + 0.02) return;
+    haptics[key] = now;
+    haptics.activeUntil = now + duration / 1000;
+    haptics.activePriority = priority;
+    playHaptic(pad, { strong, weak, duration });
+  }
+
+  if (on) {
+    unsubscribes.push(on(EV.IMPACT, ({ botIndex, relSpeed, force }) => {
+      if (botIndex !== playerIndex) return;
+      // Strength from relative speed, nudged by contact force when present.
+      const speedTerm = clamp(((relSpeed || 0) - 3) / 14, 0, 1);
+      const forceTerm = clamp((force || 0) / 9000, 0, 0.35);
+      const strength = clamp(speedTerm + forceTerm, 0, 1);
+      if (strength < 0.06) return;
+      pulse("collision", {
+        strong: 0.15 + strength * 0.75,
+        weak: 0.1 + strength * 0.6,
+        duration: 55 + strength * 90,
+      });
+    }));
+    unsubscribes.push(on(EV.WEAPON_HIT, ({ attackerIndex, targetIndex, impulse, heavy }) => {
+      const isTarget = targetIndex === playerIndex;
+      const isAttacker = attackerIndex === playerIndex;
+      if (!isTarget && !isAttacker) return;
+      const base = clamp((impulse || 0) / 260, 0, 1) * (heavy ? 1.15 : 1);
+      const scale = isTarget ? 1 : 0.45; // attacker feels kickback, softer
+      const strength = clamp(base * scale, 0, 1);
+      if (strength < 0.05) return;
+      pulse("weapon", {
+        strong: 0.2 + strength * 0.8,
+        weak: 0.15 + strength * 0.6,
+        duration: 70 + strength * 90,
+      });
+    }));
+  }
+
+  // --- per-frame reading ----------------------------------------------------
+
+  function keyboardInput() {
+    const throttle = (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0);
+    const turn = (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0)
+      + (keys.has("KeyE") ? EXTRA_TURN : 0) - (keys.has("KeyQ") ? EXTRA_TURN : 0);
+    return {
+      leftDrive: clamp(throttle + turn, -1, 1),
+      rightDrive: clamp(throttle - turn, -1, 1),
+      weapon: keys.has("Space"),
+      // Secondary weapon channel (sawblaze saw toggle): R on keyboard, RB on pad.
+      weaponAlt: keys.has("KeyR"),
+      brake: keys.has("ShiftLeft") || keys.has("ShiftRight"),
+      pauseDown: keys.has("Escape"),
+    };
+  }
+
+  let pauseWasDown = false;
+
+  function readInput() {
+    const keyboard = keyboardInput();
+    const pad = getGamepad(gamepadIndex);
+    const merged = !pad ? keyboard : (() => {
+      const leftStick = -dead(pad.axes[1] || 0);
+      const rightStick = -dead(pad.axes[3] || 0);
+      const stickDrive = leftStick !== 0 || rightStick !== 0;
+      return {
+        leftDrive: stickDrive ? clamp(leftStick, -1, 1) : keyboard.leftDrive,
+        rightDrive: stickDrive ? clamp(rightStick, -1, 1) : keyboard.rightDrive,
+        weapon: (pad.buttons[7]?.value || 0) > TRIGGER_THRESHOLD || Boolean(pad.buttons[7]?.pressed) || keyboard.weapon,
+        weaponAlt: Boolean(pad.buttons[5]?.pressed) || keyboard.weaponAlt,
+        brake: (pad.buttons[4]?.value || 0) > TRIGGER_THRESHOLD || Boolean(pad.buttons[4]?.pressed) || keyboard.brake,
+        pauseDown: Boolean(pad.buttons[9]?.pressed) || keyboard.pauseDown,
+      };
+    })();
+    // Edge-detect pause so holding Start doesn't oscillate the state.
+    merged.pausePressed = merged.pauseDown && !pauseWasDown;
+    pauseWasDown = merged.pauseDown;
+    return merged;
+  }
+
+  function hasGamepad() {
+    return Boolean(getGamepad(gamepadIndex));
+  }
+
+  function dispose() {
+    if (hasWindow) {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    }
+    unsubscribes.forEach((unsubscribe) => unsubscribe?.());
+    unsubscribes.length = 0;
+    keys.clear();
+  }
+
+  return { readInput, hasGamepad, dispose };
+}
