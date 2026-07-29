@@ -1,0 +1,39 @@
+{
+  "parent": "modelBody",
+  "material": {
+    "name": "TombstonePanel",
+    "baseColorFactor": [0.055, 0.055, 0.062, 1],
+    "metallicFactor": 0.7,
+    "roughnessFactor": 0.42
+  },
+  "panels": [
+    {
+      "_comment": "Rear panel. The shell's rear rim sits at x=-0.376 with side walls outboard of |z|=0.235 and a top rail below y=0.11; the plate fills that opening flush with the back of the body.",
+      "name": "panelBack",
+      "type": "box",
+      "min": [-0.376, -0.116, -0.246],
+      "max": [-0.358, 0.126, 0.246]
+    },
+    {
+      "_comment": "Floor pan. Outline traces the shell's footprint (wide at the rear, tapering to the front) and stops at x=0.145, clear of the weapon bar which starts at x=0.155. Sits at the height of the rear skirts' bottom edge so the chassis rests on it.",
+      "name": "panelBottom",
+      "type": "plate",
+      "axis": "y",
+      "range": [-0.116, -0.100],
+      "outline": [
+        [-0.376, -0.293],
+        [-0.180, -0.300],
+        [-0.050, -0.277],
+        [0.020, -0.230],
+        [0.090, -0.196],
+        [0.145, -0.166],
+        [0.145, 0.166],
+        [0.090, 0.201],
+        [0.020, 0.234],
+        [-0.050, 0.279],
+        [-0.180, 0.305],
+        [-0.376, 0.297]
+      ]
+    }
+  ]
+}

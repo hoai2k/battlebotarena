@@ -1,0 +1,13 @@
+{
+  "_comment": "HUGE's eyes are bolt-on plates on the FRONT of the frame only; the scan copied them onto the rear faces of both arms (tripo_part_3 / _7) as well. +x is the authoring front — catalog modelYaw turns it into game -z — so the rear pair is what -x sees. minBlobPixels keeps the two eye blobs (~30k px each) and drops rivets and panel shadows; flatten relaxes the relief the scan embossed under the paint.",
+  "parts": [3, 7],
+  "from": "-x",
+  "protectFrom": "+x",
+  "resolution": 1400,
+  "maxLuma": 70,
+  "minBlobPixels": 2500,
+  "blobCoverage": 0.3,
+  "maskPad": 2,
+  "jpegQuality": 92,
+  "flatten": { "iterations": 14, "lambda": 0.55, "dilate": 3 }
+}
