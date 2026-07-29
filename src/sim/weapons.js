@@ -6,24 +6,22 @@
 import { EV } from "../shared/events.js";
 import { RAPIER, WEAPON_GROUPS, tagCollider } from "./world.js";
 import { contactPointBetween } from "./contacts.js";
+import { createSpinnerModel, resolveWeaponTuning, damageImpulseForRate } from "./weaponTuning.js";
 import * as m from "./math.js";
 
 export const WEAPON_TUNING = Object.freeze({
   spinDownFactor: 2.5, // spin-down time = spinUpSeconds * this
   minHitRatio: 0.12, // below this spin ratio the blade is harmless
-  hitCooldownSeconds: 0.09, // per target pair
+  hitCooldownSeconds: 0.18, // per target pair (v1's rate; the spin ramp doubles hits without it)
   wallHitCooldownSeconds: 0.16,
   wallImpulseFactor: 0.4, // of the raw budget, before the 0.6*cap wall cap
-  liftFactor: { drum: 0.85, bar: 0.25 }, // vertical component mixed into hits
-  kickbackLiftFraction: 0.25, // attacker downward share of target lift
-  heavyHitCapFraction: 0.5, // J >= cap*this flags the hit "heavy"
+  heavyHitCapFraction: 0.5, // J >= cap*this flags a stroke weapon's hit "heavy"
   flipperImpulseDir: { up: 1, forward: 0.45 },
   flipperRecoilFraction: 0.3,
   crusherTickSeconds: 0.25,
   crusherDragBlendRate: 3.5, // 1/s velocity bleed while clamped
   hammerContactAfter: 0.35, // fraction of swing before the head can connect
   hammerGrindTickSeconds: 0.3,
-  hammerGrindImpulse: 8,
 });
 
 const TU = WEAPON_TUNING;
@@ -65,7 +63,9 @@ function frontZone(spec, reach, extra = {}) {
 function createSpinner({ world, meta, vehicle, index, emit }) {
   const spec = vehicle.spec;
   const w = spec.weapon;
-  const radius = w.radius ?? 0.55;
+  const model = createSpinnerModel(spec);
+  const tuning = model.tuning;
+  const radius = w.radius ?? Math.max(w.dims?.y ?? 0.55, w.dims?.z ?? 0.55);
 
   // Thin solid collider glued to the chassis body (same body = no self-hits).
   // It stands in for the SWEPT volume, not the blade pose, because the collider
@@ -109,41 +109,70 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
     return m.add(vehicle.body.translation(), m.qRotate(vehicle.body.rotation(), w.pivot));
   }
 
+  // v1's shaping chain, bridged into v2 units by weaponTuning.js. The catalog's
+  // per-bot numbers live under weapon.tuning, which nothing here used to read,
+  // so every spinner ran on the generic defaults and all three drums sat on
+  // their budget cap above ~10-20% spin — one flat hit at any speed.
   function hitTarget(foe, contact, simTime) {
-    const e = energy();
-    const mEff = (vehicle.mass * foe.mass) / (vehicle.mass + foe.mass);
-    const efficiency = w.efficiency ?? 0.4;
-    const raw = Math.sqrt(2 * mEff * e * efficiency) * (w.impulseScale ?? 1);
-    const impulse = Math.min(raw, w.budgetCap); // cap AFTER all multipliers
-    if (impulse < 1) return;
-
-    const lift = w.liftFactor ?? TU.liftFactor[w.type] ?? 0.5;
+    const energyBefore = energy();
     const h = horizontalBetween(vehicle.body.translation(), foe.body.translation());
-    const dir = m.norm(m.add(h, m.scale(UP, lift)));
-    foe.body.applyImpulseAtPoint(m.scale(dir, impulse), contact.point, true);
+    const rel = m.sub(foe.body.linvel(), vehicle.body.linvel());
+    const hit = model.hit({
+      ratio: omega / w.maxOmega,
+      targetSpec: foe.spec,
+      approachSpeed: Math.max(0, -m.dot(rel, h)),
+    });
+    if (hit.push < 1) return;
 
-    // Equal-and-opposite kickback (scaled per weapon), lift mostly cancelled so
-    // the attacker recoils instead of being slammed into the floor.
-    const kick = w.kickbackScale ?? 0.7;
-    const kickDir = m.norm(m.add(m.scale(h, -1), m.scale(UP, -lift * TU.kickbackLiftFraction)));
-    vehicle.body.applyImpulseAtPoint(m.scale(kickDir, impulse * kick), pivotWorld(), true);
+    // Target: horizontal push + lift at the real contact point.
+    foe.body.applyImpulseAtPoint(
+      m.add(m.scale(h, hit.push), m.scale(UP, hit.lift)),
+      contact.point,
+      true,
+    );
+    // v1 forced a minimum upward velocity here (setLinvel). Impulse top-up
+    // instead — same result, and the no-teleport rule holds.
+    const vy = foe.body.linvel().y;
+    if (hit.liftVelocityFloor > vy) {
+      foe.body.applyImpulse(m.scale(UP, (hit.liftVelocityFloor - vy) * foe.mass), true);
+    }
+    const right = m.norm(m.cross(UP, h), { x: 1, y: 0, z: 0 });
+    foe.body.applyTorqueImpulse({
+      x: right.x * hit.targetPitchTorque,
+      y: hit.targetYawTorque,
+      z: right.z * hit.targetPitchTorque,
+    }, true);
 
-    drainEnergy((impulse * impulse) / (2 * mEff) / efficiency);
+    // Attacker: kickback along -h, a little downward, plus counter-yaw.
+    vehicle.body.applyImpulseAtPoint(
+      m.add(m.scale(h, -hit.kickback), m.scale(UP, -hit.kickbackLift)),
+      pivotWorld(),
+      true,
+    );
+    vehicle.body.applyTorqueImpulse({ x: 0, y: -hit.ownerYawTorque, z: 0 }, true);
+
+    // v1 drained blade SPEED, not energy — a solid hit costs you the spin-up.
+    omega *= hit.spinRetained;
+
     emit(EV.WEAPON_HIT, {
       attackerIndex: index,
       targetIndex: foe.index,
       point: contact.point,
       normal: contact.normal,
-      impulse,
-      energyBefore: e,
-      heavy: impulse >= w.budgetCap * TU.heavyHitCapFraction,
+      // Damage runs off v1's pre-impulseScale hit strength, not the applied
+      // impulse: that split is why Minotaur hurts without shoving and Tombstone
+      // throws you across the box without doing proportionate damage.
+      impulse: hit.damageImpulse,
+      appliedImpulse: hit.push, // what the body actually got, for effects/haptics
+      energyBefore,
+      heavy: hit.push / foe.mass >= 12, // "heavy" = it launched them (ft/s), not "it capped"
     });
     lastHitAt.set("foe", simTime);
   }
 
   function hitArena(contact, simTime) {
     const e = energy();
-    const efficiency = w.efficiency ?? 0.4;
+    const efficiency = tuning.efficiency;
     const raw = Math.sqrt(2 * vehicle.mass * e * efficiency);
     const impulse = Math.min(raw * TU.wallImpulseFactor, w.budgetCap * 0.6);
     if (impulse < 2) return;
@@ -200,9 +229,21 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
           botIndex: index,
           weaponType: w.type,
           ratio,
-          hapticScale: w.tuning?.hapticScale ?? w.hapticScale ?? 1,
+          hapticScale: tuning.hapticScale,
         });
       }
+
+      // Gyroscopic reaction: a spun-up rotor fights the drive, pitching the bot
+      // under throttle and rolling/yawing it into turns. Needs the drive axes,
+      // which is why sim.js passes the whole input through.
+      const gyro = model.gyroTorque({
+        ratio,
+        throttle: ((ctx.input?.leftDrive ?? 0) + (ctx.input?.rightDrive ?? 0)) / 2,
+        turn: ((ctx.input?.leftDrive ?? 0) - (ctx.input?.rightDrive ?? 0)) / 2,
+        dt,
+      });
+      if (gyro) vehicle.body.applyTorqueImpulse(gyro, true);
+
       if (ratio > TU.minHitRatio) checkContacts(ctx);
     },
     getAngle: () => angle,
@@ -226,9 +267,13 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
 function createFlipper({ vehicle, index, emit }) {
   const spec = vehicle.spec;
   const w = spec.weapon;
-  const strokeSeconds = w.strokeSeconds ?? 0.18;
-  const returnSeconds = w.returnSeconds ?? 1.2;
-  const zone = w.zone ?? frontZone(spec, w.reach ?? 1.8);
+  // Bronco's 2.0s reload lives in weapon.tuning and never reached here, so the
+  // sim silently used the 1.2s default while ai.js (which does read the nested
+  // block) planned around 2.0 — the two disagreed about the same weapon.
+  const tune = resolveWeaponTuning(spec);
+  const strokeSeconds = tune.strokeSeconds;
+  const returnSeconds = tune.returnSeconds;
+  const zone = tune.zone ?? frontZone(spec, tune.reach ?? 1.8);
 
   let phase = "idle"; // idle | firing | returning
   let t = 0;
@@ -302,11 +347,12 @@ function createFlipper({ vehicle, index, emit }) {
 function createCrusher({ vehicle, index, emit }) {
   const spec = vehicle.spec;
   const w = spec.weapon;
-  const zone = w.zone ?? frontZone(spec, w.reach ?? 1.2, { pad: -0.2, maxY: 1.0 });
+  const tune = resolveWeaponTuning(spec);
+  const zone = tune.zone ?? frontZone(spec, tune.reach ?? 1.2, { pad: -0.2, maxY: 1.0 });
   // Releasing on the same zone that engaged means the tiniest wobble at the
   // boundary drops the bite; the hold zone is deliberately looser.
-  const holdZone = w.holdZone ?? frontZone(spec, (w.reach ?? 1.2) + 1.6, { pad: 0.5, maxY: 1.6 });
-  const clampForce = w.clampForce ?? 380; // lbf held at the jaw
+  const holdZone = w.holdZone ?? frontZone(spec, (tune.reach ?? 1.2) + 1.6, { pad: 0.5, maxY: 1.6 });
+  const clampForce = tune.clampForce; // lbf held at the jaw
   const tuning = w.tuning ?? {};
   // Where a bitten bot is carried: straight ahead of the jaw, on the deck.
   const holdPoint = { x: 0, y: 0.25, z: -(spec.bodyDims.z / 2 + (tuning.holdReach ?? 1.2)) };
@@ -373,7 +419,7 @@ function createCrusher({ vehicle, index, emit }) {
           targetIndex: foe.index,
           point: jawPoint,
           normal: m.v3(0, -1, 0),
-          impulse: clampForce * TU.crusherTickSeconds,
+          impulse: damageImpulseForRate(tune.holdDamagePerSecond || 6, TU.crusherTickSeconds),
           energyBefore: 0,
           heavy: false,
         });
@@ -396,9 +442,10 @@ function createCrusher({ vehicle, index, emit }) {
 function createHammerSaw({ vehicle, index, emit }) {
   const spec = vehicle.spec;
   const w = spec.weapon;
-  const swingSeconds = w.swingSeconds ?? 0.4;
-  const returnSeconds = w.returnSeconds ?? 0.5;
-  const zone = w.zone ?? frontZone(spec, w.reach ?? 2.4, { maxY: 1.6 });
+  const tune = resolveWeaponTuning(spec);
+  const swingSeconds = tune.swingSeconds;
+  const returnSeconds = tune.returnSeconds;
+  const zone = tune.zone ?? frontZone(spec, tune.reach ?? 2.4, { maxY: 1.6 });
 
   let phase = "idle"; // idle | swinging | held | returning
   let t = 0;
@@ -437,7 +484,7 @@ function createHammerSaw({ vehicle, index, emit }) {
       targetIndex: foe.index,
       point: m.add(foe.body.translation(), m.v3(0, 0.4, 0)),
       normal: m.v3(0, -1, 0),
-      impulse: TU.hammerGrindImpulse,
+      impulse: damageImpulseForRate(tune.grindDamagePerSecond || 5, TU.hammerGrindTickSeconds),
       energyBefore: 0,
       heavy: false,
     });

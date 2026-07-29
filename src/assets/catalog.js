@@ -7,8 +7,10 @@
 // - Angular speeds (weapon maxOmega): radians per second.
 // - weapon.inertia: the v1 dimensionless rotational-inertia scalar
 //   (weaponRotationalInertia); spin energy E = 0.5 * inertia * omega^2 in the
-//   same abstract units v1 used. budgetCap caps the per-hit impulse after all
-//   multipliers (v1 spinnerImpactCap, same units as sim impulses).
+//   same abstract units v1 used. budgetCap is v1's spinnerImpactCap and is
+//   applied where v1 applied it — inside the shaping chain, BEFORE
+//   impulseScale and the v1->v2 unit bridge (see sim/weaponTuning.js). It is
+//   therefore in v1 impulse units, not sim impulse units.
 //
 // COORDINATES (body-local, matches v1 fitted-model space)
 // - +Y up, forward is -Z, +X is the bot's right side.
@@ -174,6 +176,7 @@ export const CATALOG = {
       tuning: {
         efficiency: 0.76, impulseScale: 10.0, liftScale: 36.0, liftVelocity: 4.5, liftClearance: 0.55,
         gyroScale: 0.55, halfSpeedPowerMultiplier: 4.0, fullSpeedPowerMultiplier: 2.15, hapticScale: 2.0,
+        impactScale: 1.05,
       },
     },
     colliders: [

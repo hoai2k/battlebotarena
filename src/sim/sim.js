@@ -65,6 +65,9 @@ export async function createSim({ bots, emit }) {
         foe: vehicles[1 - i],
         simTime,
         world,
+        // Spinner gyro and the lifter's disc toggle both need more than the
+        // weapon button, so the whole input rides along.
+        input: inputs[i],
       });
     }
     world.step(eventQueue);

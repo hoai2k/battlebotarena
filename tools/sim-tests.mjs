@@ -5,6 +5,7 @@
 
 import { createSim, FIXED_DT } from "../src/sim/sim.js";
 import { EV } from "../src/shared/events.js";
+import { V1_IMPULSE_TO_V2 } from "../src/sim/weaponTuning.js";
 
 // ---------------------------------------------------------------------------
 // Placeholder specs
@@ -255,8 +256,14 @@ await test("wall crash: no penetration, bounces back, IMPACT emitted", () =>
   }));
 
 const ladder = []; // shared with the final report
+// The payload's `impulse` is now v1's damage proxy, not the impulse the body
+// got — `appliedImpulse` is that. The cap likewise binds inside the v1 chain,
+// before the unit bridge, so the ceiling on the applied push is
+// budgetCap x impulseScale x V1_IMPULSE_TO_V2. What this test is really for is
+// the SHAPE: a real ladder, not the flat always-capped line v2 used to have.
 await test("spinner hit ladder: impulse grows with energy and is capped", async () => {
   const spec = drumSpec();
+  const appliedCeiling = spec.weapon.budgetCap * (spec.weapon.impulseScale ?? 1) * V1_IMPULSE_TO_V2;
   for (const ratio of [0.25, 0.5, 1.0]) {
     await withSim([drumSpec(), flipperSpec()], (sim, events) => {
       // Drum front reach is z=-2.6; park the target just out of contact and
@@ -274,17 +281,52 @@ await test("spinner hit ladder: impulse grows with energy and is capped", async 
       });
       const hits = events.filter((e) => e.type === EV.WEAPON_HIT && e.payload.attackerIndex === 0 && e.payload.targetIndex === 1);
       check(hits.length >= 1, `hit registered at ratio ${ratio}`);
-      ladder.push({ ratio, impulse: hits[0].payload.impulse, peakTargetSpeed, energyBefore: hits[0].payload.energyBefore });
+      ladder.push({
+        ratio,
+        impulse: hits[0].payload.impulse,
+        applied: hits[0].payload.appliedImpulse,
+        peakTargetSpeed,
+        energyBefore: hits[0].payload.energyBefore,
+      });
     });
   }
-  check(ladder[0].impulse < ladder[1].impulse, "impulse grows 25% -> 50%", `${ladder[0].impulse.toFixed(1)} vs ${ladder[1].impulse.toFixed(1)}`);
-  check(ladder[1].impulse < ladder[2].impulse, "impulse grows 50% -> 100%", `${ladder[1].impulse.toFixed(1)} vs ${ladder[2].impulse.toFixed(1)}`);
+  check(ladder[0].applied < ladder[1].applied, "applied impulse grows 25% -> 50%", `${ladder[0].applied.toFixed(1)} vs ${ladder[1].applied.toFixed(1)}`);
+  check(ladder[1].applied < ladder[2].applied, "applied impulse grows 50% -> 100%", `${ladder[1].applied.toFixed(1)} vs ${ladder[2].applied.toFixed(1)}`);
+  check(ladder[0].impulse < ladder[2].impulse, "damage grows with spin", `${ladder[0].impulse.toFixed(1)} vs ${ladder[2].impulse.toFixed(1)}`);
+  // A flat line would satisfy "grows" within float noise; the ramp is the point.
+  check(ladder[2].applied >= ladder[0].applied * 3, "full spin hits far harder than quarter spin",
+    `${ladder[0].applied.toFixed(1)} -> ${ladder[2].applied.toFixed(1)}`);
   for (const rung of ladder) {
-    check(rung.impulse <= spec.weapon.budgetCap + 1e-6, `impulse capped at ${spec.weapon.budgetCap}`, `got ${rung.impulse.toFixed(1)}`);
+    check(rung.applied <= appliedCeiling + 1e-6, `applied impulse capped at ${appliedCeiling.toFixed(1)}`, `got ${rung.applied.toFixed(1)}`);
   }
-  check(ladder[2].impulse >= spec.weapon.budgetCap * 0.99, "full-energy hit reaches the cap");
-  check(ladder[2].peakTargetSpeed > 10, "full hit is dramatic", `target peak ${ladder[2].peakTargetSpeed.toFixed(1)} ft/s`);
+  check(ladder[2].peakTargetSpeed > ladder[0].peakTargetSpeed, "target is thrown harder at full spin",
+    `${ladder[0].peakTargetSpeed.toFixed(1)} -> ${ladder[2].peakTargetSpeed.toFixed(1)} ft/s`);
   check(ladder[2].peakTargetSpeed < 60, "target speed stays sane", `${ladder[2].peakTargetSpeed.toFixed(1)} ft/s`);
+});
+
+// The cap still has to bind — with a budget low enough to clamp the raw hit,
+// every rung should land on the same applied ceiling.
+await test("spinner cap: a low budget clamps every rung to the same impulse", async () => {
+  const capped = [];
+  for (const ratio of [0.5, 1.0]) {
+    const attacker = drumSpec();
+    attacker.weapon.budgetCap = 4; // v1 impulse units, well below the raw hit
+    await withSim([attacker, flipperSpec()], (sim, events) => {
+      sim._test.setPose(0, { x: 0, z: 0 }, 0);
+      sim._test.setPose(1, { x: 0, z: -4.75 }, Math.PI);
+      frames(sim, 30);
+      frames(sim, 90, [{ leftDrive: 0.6, rightDrive: 0.6 }, {}], () => {
+        const hitYet = events.some((e) => e.type === EV.WEAPON_HIT && e.payload.targetIndex === 1);
+        if (!hitYet) sim._test.setWeaponOmega(0, attacker.weapon.maxOmega * ratio);
+      });
+      const hits = events.filter((e) => e.type === EV.WEAPON_HIT && e.payload.targetIndex === 1);
+      check(hits.length >= 1, `capped hit registered at ratio ${ratio}`);
+      capped.push(hits[0].payload.appliedImpulse);
+    });
+  }
+  const ceiling = 4 * V1_IMPULSE_TO_V2;
+  check(Math.abs(capped[0] - ceiling) < 1e-6, "half spin sits on the cap", `${capped[0].toFixed(3)} vs ${ceiling.toFixed(3)}`);
+  check(Math.abs(capped[1] - ceiling) < 1e-6, "full spin sits on the cap", `${capped[1].toFixed(3)} vs ${ceiling.toFixed(3)}`);
 });
 
 await test("spinner: spin-up emits WEAPON_SPIN, hit drains energy, attacker recoils", () =>
