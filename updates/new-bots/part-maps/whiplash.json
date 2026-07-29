@@ -1,0 +1,11 @@
+{
+  "weapon": [14, 10],
+  "weaponSub": {
+    "name": "disc",
+    "parts": [12],
+    "pivotOverride": [0.118, 0.168, -0.006]
+  },
+  "wheels": [[0], [1], [22], [23]],
+  "weaponAxis": [0, 0, 1],
+  "pivotOverride": [-0.44, -0.02, 0]
+}
