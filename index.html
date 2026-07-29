@@ -10,6 +10,32 @@
   </head>
   <body data-screen="title">
     <canvas id="scene"></canvas>
+
+    <!-- Boot gate: covers the blank first paint while the module graph
+         (three.js + Rapier, several MB) downloads and parses. Torn down by
+         the boot script at the bottom whether main.js succeeds or falls
+         back to preview mode. -->
+    <div id="boot-loader" class="loader-overlay is-open" role="status" aria-live="polite">
+      <div class="loader-panel">
+        <span class="loader-spinner" aria-hidden="true"></span>
+        <span class="loader-title">BATTLEBOT ARENA</span>
+        <span class="loader-detail">Warming up the pit&hellip;</span>
+        <span class="loader-bar loader-bar-indeterminate" aria-hidden="true"><i></i></span>
+      </div>
+    </div>
+
+    <!-- Shared progress overlay for anything the player has to wait on
+         (bot models are 10-17MB each, plus the physics engine). Driven by
+         src/ui/loader.js. -->
+    <div id="asset-loader" class="loader-overlay" hidden role="status" aria-live="polite">
+      <div class="loader-panel">
+        <span class="loader-spinner" aria-hidden="true"></span>
+        <span id="asset-loader-title" class="loader-title">LOADING</span>
+        <span id="asset-loader-detail" class="loader-detail"></span>
+        <span id="asset-loader-bar" class="loader-bar"><i id="asset-loader-fill"></i></span>
+        <span id="asset-loader-pct" class="loader-pct"></span>
+      </div>
+    </div>
     <button id="btn-fullscreen" type="button" title="Fullscreen" aria-label="Toggle fullscreen"
       style="position:fixed;top:14px;right:14px;z-index:60;width:40px;height:40px;background:rgba(10,12,16,0.72);border:1px solid rgba(255,255,255,0.22);color:#fff;font:700 18px/1 system-ui;cursor:pointer;border-radius:4px;">⛶</button>
     <div id="app">
@@ -188,8 +214,15 @@
       // Boot: main.js (integrator-owned) wires renderer + sim + game + UI.
       // If it is missing or fails to load, fall back to UI preview mode so the
       // screens stay verifiable — createUI with a stub bus and logged actions.
+      const boot = document.getElementById("boot-loader");
+      const closeBoot = () => {
+        if (!boot) return;
+        boot.classList.remove("is-open");
+        setTimeout(() => boot.remove(), 400);
+      };
       try {
         await import("./src/main.js");
+        closeBoot();
       } catch (err) {
         console.warn("[BBA2] main.js unavailable — starting UI preview mode.", err);
         const [{ createUI }, { createEventBus }] = await Promise.all([
@@ -202,6 +235,7 @@
           onAction: (action) => console.log("[BBA2 preview] action:", action),
         });
         window.__bba2Preview = { ui, bus };
+        closeBoot();
       }
     </script>
   </body>

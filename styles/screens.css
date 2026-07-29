@@ -871,3 +871,22 @@
     min-height: 74px;
   }
 }
+
+/* ---------------------------------------------------- two-controller select
+   With a second pad connected both sides of the card are human picks, so the
+   AI level is meaningless and the YOU/RIVAL flags become P1/P2. */
+body.is-duo .difficulty {
+  display: none;
+}
+
+body.is-duo .bot-card.is-player::after {
+  content: "P1";
+}
+
+body.is-duo .bot-card.is-rival::after {
+  content: "P2";
+}
+
+body.is-duo .bot-card.is-player.is-rival::after {
+  content: "P1 + P2";
+}

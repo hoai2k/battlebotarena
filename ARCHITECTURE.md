@@ -167,7 +167,11 @@ wheel anchors from reference images / v1 collider configs).
 
 ## Model contract (v2/src/assets/models.js — GAME agent)
 
-`loadBotModel(spec)` → `{ group, parts: { body, weapon|null, wheels: [] } }`.
+`loadBotModel(spec, { onProgress } = {})` → `{ group, parts: { body,
+weapon|null, wheels: [] } }`. `onProgress(fraction|null)` reports GLB download
+progress — a 0..1 fraction while the response carries a total, `null` when it
+does not (chunked/gzipped responses), which callers render as an indeterminate
+bar. Parsed responses are cached, so a rematch does not re-download.
 GLBs have nodes named `modelBody`, `modelWeapon`, `modelWheel-0…N`. **Until
 real GLBs land, and whenever a file/part is missing, build placeholder
 geometry from `bodyDims` + weapon type** (box chassis, cylinder drum/bar, box
@@ -207,6 +211,23 @@ winner card + Rematch / Change Bots / Title. Sound toggle visible on title +
 settings; wire to settings store. UI never imports three/rapier/sim; exposes
 `createUI({ onAction })` and reacts to EV.MATCH / EV.DAMAGE via `on`.
 Canvas element `#scene` sits behind HUD; integrator owns its context.
+
+`loader.js` owns the shared wait overlay (`#asset-loader`): `createLoader()` →
+`{ show, setTitle, setDetail, setProgress, hide }`. The integrator drives it
+around anything the player waits on — chiefly `startMatch()`, which pulls two
+10-17MB GLBs and boots the physics engine. `setProgress(null)` switches the bar
+to an indeterminate sweep. A separate boot gate is baked into `index.html` and
+removed once the module graph resolves, so the first paint is never blank.
+
+**Two-controller bot select.** With two pads connected, `gamepadNav` gives each
+pad its own cursor (`duoScreens: ["botSelect"]`) and reports the presser to
+`onActivate(el, player)` / `onBack(screen, player)`; pad slot order is the dense
+`getGamepads()` order, matching `game/input.js`, so menu P1/P2 are the same
+people as sim bots 0/1. Each player claims and releases only their own slot —
+A on a free card takes it, A on your own card drops it, A on the other player's
+card does nothing. With 0-1 pads the screen keeps the sequential YOU → RIVAL
+flow, and mouse/keyboard always act as player 1. Only cursor 0 takes real DOM
+focus; cursor 1 is a class-only ring, since a document has one active element.
 
 ## What v2 deliberately drops (v1 had it)
 

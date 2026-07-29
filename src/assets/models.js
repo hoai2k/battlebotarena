@@ -15,6 +15,10 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
+// Cache parsed GLB responses: a rematch or a re-pick of the same bot would
+// otherwise re-download 10-17MB per model and sit on the loading screen again.
+THREE.Cache.enabled = true;
+
 const loader = new GLTFLoader();
 const MAX_WHEEL_NODES = 8;
 
@@ -160,9 +164,16 @@ function placeholderWheels(spec) {
 
 // --- GLB helpers ------------------------------------------------------------
 
-async function tryLoadScene(path) {
+// onProgress(fraction|null) reports download progress: a 0..1 fraction while
+// the response reports a total, null when it does not (chunked/gzipped
+// responses have no usable content-length, which is the common case over
+// HTTP). Callers use null to switch to an indeterminate indicator.
+async function tryLoadScene(path, onProgress) {
   try {
-    const gltf = await loader.loadAsync(path);
+    const gltf = await loader.loadAsync(path, (event) => {
+      if (typeof onProgress !== "function") return;
+      onProgress(event?.lengthComputable && event.total > 0 ? event.loaded / event.total : null);
+    });
     return gltf?.scene || null;
   } catch {
     return null; // Missing/broken GLB: every part falls back to placeholders.
@@ -241,8 +252,8 @@ export function weaponVisualAngle(visual, spec, state) {
  * @param {import('./catalog.js').BotSpec} spec
  * @returns {Promise<{ group: THREE.Group, parts: { body: THREE.Object3D, weapon: THREE.Group|null, wheels: THREE.Object3D[] } }>}
  */
-export async function loadBotModel(spec) {
-  const scene = normalizeScene(await tryLoadScene(spec.modelPath), spec);
+export async function loadBotModel(spec, { onProgress } = {}) {
+  const scene = normalizeScene(await tryLoadScene(spec.modelPath, onProgress), spec);
 
   const group = new THREE.Group();
   group.name = `bot-${spec.id}`;

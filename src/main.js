@@ -10,6 +10,7 @@ import { createArenaVisuals } from "./engine/arena.js";
 
 // Written by the parallel build agents; wired here at integration time.
 import { createUI } from "./ui/ui.js";
+import { createLoader } from "./ui/loader.js";
 import { getBotSpec } from "./assets/catalog.js";
 import { loadBotModel, weaponVisualAngle } from "./assets/models.js";
 import { createSim } from "./sim/sim.js";
@@ -32,6 +33,7 @@ const inputP2 = createInput({ on: bus.on, playerIndex: 1, gamepadIndex: 1 });
 // Music is app-level, not per-session: it follows EV.MATCH phases on the bus.
 const music = createMusic(bus);
 
+const loader = createLoader();
 let arenaVisuals = null;
 let session = null; // { sim, match, botVisuals: [{group, parts, spec}], raf }
 let paused = false;
@@ -99,12 +101,50 @@ bus.on(EV.PART_BREAK, (event) => {
 });
 
 // --- Match session lifecycle ----------------------------------------------
+/** Yield to the browser so the loading overlay actually paints between the
+ *  synchronous chunks of match setup (model parsing, the settle loop). */
+const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
 async function startMatch({ playerBotId, rivalBotId, difficulty }) {
   await endMatch();
   const specs = [getBotSpec(playerBotId), getBotSpec(rivalBotId)];
-  const botVisuals = await Promise.all(specs.map((spec) => loadBotModel(spec)));
+
+  // Bot models are the long pole: 10-17MB each, and both are needed before the
+  // match can start. Aggregate the two downloads into one bar; if either
+  // response has no content-length (chunked/gzipped) the whole bar goes
+  // indeterminate rather than reporting a half-truth.
+  loader.show({ title: "Loading Bots", detail: `${specs[0].name} vs ${specs[1].name}`, progress: 0 });
+  const modelProgress = [0, 0];
+  const reportModels = () => {
+    const known = modelProgress.every((p) => typeof p === "number");
+    // Models occupy the first 80% of the bar; setup takes the rest.
+    loader.setProgress(known ? ((modelProgress[0] + modelProgress[1]) / 2) * 0.8 : null);
+  };
+  const botVisuals = await Promise.all(
+    specs.map((spec, i) =>
+      loadBotModel(spec, {
+        onProgress: (fraction) => {
+          modelProgress[i] = fraction;
+          reportModels();
+        },
+      }).then((visual) => {
+        modelProgress[i] = 1;
+        reportModels();
+        return visual;
+      })
+    )
+  );
   botVisuals.forEach((visual) => stage.scene.add(visual.group));
+
+  loader.setTitle("Preparing Arena");
+  loader.setDetail("Building the arena");
+  loader.setProgress(0.84);
+  await nextFrame();
   if (!arenaVisuals) arenaVisuals = createArenaVisuals(stage.scene);
+
+  loader.setDetail("Starting physics");
+  loader.setProgress(0.9);
+  await nextFrame();
   const sim = await createSim({ bots: specs, emit: bus.emit });
   const match = createMatch({ sim, specs, emit: bus.emit, on: bus.on });
   const audio = createGameAudio(bus, { specs });
@@ -120,6 +160,9 @@ async function startMatch({ playerBotId, rivalBotId, difficulty }) {
   // reset to spawn. Shifting the model CONTENTS (not the group) keeps
   // rotations centered on the body.
   const idleInput = { leftDrive: 0, rightDrive: 0, weapon: false, brake: false };
+  loader.setDetail("Calibrating chassis");
+  loader.setProgress(0.96);
+  await nextFrame();
   for (let i = 0; i < 150; i += 1) sim.stepFrame(1 / 60, [idleInput, idleInput]);
   // Average the last 30 frames so residual suspension oscillation cancels.
   const settleSum = [0, 0];
@@ -141,6 +184,8 @@ async function startMatch({ playerBotId, rivalBotId, difficulty }) {
   cameraDirector.snapTo(sim.getRenderState());
   chaseCameraA.snapTo(sim.getRenderState()[0]);
   chaseCameraB.snapTo(sim.getRenderState()[1]);
+  loader.setProgress(1);
+  loader.hide();
   match.start?.();
 }
 
@@ -156,15 +201,25 @@ async function endMatch() {
 const ui = createUI({
   bus,
   onAction: async (action) => {
-    if (action.type === "startMatch") await startMatch(action);
-    else if (action.type === "rematch" && session) await startMatch({
-      playerBotId: session.specs[0].id,
-      rivalBotId: session.specs[1].id,
-      difficulty: session.difficulty,
-    });
-    else if (action.type === "toTitle" || action.type === "changeBots") {
-      music.player.stop({ fadeOut: 0.5 });
+    try {
+      if (action.type === "startMatch") await startMatch(action);
+      else if (action.type === "rematch" && session) await startMatch({
+        playerBotId: session.specs[0].id,
+        rivalBotId: session.specs[1].id,
+        difficulty: session.difficulty,
+      });
+      else if (action.type === "toTitle" || action.type === "changeBots") {
+        loader.hide();
+        music.player.stop({ fadeOut: 0.5 });
+        await endMatch();
+      }
+    } catch (error) {
+      // A half-built match must never leave the loading overlay up with no way
+      // out — surface it and drop the player back to the roster.
+      console.error("[BBA2] match setup failed", error);
+      loader.hide();
       await endMatch();
+      ui.goTo?.("botSelect");
     }
   },
 });

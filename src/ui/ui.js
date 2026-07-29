@@ -32,10 +32,23 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   const cleanups = [];
 
   // ---------------------------------------------------------------- selection
+  // Two shapes of the same screen:
+  //   solo (0-1 pads) — one cursor walks a two-step flow, YOU then RIVAL.
+  //   duo  (2 pads)   — both players pick simultaneously, each owning one
+  //                     slot; slot 0 is P1/bot 0, slot 1 is P2/bot 1, matching
+  //                     main.js's pad->bot assignment.
   const sel = {
     stage: /** @type {"player"|"rival"} */ ("player"),
     playerBotId: /** @type {string|null} */ (null),
     rivalBotId: /** @type {string|null} */ (null), // may be "random"
+  };
+  /** True while two controllers are connected. */
+  let duoMode = false;
+
+  const SLOT_KEYS = /** @type {const} */ (["playerBotId", "rivalBotId"]);
+  const getSlot = (slot) => sel[SLOT_KEYS[slot]];
+  const setSlot = (slot, id) => {
+    sel[SLOT_KEYS[slot]] = id;
   };
   /** Concrete ids of the match in flight; index 0 = player, 1 = rival. */
   let lastMatch = /** @type {{ playerBotId: string, rivalBotId: string }|null} */ (null);
@@ -45,6 +58,19 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   const fightBtn = /** @type {HTMLButtonElement} */ ($("btn-fight"));
   const slotPlayer = $("slot-player");
   const slotRival = $("slot-rival");
+
+  /** Shimmer an image's container until the bitmap lands. The roster photos
+   *  are ~2MB each, so the slot would otherwise read as broken while it
+   *  downloads. No-op for images already in cache. */
+  function wireImage(wrapper) {
+    const img = wrapper?.querySelector("img");
+    if (!img) return;
+    if (img.complete && img.naturalWidth > 0) return;
+    wrapper.classList.add("is-img-loading");
+    const done = () => wrapper.classList.remove("is-img-loading");
+    img.addEventListener("load", done, { once: true });
+    img.addEventListener("error", done, { once: true });
+  }
 
   function statRow(label, value) {
     let pips = "";
@@ -68,6 +94,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
         ${statRow("PWR", card.stats.power)}
         ${statRow("ARM", card.stats.armor)}
       </span>`;
+    wireImage(el.querySelector(".bot-card-img"));
     return el;
   }
 
@@ -86,6 +113,36 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     return el;
   }
 
+  /**
+   * Duo pick/unpick for one player. A on a free card claims it; A on the card
+   * you already hold releases it; A on the other player's card does nothing
+   * (whoever got there first keeps it).
+   * @returns {boolean} true if the press was consumed
+   */
+  function duoToggle(slot, id) {
+    if (!id || id === "random") return true; // random is solo-only
+    const mine = getSlot(slot);
+    const theirs = getSlot(slot === 0 ? 1 : 0);
+    if (mine === id) setSlot(slot, null);
+    else if (theirs === id) return true; // taken — ignore rather than steal
+    else setSlot(slot, id);
+    refreshSelect();
+    return true;
+  }
+
+  /** Solo flow: the single cursor fills YOU, then RIVAL. */
+  function soloPick(id) {
+    if (sel.stage === "player") {
+      if (id === "random") return;
+      sel.playerBotId = id;
+      if (sel.rivalBotId === id) sel.rivalBotId = null; // no mirror match via direct pick collision
+      sel.stage = "rival";
+    } else {
+      sel.rivalBotId = id;
+    }
+    refreshSelect();
+  }
+
   if (grid) {
     BOT_CARDS.forEach((card) => grid.appendChild(buildCard(card)));
     grid.appendChild(buildRandomCard());
@@ -93,15 +150,10 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       const cardEl = /** @type {HTMLElement} */ (ev.target instanceof Element ? ev.target.closest(".bot-card") : null);
       if (!cardEl || cardEl.classList.contains("is-disabled")) return;
       const id = cardEl.dataset.botId;
-      if (sel.stage === "player") {
-        if (id === "random") return;
-        sel.playerBotId = id;
-        if (sel.rivalBotId === id) sel.rivalBotId = null; // no mirror match via direct pick collision
-        sel.stage = "rival";
-      } else {
-        sel.rivalBotId = id;
-      }
-      refreshSelect();
+      // Mouse and keyboard always act as player 1; pad presses are routed by
+      // the nav layer's onActivate hook instead, which knows who pressed.
+      if (duoMode) duoToggle(0, id);
+      else soloPick(id);
     });
   }
 
@@ -123,6 +175,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
         <b class="vs-slot-name">${card.name}</b>
         <span class="vs-slot-tag">${card.tagline}</span>
       </span>`;
+    wireImage(body.querySelector(".vs-slot-img"));
   }
 
   function refreshSelect() {
@@ -131,25 +184,61 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       const id = el.dataset.botId;
       el.classList.toggle("is-player", id === sel.playerBotId);
       el.classList.toggle("is-rival", id === sel.rivalBotId);
-      el.classList.toggle("is-disabled", sel.stage === "player" && id === "random");
+      // Random is a stand-in for the AI opponent; with two humans, both sides
+      // are real picks, so it is off the table entirely.
+      el.classList.toggle("is-disabled", id === "random" && (duoMode || sel.stage === "player"));
     });
-    fillSlot(slotPlayer, sel.playerBotId ? getBotCard(sel.playerBotId) : null, "PICK<br />YOUR BOT");
+    document.body.classList.toggle("is-duo", duoMode);
+    fillSlot(
+      slotPlayer,
+      sel.playerBotId ? getBotCard(sel.playerBotId) : null,
+      duoMode ? "P1 — PRESS A<br />TO PICK" : "PICK<br />YOUR BOT"
+    );
     fillSlot(
       slotRival,
       sel.rivalBotId ? (sel.rivalBotId === "random" ? RANDOM_CARD : getBotCard(sel.rivalBotId)) : null,
-      "PICK THE<br />OPPONENT"
+      duoMode ? "P2 — PRESS A<br />TO PICK" : "PICK THE<br />OPPONENT"
     );
-    slotPlayer.classList.toggle("is-armed", sel.stage === "player");
-    slotRival.classList.toggle("is-armed", sel.stage === "rival");
-    stepEl.textContent = sel.stage === "player" ? "STEP 1 — CHOOSE YOUR BOT" : "STEP 2 — CHOOSE THE OPPONENT";
+    slotPlayer?.setAttribute("data-role", duoMode ? "P1" : "YOU");
+    slotRival?.setAttribute("data-role", duoMode ? "P2" : "RIVAL");
+    if (duoMode) {
+      // Both sides are live at once, so both stay armed until they are filled.
+      slotPlayer.classList.toggle("is-armed", !sel.playerBotId);
+      slotRival.classList.toggle("is-armed", !sel.rivalBotId);
+      stepEl.textContent = "TWO CONTROLLERS — EACH PLAYER PICKS THEIR OWN BOT";
+    } else {
+      slotPlayer.classList.toggle("is-armed", sel.stage === "player");
+      slotRival.classList.toggle("is-armed", sel.stage === "rival");
+      stepEl.textContent = sel.stage === "player" ? "STEP 1 — CHOOSE YOUR BOT" : "STEP 2 — CHOOSE THE OPPONENT";
+    }
     fightBtn.disabled = !(sel.playerBotId && sel.rivalBotId);
   }
 
+  /** Second pad plugged in / pulled out — reshape the screen around it. */
+  function setDuoMode(active) {
+    const next = Boolean(active);
+    if (next === duoMode) return;
+    duoMode = next;
+    // Entering duo, a half-finished solo flow leaves the rival slot armed and
+    // the stage mid-flight; the per-slot model does not use either.
+    if (duoMode && sel.rivalBotId === "random") sel.rivalBotId = null;
+    if (!duoMode) sel.stage = sel.playerBotId ? "rival" : "player";
+    refreshSelect();
+  }
+
   slotPlayer?.addEventListener("click", () => {
+    if (duoMode) {
+      duoToggle(0, sel.playerBotId); // clicking your filled slot clears it
+      return;
+    }
     sel.stage = "player";
     refreshSelect();
   });
   slotRival?.addEventListener("click", () => {
+    if (duoMode) {
+      duoToggle(1, sel.rivalBotId);
+      return;
+    }
     if (!sel.playerBotId) return;
     sel.stage = "rival";
     refreshSelect();
@@ -350,6 +439,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       nameEl.textContent = card ? card.name.toUpperCase() : botName(winnerIndex);
       methodEl.textContent = isKO ? "WINS BY KNOCKOUT" : "WINS BY JUDGES DECISION";
       imgWrap.innerHTML = card ? `<img src="${card.image}" alt="${card.name}" draggable="false" />` : "";
+      wireImage(imgWrap);
       if (card) imgWrap.style.setProperty("--accent", card.accent);
     } else {
       kicker.textContent = "FULL TIME";
@@ -541,9 +631,32 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   const nav = createGamepadNav({
     screens,
     modal,
-    onBack: (screen) => {
-      // On bot select, B first rewinds the pick stage before leaving the screen.
-      if (screen === "botSelect" && sel.stage === "rival") {
+    // Bot select is the one screen where "who pressed the button" matters.
+    duoScreens: ["botSelect"],
+    onPlayerCountChange: (count) => setDuoMode(count >= 2),
+    onActivate: (el, player) => {
+      if (!duoMode || screens.current() !== "botSelect") return false;
+      const card = el.closest?.(".bot-card");
+      if (card && !card.classList.contains("is-disabled")) return duoToggle(player, card.dataset.botId);
+      // Your own VS slot is a shortcut for "drop what I picked".
+      if (el === slotPlayer) return duoToggle(0, sel.playerBotId);
+      if (el === slotRival) return duoToggle(1, sel.rivalBotId);
+      return false; // FIGHT, difficulty, back — either player may press these
+    },
+    onBack: (screen, player = 0) => {
+      if (screen !== "botSelect") return false;
+      if (duoMode) {
+        // B drops your own pick; with nothing to drop, only P1 leaves the
+        // screen so P2 cannot yank both players back to the title.
+        if (getSlot(player)) {
+          setSlot(player, null);
+          refreshSelect();
+          return true;
+        }
+        return player !== 0;
+      }
+      // Solo: B first rewinds the pick stage before leaving the screen.
+      if (sel.stage === "rival") {
         sel.rivalBotId = null;
         sel.stage = "player";
         refreshSelect();

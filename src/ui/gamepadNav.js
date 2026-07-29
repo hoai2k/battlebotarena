@@ -19,8 +19,18 @@
 // Keyboard mirrors the same focus model: arrows + WASD move, Enter/Space
 // activate (native button behaviour), Escape/Backspace go back. Mouse and the
 // existing ui.js listeners are untouched.
+//
+// DUO MODE. On screens listed in `duoScreens`, when two pads are connected,
+// each pad gets its OWN independent cursor so both players can drive the menu
+// at once (bot select: each person picks and unpicks their own bot). Pad slot
+// order matches game/input.js — dense getGamepads() order, so menu P1/P2 are
+// the same people as sim bot 0/1. Only cursor 0 takes real DOM focus; cursor 1
+// is a class-only ring, since the document has exactly one focused element.
 
 const FOCUS_CLASS = "is-nav-focus";
+/** Per-player ring classes, applied alongside FOCUS_CLASS in duo mode. */
+const PLAYER_FOCUS_CLASS = ["is-nav-p1", "is-nav-p2"];
+const MAX_CURSORS = 2;
 
 const FOCUSABLE_SELECTOR = [
   "button:not([disabled])",
@@ -88,24 +98,39 @@ function centerOf(el) {
 /**
  * @param {object} opts
  * @param {{ current(): string|null, goTo(name:string): void }} opts.screens
- * @param {(screen: string|null) => boolean} [opts.onBack] return true if handled
- * @param {(screen: string|null) => boolean} [opts.onStart] return true if handled
+ * @param {(screen: string|null, player: number) => boolean} [opts.onBack] return true if handled
+ * @param {(screen: string|null, player: number) => boolean} [opts.onStart] return true if handled
+ * @param {(el: HTMLElement, player: number) => boolean} [opts.onActivate] return true if handled
+ * @param {(count: number) => void} [opts.onPlayerCountChange] fires when the connected-pad count changes
+ * @param {string[]} [opts.duoScreens] screens that give each pad its own cursor
  * @param {HTMLElement|null} [opts.modal] settings modal element
  */
-export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}) {
+export function createGamepadNav({
+  screens,
+  onBack,
+  onStart,
+  onActivate,
+  onPlayerCountChange,
+  duoScreens = [],
+  modal = null,
+} = {}) {
   const modalEl = modal || document.getElementById("settings-modal");
+  const duoScreenSet = new Set(duoScreens);
 
-  /** @type {HTMLElement|null} */
-  let currentEl = null;
+  /** One tracked element per cursor; index 0 is the shared/solo cursor. */
+  const cursors = /** @type {(HTMLElement|null)[]} */ (new Array(MAX_CURSORS).fill(null));
   /** @type {HTMLElement|null} */
   let modalReturnEl = null;
   let running = false;
   let rafId = 0;
   let lastScreenKey = "";
+  let padCount = 0;
 
-  // Edge/repeat state for one virtual "direction" + face buttons.
-  const held = { dir: /** @type {string|null} */ (null), since: 0, next: 0 };
-  const btnPrev = { a: false, b: false, start: false, select: false };
+  // Edge/repeat state per cursor: direction repeat + face-button edges.
+  const padState = Array.from({ length: MAX_CURSORS }, () => ({
+    held: { dir: /** @type {string|null} */ (null), since: 0, next: 0 },
+    btnPrev: { a: false, b: false, start: false, select: false },
+  }));
 
   // ------------------------------------------------------------------ context
 
@@ -156,49 +181,83 @@ export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}
     return activeScreenName() === "match" && !modalOpen() && !pauseOpen();
   }
 
-  // -------------------------------------------------------------------- focus
-
-  function clearFocusClass() {
-    document.querySelectorAll(`.${FOCUS_CLASS}`).forEach((el) => el.classList.remove(FOCUS_CLASS));
+  /** Two independent cursors: two pads, on a screen that asked for it, with
+   *  nothing modal on top (a modal has one cursor no matter who opened it). */
+  function duo() {
+    return padCount >= 2 && duoScreenSet.has(activeScreenName()) && !modalOpen() && !pauseOpen();
   }
 
-  function setFocus(el, { scroll = true } = {}) {
-    clearFocusClass();
-    currentEl = el || null;
+  /** How many cursors are live right now. */
+  function cursorCount() {
+    return duo() ? MAX_CURSORS : 1;
+  }
+
+  // -------------------------------------------------------------------- focus
+
+  function clearFocusClass(player = null) {
+    const classes = player === null ? [FOCUS_CLASS, ...PLAYER_FOCUS_CLASS] : [PLAYER_FOCUS_CLASS[player]];
+    classes.forEach((cls) => {
+      document.querySelectorAll(`.${cls}`).forEach((el) => el.classList.remove(cls));
+    });
+    if (player === null) return;
+    // The shared ring only comes off if no other cursor is still on that node.
+    document.querySelectorAll(`.${FOCUS_CLASS}`).forEach((el) => {
+      if (!cursors.some((c, i) => i !== player && c === el)) el.classList.remove(FOCUS_CLASS);
+    });
+  }
+
+  function paintFocus(el, player) {
     if (!el) return;
     el.classList.add(FOCUS_CLASS);
-    try {
-      el.focus({ preventScroll: true });
-    } catch {
-      el.focus?.();
+    if (duo()) el.classList.add(PLAYER_FOCUS_CLASS[player]);
+  }
+
+  function setFocus(el, { scroll = true, player = 0 } = {}) {
+    clearFocusClass(player);
+    cursors[player] = el || null;
+    if (!el) return;
+    paintFocus(el, player);
+    // Only the primary cursor owns real DOM focus — there is just one
+    // document.activeElement, and stealing it would break P1's keyboard.
+    if (player === 0) {
+      try {
+        el.focus({ preventScroll: true });
+      } catch {
+        el.focus?.();
+      }
     }
     if (scroll) el.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }
 
   /** Re-validate the tracked element; re-seed a default if it went away. */
-  function ensureFocus() {
+  function ensureFocus(player = 0) {
     const list = items();
     if (!list.length) {
-      currentEl = null;
-      clearFocusClass();
+      cursors[player] = null;
+      clearFocusClass(player);
       return null;
     }
-    if (currentEl && list.includes(currentEl)) {
-      if (!currentEl.classList.contains(FOCUS_CLASS)) currentEl.classList.add(FOCUS_CLASS);
-      return currentEl;
+    const current = cursors[player];
+    if (current && list.includes(current)) {
+      paintFocus(current, player);
+      return current;
     }
-    setFocus(defaultTarget(list));
-    return currentEl;
+    setFocus(defaultTarget(list, player), { player });
+    return cursors[player];
   }
 
-  function defaultTarget(list) {
+  function defaultTarget(list, player = 0) {
     if (modalOpen()) return list[0];
     const sel = DEFAULT_FOCUS_BY_SCREEN[activeScreenName()];
     if (sel) {
-      const el = /** @type {HTMLElement|null} */ (document.querySelector(sel));
-      if (el && list.includes(el)) return el;
+      const matches = /** @type {HTMLElement[]} */ (Array.from(document.querySelectorAll(sel))).filter((el) =>
+        list.includes(el)
+      );
+      // In duo mode start the two cursors apart so P2 does not appear to be
+      // sitting on P1's card.
+      if (matches.length) return matches[Math.min(player, matches.length - 1)] || matches[0];
     }
-    return list[0];
+    return list[Math.min(player, list.length - 1)] || list[0];
   }
 
   // ------------------------------------------------------------ spatial move
@@ -208,11 +267,12 @@ export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}
    * 4-column bot grid, the difficulty row, the button stacks and the results
    * row all behave without any hardcoded layout knowledge.
    */
-  function spatialNext(dir) {
+  function spatialNext(dir, player = 0) {
     const list = items();
     if (!list.length) return null;
-    const from = currentEl && list.includes(currentEl) ? currentEl : null;
-    if (!from) return defaultTarget(list);
+    const current = cursors[player];
+    const from = current && list.includes(current) ? current : null;
+    if (!from) return defaultTarget(list, player);
 
     const a = centerOf(from);
     const horizontal = dir === "left" || dir === "right";
@@ -265,16 +325,17 @@ export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}
     return list[(i + step + list.length) % list.length];
   }
 
-  function move(dir) {
+  function move(dir, player = 0) {
     if (inert()) return;
-    ensureFocus();
+    ensureFocus(player);
     // Consoles change <select> values with left/right instead of leaving it.
-    if (currentEl instanceof HTMLSelectElement && (dir === "left" || dir === "right")) {
-      cycleSelect(currentEl, dir === "right" ? 1 : -1);
+    const current = cursors[player];
+    if (current instanceof HTMLSelectElement && (dir === "left" || dir === "right")) {
+      cycleSelect(current, dir === "right" ? 1 : -1);
       return;
     }
-    const next = spatialNext(dir);
-    if (next) setFocus(next);
+    const next = spatialNext(dir, player);
+    if (next) setFocus(next, { player });
   }
 
   function cycleSelect(sel, step) {
@@ -287,25 +348,28 @@ export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}
 
   // ------------------------------------------------------------------ actions
 
-  function activate() {
+  function activate(player = 0) {
     if (inert()) return;
-    const el = ensureFocus();
+    const el = ensureFocus(player);
     if (!el) return;
     if (el instanceof HTMLSelectElement) {
       cycleSelect(el, 1); // no way to open a native dropdown from a pad
       return;
     }
+    // Screens that care WHO pressed A (bot select) intercept here; a plain
+    // .click() carries no player identity.
+    if (typeof onActivate === "function" && onActivate(el, player)) return;
     el.click();
   }
 
-  function back() {
+  function back(player = 0) {
     if (inert()) return;
     if (modalOpen()) {
       closeModalViaButton();
       return;
     }
     const screen = activeScreenName();
-    if (typeof onBack === "function" && onBack(screen)) return;
+    if (typeof onBack === "function" && onBack(screen, player)) return;
     if (screen === "botSelect") document.getElementById("btn-select-back")?.click();
     else if (screen === "results") document.getElementById("btn-res-title")?.click();
   }
@@ -316,14 +380,14 @@ export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}
     else if (modalEl) modalEl.hidden = true;
   }
 
-  function start() {
+  function start(player = 0) {
     if (inert()) return;
     if (modalOpen()) {
       closeModalViaButton();
       return;
     }
     const screen = activeScreenName();
-    if (typeof onStart === "function" && onStart(screen)) return;
+    if (typeof onStart === "function" && onStart(screen, player)) return;
     const sel = PRIMARY_BY_SCREEN[screen];
     if (!sel) return;
     const el = /** @type {HTMLButtonElement|null} */ (document.querySelector(sel));
@@ -332,43 +396,51 @@ export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}
 
   // ------------------------------------------------------- screen/modal watch
 
-  /** Key that changes whenever the focus context changes. */
+  /** Key that changes whenever the focus context changes. Duo-ness is part of
+   *  it: plugging in a second pad re-seeds both cursors. */
   function contextKey() {
-    return `${activeScreenName()}|${modalOpen() ? "modal" : "-"}`;
+    return `${activeScreenName()}|${modalOpen() ? "modal" : "-"}|${duo() ? "duo" : "solo"}`;
+  }
+
+  function resetCursors() {
+    cursors.fill(null);
+    clearFocusClass();
+  }
+
+  function seedCursors() {
+    for (let i = 0; i < cursorCount(); i += 1) ensureFocus(i);
   }
 
   function syncContext() {
     const key = contextKey();
     if (key === lastScreenKey) return;
-    const wasModal = lastScreenKey.endsWith("modal");
+    const wasModal = lastScreenKey.split("|")[1] === "modal";
     const isModal = modalOpen();
     lastScreenKey = key;
 
     if (isModal && !wasModal) {
       modalReturnEl = /** @type {HTMLElement|null} */ (document.activeElement);
-      currentEl = null;
+      resetCursors();
       setTimeout(() => {
-        currentEl = null;
-        ensureFocus();
+        resetCursors();
+        seedCursors();
       }, 0);
       return;
     }
     if (!isModal && wasModal) {
-      currentEl = null;
-      clearFocusClass();
+      resetCursors();
       const back = modalReturnEl;
       modalReturnEl = null;
       // Modal fades out over ~220ms; restore after it is gone.
       setTimeout(() => {
-        if (back && document.contains(back) && isVisible(back)) setFocus(back);
-        else ensureFocus();
+        if (back && document.contains(back) && isVisible(back)) setFocus(back, { player: 0 });
+        seedCursors();
       }, 0);
       return;
     }
-    // Plain screen change: seed the screen's default focus.
-    currentEl = null;
-    clearFocusClass();
-    setTimeout(() => ensureFocus(), 0);
+    // Plain screen (or solo/duo) change: seed each cursor's default focus.
+    resetCursors();
+    setTimeout(() => seedCursors(), 0);
   }
 
   const observer = hasWindow ? new MutationObserver(() => syncContext()) : null;
@@ -414,18 +486,8 @@ export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}
     return Array.from(navigator.getGamepads() || []).filter(Boolean);
   }
 
-  function poll() {
-    rafId = requestAnimationFrame(poll);
-    syncContext();
-
-    const list = pads();
-    if (!list.length) {
-      held.dir = null;
-      btnPrev.a = btnPrev.b = btnPrev.start = btnPrev.select = false;
-      return;
-    }
-
-    // Merge all connected pads so either controller can drive the menus.
+  /** Collapse a set of pads into one virtual controller. */
+  function readPads(list) {
     let dir = null;
     let a = false;
     let b = false;
@@ -439,7 +501,13 @@ export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}
       st = st || down(BTN_START);
       se = se || down(BTN_SELECT);
     }
+    return { dir, a, b, st, se };
+  }
 
+  /** Apply one virtual controller's frame to one cursor. */
+  function applyPad(player, { dir, a, b, st, se }) {
+    const state = padState[player];
+    const { held, btnPrev } = state;
     const t = now();
     if (!dir) {
       held.dir = null;
@@ -447,28 +515,55 @@ export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}
       held.dir = dir;
       held.since = t;
       held.next = t + REPEAT_DELAY_MS;
-      if (!inert()) move(dir);
+      if (!inert()) move(dir, player);
     } else if (t >= held.next) {
       held.next = t + REPEAT_RATE_MS;
-      if (!inert()) move(dir);
+      if (!inert()) move(dir, player);
     }
 
-    if (inert()) {
-      btnPrev.a = a;
-      btnPrev.b = b;
-      btnPrev.start = st;
-      btnPrev.select = se;
-      return;
+    if (!inert()) {
+      if (a && !btnPrev.a) activate(player);
+      if (b && !btnPrev.b) back(player);
+      if (se && !btnPrev.select) back(player);
+      if (st && !btnPrev.start) start(player);
     }
-
-    if (a && !btnPrev.a) activate();
-    if (b && !btnPrev.b) back();
-    if (se && !btnPrev.select) back();
-    if (st && !btnPrev.start) start();
     btnPrev.a = a;
     btnPrev.b = b;
     btnPrev.start = st;
     btnPrev.select = se;
+  }
+
+  function clearPadState(player) {
+    padState[player].held.dir = null;
+    const p = padState[player].btnPrev;
+    p.a = p.b = p.start = p.select = false;
+  }
+
+  function poll() {
+    rafId = requestAnimationFrame(poll);
+
+    const list = pads();
+    if (list.length !== padCount) {
+      padCount = list.length;
+      onPlayerCountChange?.(padCount);
+    }
+    // Runs after the pad count is known so a plug/unplug re-seeds cursors.
+    syncContext();
+
+    if (!list.length) {
+      for (let i = 0; i < MAX_CURSORS; i += 1) clearPadState(i);
+      return;
+    }
+
+    if (!duo()) {
+      // Solo: merge every connected pad, so either controller drives the menu.
+      applyPad(0, readPads(list));
+      clearPadState(1);
+      return;
+    }
+    // Duo: pad slot i drives cursor i, independently. Slot order is the dense
+    // getGamepads() order, matching game/input.js's gamepadIndex.
+    for (let i = 0; i < MAX_CURSORS; i += 1) applyPad(i, readPads(list.slice(i, i + 1)));
   }
 
   // ----------------------------------------------------------------- keyboard
@@ -509,9 +604,11 @@ export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}
     if (ev.code === "Enter" || ev.code === "NumpadEnter" || ev.code === "Space") {
       // Buttons activate natively when focused; only step in when focus was
       // lost (e.g. right after a screen change) or the target is a <select>.
-      const el = currentEl;
+      const el = cursors[0];
       if (el instanceof HTMLSelectElement) return; // native dropdown
-      if (document.activeElement === el) return; // native click will fire
+      // In duo mode a raw click carries no player identity, so route keyboard
+      // activation through activate() (as player 1) instead of the native path.
+      if (!duo() && document.activeElement === el) return; // native click will fire
       ev.preventDefault();
       activate();
     }
@@ -521,24 +618,28 @@ export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}
   function onFocusIn(ev) {
     const el = ev.target;
     if (!(el instanceof HTMLElement)) return;
-    if (el === currentEl) return;
+    if (el === cursors[0]) return;
     if (!items().includes(el)) return;
-    clearFocusClass();
-    currentEl = el;
-    el.classList.add(FOCUS_CLASS);
+    clearFocusClass(0);
+    cursors[0] = el;
+    paintFocus(el, 0);
   }
 
   function onPointerDown(ev) {
     // A mouse click should move the "cursor" too, so pad input resumes there.
+    // Mouse and keyboard always act as player 1.
     const el = ev.target instanceof Element ? ev.target.closest(FOCUSABLE_SELECTOR) : null;
     if (el instanceof HTMLElement && items().includes(el)) {
-      clearFocusClass();
-      currentEl = el;
+      clearFocusClass(0);
+      cursors[0] = el;
     }
   }
 
-  function onGamepadConnected() {
-    ensureFocus();
+  function onGamepadChange() {
+    padCount = pads().length;
+    onPlayerCountChange?.(padCount);
+    syncContext();
+    seedCursors();
   }
 
   // ------------------------------------------------------------------ control
@@ -550,14 +651,17 @@ export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}
     window.addEventListener("keydown", onKeyDown);
     document.addEventListener("focusin", onFocusIn, true);
     document.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("gamepadconnected", onGamepadConnected);
+    window.addEventListener("gamepadconnected", onGamepadChange);
+    window.addEventListener("gamepaddisconnected", onGamepadChange);
     observer?.observe(document.body, {
       attributes: true,
       attributeFilter: ["data-screen", "hidden", "class"],
       subtree: true,
     });
+    padCount = pads().length;
+    onPlayerCountChange?.(padCount);
     syncContext();
-    ensureFocus();
+    seedCursors();
     rafId = requestAnimationFrame(poll);
   }
 
@@ -569,14 +673,15 @@ export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}
     window.removeEventListener("keydown", onKeyDown);
     document.removeEventListener("focusin", onFocusIn, true);
     document.removeEventListener("pointerdown", onPointerDown, true);
-    window.removeEventListener("gamepadconnected", onGamepadConnected);
+    window.removeEventListener("gamepadconnected", onGamepadChange);
+    window.removeEventListener("gamepaddisconnected", onGamepadChange);
     observer?.disconnect();
   }
 
   function dispose() {
     stopNav();
     clearFocusClass();
-    currentEl = null;
+    cursors.fill(null);
   }
 
   return {
@@ -591,7 +696,9 @@ export function createGamepadNav({ screens, onBack, onStart, modal = null } = {}
     refresh: ensureFocus,
     items,
     screens,
-    focused: () => currentEl,
+    focused: (player = 0) => cursors[player],
+    padCount: () => padCount,
+    isDuo: duo,
     isInert: inert,
   };
 }
