@@ -121,6 +121,7 @@ export const CATALOG = {
     weapon: {
       type: "flipper",
       restAngle: -0.28, // GLB arm baked raised; rest folds it flat onto the front forks (rad about +X at the rear hinge)
+      fireAngle: 0.16, // apex carries PAST the baked pose so the plate snaps over vertical
       spinUpSeconds: 0.2, // stroke arming time (v1 weaponSpinUpSeconds)
       budgetCap: 180, // ~ (250 lb / 32.174) slugs * 23 ft/s target lift velocity
       dims: { x: 0.9, y: 0.11, z: 1.25 },
@@ -211,9 +212,13 @@ export const CATALOG = {
       dims: { x: 0.14, y: 0.39, z: 0.78 },
       pivot: { x: 0, y: 0.95, z: 0.5 }, // jaw hinge, rear-top
       axis: { x: 1, y: 0, z: 0 },
-      tuning: { holdDamagePerSecond: 6 },
+      tuning: { holdDamagePerSecond: 6, holdReach: 1.1, holdStrength: 14, holdDamping: 1, holdImpulseCap: 70 },
     },
     colliders: [
+      // Wedge height is NOT the reason the bite used to slip: measured at rest
+      // its underside sits 0.035ft off the deck, and dropping it further just
+      // parks the chassis on the wedge and unloads the suspension probes
+      // (2s of full throttle moved 0.13ft instead of 19ft).
       { shape: "box", halfExtents: { x: 1.011, y: 0.245, z: 0.747 }, offset: { x: 0, y: 0.352, z: -0.92 } }, // front wedge
       { shape: "box", halfExtents: { x: 0.921, y: 0.118, z: 0.895 }, offset: { x: 0, y: 0.207, z: 0.455 } },
       { shape: "box", halfExtents: { x: 0.95, y: 0.22, z: 0.85 }, offset: { x: 0, y: 0.52, z: 0.25 } }, // merged mid+rear decks
@@ -233,12 +238,21 @@ export const CATALOG = {
     modelScale: 2.35,
     weightLbs: 250,
     weaponWeightLbs: 43,
-    bodyDims: { x: 3.9, y: 1.86, z: 2.82 }, // v1 fit 3.25x1.55x2.35 * scale 1.2
+    // The v1 fit (3.25x1.55x2.35 * 1.2 = 3.9x1.86x2.82) does not describe THIS
+    // bot: its fitted colliders span 1.38x0.69x2.45 and the model at
+    // modelScale 2.35 is 1.43x0.65x2.35. bodyDims only feeds inertia, damage
+    // zones and placeholders, so the stale figure showed up as roll inertia
+    // ~7x too high on a 1.28ft track — a slow underdamped wallow every time you
+    // turned. Matched to the collider shell instead.
+    bodyDims: { x: 1.5, y: 0.85, z: 2.5 },
+    // Four equal wheels sit at one height; the 0.15/0.18 split was fit noise
+    // and left the rear springs statically under-compressed, adding a pitch
+    // bias on top of the roll.
     wheelAnchors: [
-      { x: -0.64, y: 0.15, z: -0.39 },
-      { x: 0.64, y: 0.15, z: -0.38 },
-      { x: -0.64, y: 0.18, z: 0.8 },
-      { x: 0.64, y: 0.18, z: 0.8 },
+      { x: -0.64, y: 0.17, z: -0.4 },
+      { x: 0.64, y: 0.17, z: -0.4 },
+      { x: -0.64, y: 0.17, z: 0.8 },
+      { x: 0.64, y: 0.17, z: 0.8 },
     ],
     maxSpeedFps: mph(13.636), // 20.00
     accel: 8.6,
@@ -333,8 +347,11 @@ export const CATALOG = {
       maxOmega: 880,
       budgetCap: 60, // swing-impulse cap (v2 estimate; v1 saw-touch cap was 10)
       radius: 0.46,
-      restAngle: 1.7, // rest: arm raked ~30deg past vertical, saw hanging behind (GLB baked pose is mid-swing)
-      fireAngle: -0.85, // full stroke chops down-forward into the fork zone
+      // Whole arc rotated ~18deg back from the v1 numbers (1.7 / -0.85): at the
+      // old fireAngle the saw's rim swung to 0.09ft BELOW the floor plane and
+      // disappeared into it at the bottom of every chop.
+      restAngle: 2.02, // rest: arm raked back past vertical, saw hanging behind (GLB baked pose is mid-swing)
+      fireAngle: -0.53, // full stroke chops down-forward into the fork zone, rim stopping just above the floor
       dims: { x: 0.09, y: 0.46, z: 0.46 }, // saw disc at arm tip
       pivot: { x: 0, y: 1.1, z: 0.35 }, // arm hinge, rear-top; saw center ~(0,0.93,-0.52)
       axis: { x: 1, y: 0, z: 0 },

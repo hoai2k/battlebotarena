@@ -214,6 +214,26 @@ function normalizeScene(scene, spec) {
   return wrapper;
 }
 
+// Match a visual wheel to the suspension probe under it. Both are in game
+// space by the time this runs (normalizeScene has applied yaw/scale), so plain
+// XZ distance is the whole story. Bots with more probes than wheels (HUGE runs
+// four probes inside two tyres) resolve to one of the probes on that side,
+// which report the same speed anyway.
+function nearestAnchorIndex(spec, center, fallback) {
+  const anchors = spec.wheelAnchors || [];
+  if (!anchors.length) return fallback;
+  let best = fallback < anchors.length ? fallback : 0;
+  let bestDistance = Infinity;
+  anchors.forEach((anchor, index) => {
+    const distance = (anchor.x - center.x) ** 2 + (anchor.z - center.z) ** 2;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = index;
+    }
+  });
+  return best;
+}
+
 function detach(node) {
   node.updateWorldMatrix(true, false);
   const world = node.matrixWorld.clone();
@@ -351,6 +371,11 @@ export async function loadBotModel(spec, { onProgress } = {}) {
       pivot.name = `wheelPivot-${i}`;
       pivot.position.copy(center);
       pivot.attach(wheel);
+      // Which suspension probe drives this wheel: nearest catalog anchor, NOT
+      // the node's ordinal. modelWheel-N numbering follows the GLB's part map,
+      // which has no reason to agree with wheelAnchors order — on HUGE it is
+      // reversed, so the left stick spun the right wheel.
+      pivot.userData.spinIndex = nearestAnchorIndex(spec, center, i);
       wheels.push(pivot);
     }
   }
@@ -360,6 +385,7 @@ export async function loadBotModel(spec, { onProgress } = {}) {
     pivot.position.copy(wheel.position);
     wheel.position.set(0, 0, 0);
     pivot.add(wheel);
+    pivot.userData.spinIndex = i; // placeholders are built from the anchors
     return pivot;
   }));
   wheels.forEach((wheel) => group.add(wheel));

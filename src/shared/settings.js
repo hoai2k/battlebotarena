@@ -7,7 +7,7 @@ const STORAGE_PREFIX = "bba2-";
 const DEFAULTS = Object.freeze({
   soundEnabled: true,
   hapticsEnabled: true,
-  cameraMode: "battle", // battle | bot | arena
+  cameraMode: "bot", // battle | bot | arena
   aiDifficulty: "normal", // easy | normal | hard
   showDamageEvents: true,
 });

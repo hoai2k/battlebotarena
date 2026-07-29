@@ -234,8 +234,13 @@ function syncBotVisual(visual, spec, state) {
     scratchAxis.set(spec.weapon.axis.x, spec.weapon.axis.y, spec.weapon.axis.z).normalize();
     visual.parts.weapon.quaternion.setFromAxisAngle(scratchAxis, weaponVisualAngle(visual, spec, state));
   }
+  // Negated: wheelSpin accumulates ground speed along forward (-Z), and a wheel
+  // on the +X axle rolling the bot toward -Z turns NEGATIVE about +X. Without
+  // the sign the tyres spin backwards — invisible on small dark wheels, glaring
+  // on HUGE's six-foot spoked ones.
   visual.parts.wheels?.forEach((wheel, i) => {
-    wheel.rotation.x = state.wheelSpin?.[i % (state.wheelSpin?.length || 1)] ?? 0;
+    const spinIndex = wheel.userData.spinIndex ?? i;
+    wheel.rotation.x = -(state.wheelSpin?.[spinIndex] ?? 0);
   });
   // Bronco's pneumatic ram compresses with the flipper: fully shortened at
   // rest (arm down over it), full length at the top of the stroke. The aux
@@ -249,7 +254,9 @@ function syncBotVisual(visual, spec, state) {
 
 // Sawblaze's saw disc: nested sub-spinner inside the arm. Spins up while the
 // RB toggle is on, coasts down when off; rides the arm's swing either way.
-const SAW_DISC_SPEED = 42; // rad/s at full speed
+// Negative: the disc cuts on the DOWNSWING, so the teeth travel toward the
+// target as the arm chops rather than away from it.
+const SAW_DISC_SPEED = -67.2; // rad/s at full speed (was 42, +60%)
 function updateWeaponSub(visual, spec, slot, dt, active) {
   const sub = visual.parts.weaponSub;
   if (!sub || spec.weapon?.type !== "hammerSaw") return;
