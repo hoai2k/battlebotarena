@@ -1,0 +1,43 @@
+{
+  "parent": "modelBody",
+  "material": {
+    "name": "TombstonePanel",
+    "baseColorFactor": [0.055, 0.055, 0.062, 1],
+    "metallicFactor": 0.7,
+    "roughnessFactor": 0.42
+  },
+  "panels": [
+    {
+      "_comment": "Rear panel. The shell's rear rim sits at x=-0.376 with side walls outboard of |z|=0.235 and a top rail below y=0.11; the plate fills that opening flush with the back of the body and runs down to meet the floor pan.",
+      "name": "panelBack",
+      "type": "box",
+      "min": [-0.376, -0.172, -0.246],
+      "max": [-0.358, 0.126, 0.246]
+    },
+    {
+      "_comment": "Floor pan. Sits BELOW the bar so the weapon spins in the slot between it and the shell above, the way the real bot's top and bottom plates sandwich the blade: the bar occupies y -0.158..-0.049 and sweeps a disc of radius 0.49 about the pivot at x=0.265, which covers almost the whole footprint — a pan at skirt height (-0.11) had the blade passing straight through it. Outline traces the shell's footprint and then follows the front fork forward, so the pan tapers under the bar hub instead of ending in a blunt edge.",
+      "name": "panelBottom",
+      "type": "plate",
+      "axis": "y",
+      "range": [-0.172, -0.16],
+      "outline": [
+        [-0.376, -0.293],
+        [-0.180, -0.300],
+        [-0.050, -0.277],
+        [0.020, -0.230],
+        [0.090, -0.196],
+        [0.150, -0.170],
+        [0.230, -0.145],
+        [0.310, -0.112],
+        [0.310, 0.112],
+        [0.230, 0.145],
+        [0.150, 0.170],
+        [0.090, 0.201],
+        [0.020, 0.234],
+        [-0.050, 0.279],
+        [-0.180, 0.305],
+        [-0.376, 0.297]
+      ]
+    }
+  ]
+}

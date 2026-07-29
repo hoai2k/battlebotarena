@@ -13,7 +13,8 @@
 // Haptics (v1 triggerGamepadHaptic pattern): subscribe EV.IMPACT and
 // EV.WEAPON_HIT for the player's bot and pulse the pad's dual-rumble actuator
 // scaled by hit strength, with per-kind cooldowns and a priority gate so weak
-// rumbles never cut off strong ones. Gated by settings.hapticsEnabled.
+// rumbles never cut off strong ones. EV.WEAPON_SPIN drives a separate sustained
+// buzz while the rotor is turning. Gated by settings.hapticsEnabled.
 //
 // Module is import-safe under node: DOM/gamepad access only happens when a
 // window exists, and readInput() degrades to neutral input.
@@ -27,6 +28,13 @@ const EXTRA_TURN = 0.7;
 
 const HAPTIC_COLLISION_COOLDOWN_SECONDS = 0.05; // v1 values
 const HAPTIC_WEAPON_COOLDOWN_SECONDS = 0.04;
+
+// Sustained spinner rumble. The pad's dual-rumble effect is one-shot, so a
+// continuous buzz means re-arming it slightly faster than it expires; the
+// overlap is what keeps it from stuttering between pulses.
+const SPIN_HAPTIC_MIN_RATIO = 0.06; // below this the blade is barely turning
+const SPIN_HAPTIC_PULSE_MS = 220;
+const SPIN_HAPTIC_REARM_SECONDS = 0.16;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const dead = (v) => (Math.abs(v) < DEADZONE ? 0 : v);
@@ -70,6 +78,7 @@ export function createInput({ on, playerIndex = 0, gamepadIndex = 0 } = {}) {
   const keys = new Set();
   const unsubscribes = [];
   const haptics = { collisionAt: 0, weaponAt: 0, activeUntil: 0, activePriority: 0 };
+  const spin = { ratio: 0, scale: 1, nextAt: 0 };
 
   const onKeyDown = (event) => {
     if (event.repeat) return;
@@ -117,6 +126,11 @@ export function createInput({ on, playerIndex = 0, gamepadIndex = 0 } = {}) {
         duration: 55 + strength * 90,
       });
     }));
+    unsubscribes.push(on(EV.WEAPON_SPIN, ({ botIndex, ratio, hapticScale }) => {
+      if (botIndex !== playerIndex) return;
+      spin.ratio = clamp(ratio || 0, 0, 1);
+      spin.scale = hapticScale || 1;
+    }));
     unsubscribes.push(on(EV.WEAPON_HIT, ({ attackerIndex, targetIndex, impulse, heavy }) => {
       const isTarget = targetIndex === playerIndex;
       const isAttacker = attackerIndex === playerIndex;
@@ -131,6 +145,28 @@ export function createInput({ on, playerIndex = 0, gamepadIndex = 0 } = {}) {
         duration: 70 + strength * 90,
       });
     }));
+  }
+
+  // Spinning up a bar or drum is the one thing the player does that lasts, and
+  // it was the one thing the pad stayed silent through: v1 buzzed continuously
+  // with the rotor and only EV.IMPACT / EV.WEAPON_HIT transients were ported.
+  // Weighted toward the WEAK (high-frequency) actuator, which is what reads as
+  // a motor rather than a thud, and yields the moment a real hit lands so the
+  // impact still punches through.
+  function updateSpinHaptic() {
+    if (!settings.hapticsEnabled) return;
+    if (spin.ratio < SPIN_HAPTIC_MIN_RATIO) return;
+    const now = nowSeconds();
+    if (now < haptics.activeUntil || now < spin.nextAt) return;
+    const pad = getGamepad(gamepadIndex);
+    if (!pad) return;
+    spin.nextAt = now + SPIN_HAPTIC_REARM_SECONDS;
+    const intensity = clamp(spin.ratio * spin.scale, 0, 1);
+    playHaptic(pad, {
+      strong: 0.04 + intensity * 0.22,
+      weak: 0.1 + intensity * 0.55,
+      duration: SPIN_HAPTIC_PULSE_MS,
+    });
   }
 
   // --- per-frame reading ----------------------------------------------------
@@ -171,6 +207,7 @@ export function createInput({ on, playerIndex = 0, gamepadIndex = 0 } = {}) {
     // Edge-detect pause so holding Start doesn't oscillate the state.
     merged.pausePressed = merged.pauseDown && !pauseWasDown;
     pauseWasDown = merged.pauseDown;
+    updateSpinHaptic();
     return merged;
   }
 

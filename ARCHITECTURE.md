@@ -66,7 +66,7 @@ Event payloads (all positions world-space `{x,y,z}`):
 
 `settings` plain object + `onSettingChanged(key, fn)` + `setSetting(key, value)`
 with localStorage persistence under `bba2-*` keys. Defaults include
-`soundEnabled: false`, `hapticsEnabled: true`, `cameraMode: 'battle'`,
+`soundEnabled: false`, `hapticsEnabled: true`, `cameraMode: 'bot'`,
 `aiDifficulty: 'normal'`.
 
 ## Sim public API (v2/src/sim/sim.js)
@@ -188,11 +188,17 @@ driven by a checked-in spec so the edit is reviewable and repeatable:
 
 | Tool | Spec | Fixes |
 |---|---|---|
-| `glb-add-panels.mjs` | `tools/panels/<bot>.json` | surfaces the scan never saw — Tombstone had no rear panel and no floor, so you could see into the chassis from behind or below |
-| `glb-erase-decal.mjs` | `tools/panels/<bot>-*.json` | livery mirrored onto the wrong side — HUGE's eyes are bolted to the front of the frame only, but the scan painted (and embossed) them on the rear faces too |
+| `glb-add-panels.mjs` | `tools/repairs/tombstone-panels.json` | surfaces the scan never saw — Tombstone had no rear panel and no floor, so you could see into the chassis from behind or below |
+| `glb-erase-decal.mjs` | `tools/repairs/huge-eyes.json` | livery mirrored onto the wrong side — HUGE's eyes are bolted to the front of the frame only, but the scan painted (and embossed) them on the rear faces too |
+| `glb-carve.mjs` | `tools/repairs/hypershock-weapon.json` | parts the segmenter mis-assigned — Hypershock's `modelWeapon` had swallowed the front scoop and a fin, which then counter-rotated with the drum |
 
 `glb-erase-decal.mjs` needs `sharp` (`npm i --no-save sharp`) and takes an
 optional debug directory that dumps what it saw and what it selected.
+
+A panel's coordinates have to respect the parts that MOVE. Tombstone's floor
+pan sits below the bar's swept disc rather than at skirt height, because the
+bar pivots at its own centre and sweeps most of the chassis footprint — a pan
+at the height of the side skirts had the blade passing straight through it.
 
 ## Game layer (v2/src/game/ — GAME agent)
 

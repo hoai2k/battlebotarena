@@ -65,19 +65,21 @@ function frontZone(spec, reach, extra = {}) {
 function createSpinner({ world, meta, vehicle, index, emit }) {
   const spec = vehicle.spec;
   const w = spec.weapon;
-  const isDrum = w.type === "drum";
   const radius = w.radius ?? 0.55;
-  const halfLength = (w.length ?? 1.6) / 2;
 
   // Thin solid collider glued to the chassis body (same body = no self-hits).
-  // Drum: cylinder across the front (axis x). Bar: thin wide cuboid.
-  let desc;
-  if (isDrum) {
-    desc = RAPIER.ColliderDesc.cylinder(halfLength, radius)
-      .setRotation(m.qFromAxisAngle({ x: 0, y: 0, z: 1 }, Math.PI / 2));
-  } else {
-    desc = RAPIER.ColliderDesc.cuboid(w.barHalfLength ?? 2.0, 0.08, radius);
-  }
+  // It stands in for the SWEPT volume, not the blade pose, because the collider
+  // never rotates: a disc of the weapon's own radius, as thick as the weapon is
+  // along its spin axis, centred on the pivot. Sizing it from the catalog
+  // matters — the old fixed 4ft-wide slab was wider than Tombstone's whole
+  // chassis and reached a foot past his tail, so he shouldered opponents and
+  // walls away from empty air.
+  const axis = w.axis ?? { x: 1, y: 0, z: 0 };
+  const along = Math.abs(axis.x) > 0.5 ? "x" : Math.abs(axis.z) > 0.5 ? "z" : "y";
+  const halfThickness = w.dims?.[along] ?? (w.length !== undefined ? w.length / 2 : 0.4);
+  const desc = RAPIER.ColliderDesc.cylinder(halfThickness, radius);
+  if (along === "x") desc.setRotation(m.qFromAxisAngle({ x: 0, y: 0, z: 1 }, Math.PI / 2));
+  else if (along === "z") desc.setRotation(m.qFromAxisAngle({ x: 1, y: 0, z: 0 }, Math.PI / 2));
   desc
     .setTranslation(w.pivot.x, w.pivot.y, w.pivot.z)
     .setDensity(0)
@@ -192,7 +194,14 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
       const ratio = omega / w.maxOmega;
       if (Math.abs(ratio - lastEmittedRatio) >= 0.01) {
         lastEmittedRatio = ratio;
-        emit(EV.WEAPON_SPIN, { botIndex: index, weaponType: w.type, ratio });
+        // hapticScale rides along so the pad rumble can be per-bot without the
+        // input layer having to know the catalog.
+        emit(EV.WEAPON_SPIN, {
+          botIndex: index,
+          weaponType: w.type,
+          ratio,
+          hapticScale: w.tuning?.hapticScale ?? w.hapticScale ?? 1,
+        });
       }
       if (ratio > TU.minHitRatio) checkContacts(ctx);
     },
@@ -294,7 +303,15 @@ function createCrusher({ vehicle, index, emit }) {
   const spec = vehicle.spec;
   const w = spec.weapon;
   const zone = w.zone ?? frontZone(spec, w.reach ?? 1.2, { pad: -0.2, maxY: 1.0 });
+  // Releasing on the same zone that engaged means the tiniest wobble at the
+  // boundary drops the bite; the hold zone is deliberately looser.
+  const holdZone = w.holdZone ?? frontZone(spec, (w.reach ?? 1.2) + 1.6, { pad: 0.5, maxY: 1.6 });
   const clampForce = w.clampForce ?? 380; // lbf held at the jaw
+  const tuning = w.tuning ?? {};
+  // Where a bitten bot is carried: straight ahead of the jaw, on the deck.
+  const holdPoint = { x: 0, y: 0.25, z: -(spec.bodyDims.z / 2 + (tuning.holdReach ?? 1.2)) };
+  const holdStrength = tuning.holdStrength ?? 6; // 1/s spring toward the hold point
+  const holdDamping = tuning.holdDamping ?? 1; // share of the carrier's velocity matched
 
   let engaged = false;
   let stroke = 0;
@@ -310,15 +327,44 @@ function createCrusher({ vehicle, index, emit }) {
         engaged = true;
         emit(EV.WEAPON_FIRED, { botIndex: index, weaponType: "crusher" });
       }
-      if (!inZone) engaged = false;
+      // Once bitten, the jaw keeps its grip until the trigger is released or
+      // the target is torn out of the wider hold zone.
+      if (engaged && (!fire || !localZoneContains(holdZone, local))) engaged = false;
       stroke = m.clamp(stroke + (fire ? dt / 0.25 : -dt / 0.4), 0, 1);
       if (!engaged) return;
 
-      // Clamp: pin the target down at the jaw and bleed its velocity.
-      const jawPoint = m.add(foe.body.translation(), m.v3(0, 0.3, 0));
+      const carrier = vehicle.body;
+      const toFoe = horizontalBetween(carrier.translation(), foe.body.translation());
+      // Clamp: the jaw closes on the edge of the target NEAREST the crusher, so
+      // the bite pitches its nose down onto the wedge. Pressing straight down
+      // through the target's own centre — which is what a centred contact point
+      // does, torque-free — just bolts it to the floor, and the friction under
+      // 380lbf of it cancelled almost exactly the traction Quantum needed to
+      // tow anything: full throttle while biting moved it 0.01ft.
+      const jawPoint = m.add(foe.body.translation(), m.add(m.scale(toFoe, -0.5), m.v3(0, 0.3, 0)));
       foe.body.applyImpulseAtPoint(m.scale(UP, -clampForce * dt), jawPoint, true);
+
+      // Carry: servo the target toward a hold point in FRONT of the jaw so a
+      // bitten bot gets hauled around instead of merely pinned in place. The
+      // wanted velocity is the carrier's own plus a spring term, which is what
+      // makes the pair move as one unit. Equal-and-opposite at the jaw —
+      // dragging 250lb has to cost something, or the crusher tows for free.
+      const target = m.add(carrier.translation(), m.qRotate(carrier.rotation(), holdPoint));
+      const offset = m.sub(target, foe.body.translation());
+      const wanted = m.add(m.scale(carrier.linvel(), holdDamping), m.scale(offset, holdStrength));
+      const effective = (vehicle.mass * foe.mass) / (vehicle.mass + foe.mass);
+      let pull = m.scale(m.sub(wanted, foe.body.linvel()), effective * Math.min(1, dt * 10));
+      // Cap so a target that is somehow far away is tugged, not catapulted.
+      const cap = effective * (tuning.holdImpulseCap ?? 60) * dt;
+      const magnitude = m.length(pull);
+      if (magnitude > cap) pull = m.scale(pull, cap / magnitude);
+      foe.body.applyImpulse(pull, true);
+      carrier.applyImpulseAtPoint(m.scale(pull, -1), m.add(carrier.translation(), m.qRotate(carrier.rotation(), w.pivot)), true);
+      // Bleed the target toward the CARRIER's velocity, not toward zero. The
+      // absolute bleed this replaces was the other half of the anchor: it
+      // fought the tow every tick it was towed.
       const drag = Math.min(0.6, dt * TU.crusherDragBlendRate);
-      foe.body.applyImpulse(m.scale(foe.body.linvel(), -foe.mass * drag * 0.5), true);
+      foe.body.applyImpulse(m.scale(m.sub(carrier.linvel(), foe.body.linvel()), foe.mass * drag * 0.5), true);
 
       if (simTime - lastTickAt >= TU.crusherTickSeconds) {
         lastTickAt = simTime;

@@ -15,6 +15,16 @@
 //              "region": {"type": "box", "min": [..], "max": [..]} }]
 // Regions are in MODEL space (node translation applied), matching the
 // coordinates shown by glb-parts-report / the rainbow viewer.
+//
+// Two options make extract usable on an ALREADY-PARTITIONED GLB, where the
+// point is usually to hand a stowaway back to the chassis rather than to split
+// a new moving part out:
+//   "invert": true    — operate on the triangles OUTSIDE the region. Describing
+//                       the part you want to KEEP is far easier than describing
+//                       the scattered scan debris you want gone.
+//   "parent": "modelBody" — attach the new node under a group node instead of
+//                       at the scene root, so it inherits that part's transform
+//                       and the runtime loader sees it as body geometry.
 import fs from "node:fs";
 
 function align4(value) {
@@ -115,7 +125,7 @@ for (const op of ops) {
       c[2] += p[2] / 3;
     }
     const world = [c[0] + translation[0], c[1] + translation[1], c[2] + translation[2]];
-    const inside = inRegion(world, op.region);
+    const inside = inRegion(world, op.region) !== Boolean(op.invert);
     (inside ? moved : kept).push(indices[t], indices[t + 1], indices[t + 2]);
   }
   if (!moved.length) throw new Error(`part ${op.part}: region matched 0 triangles — check coordinates`);
@@ -132,7 +142,14 @@ for (const op of ops) {
     });
     const newNodeIndex = json.nodes.length;
     json.nodes.push({ name: `tripo_part_${op.newPart}`, mesh: meshIndex, translation: [...translation] });
-    json.scenes[0].nodes.push(newNodeIndex);
+    if (op.parent) {
+      const parent = json.nodes.find((n) => n.name === op.parent);
+      if (!parent) throw new Error(`parent node ${op.parent} not found`);
+      parent.children = parent.children || [];
+      parent.children.push(newNodeIndex);
+    } else {
+      json.scenes[0].nodes.push(newNodeIndex);
+    }
   }
 }
 

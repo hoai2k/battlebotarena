@@ -1,0 +1,11 @@
+[
+  {
+    "_comment": "Tripo's segmentation handed modelWeapon more than the drum: the front scoop plate, a fin and a scatter of shards came with it, so the whole assembly counter-rotated with the rotor. The drum itself is the compact mass around the pivot (0, 0.005, 0.251) — describe THAT and invert, because the debris is far easier to define by what it is not. The remainder becomes body geometry under modelBody.",
+    "part": 2,
+    "mode": "extract",
+    "newPart": 20,
+    "invert": true,
+    "parent": "modelBody",
+    "region": { "type": "box", "min": [-0.115, -0.115, 0.135], "max": [0.105, 0.085, 0.345] }
+  }
+]
