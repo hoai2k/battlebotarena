@@ -1,0 +1,7 @@
+{
+  "weapon": [15],
+  "wheels": [[5], [6], [17], [18]],
+  "weaponAxis": [1, 0, 0],
+  "pivotOverride": [0, -0.09, 0.42],
+  "aux": {"ram": {"parts": [13]}}
+}

@@ -1,0 +1,451 @@
+/* BattleBot Arena v2 — match HUD (overlay on the live canvas).
+   Everything here is pointer-events: none; the canvas keeps input. */
+
+.screen-match {
+  z-index: 3;
+}
+
+/* ------------------------------------------------------------------ top bar */
+
+.hud-top {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  gap: clamp(10px, 2vw, 26px);
+  padding: 16px clamp(14px, 2.4vw, 30px) 0;
+}
+
+.hud-bot {
+  --accent: var(--muted);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 430px;
+  padding: 10px 16px 12px;
+  border: 1px solid var(--line);
+  background:
+    var(--carbon),
+    linear-gradient(180deg, rgba(16, 19, 25, 0.88), rgba(8, 10, 13, 0.82));
+  clip-path: polygon(0 0, 100% 0, calc(100% - 16px) 100%, 0 100%);
+}
+
+.hud-bot-rival {
+  justify-self: end;
+  align-items: flex-end;
+  width: 100%;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 16px 100%);
+}
+
+.hud-bot-player {
+  width: 100%;
+}
+
+.hud-bot::before {
+  /* corner-color blade */
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 5px;
+  background: linear-gradient(180deg, var(--team, var(--red-hot)), color-mix(in srgb, var(--team, var(--red)) 45%, #000));
+}
+
+.hud-bot-player {
+  --team: var(--red);
+}
+
+.hud-bot-rival {
+  --team: var(--amber);
+}
+
+.hud-bot-rival::before {
+  left: auto;
+  right: 0;
+}
+
+.hud-bot-name {
+  font-family: var(--font-display);
+  font-size: clamp(1rem, 1.8vw, 1.35rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  transform: skewX(var(--skew));
+  color: var(--white);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.6);
+}
+
+.hud-damage {
+  position: relative;
+  width: clamp(180px, 22vw, 330px);
+  height: 18px;
+  border: 1px solid var(--line-strong);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 24px, rgba(0, 0, 0, 0.5) 24px 25px),
+    linear-gradient(180deg, #22262e, #101319);
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+  overflow: hidden;
+}
+
+.hud-damage-fill {
+  position: absolute;
+  inset: 0;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: linear-gradient(90deg, #ffb92e 0%, #ff7a1f 45%, var(--red-hot) 75%, #ff2f1f 100%);
+  box-shadow: 0 0 14px rgba(255, 93, 71, 0.6);
+  transition: transform 0.25s ease-out;
+}
+
+.hud-bot-rival .hud-damage-fill {
+  transform-origin: right center;
+  background: linear-gradient(270deg, #ffb92e 0%, #ff7a1f 45%, var(--red-hot) 75%, #ff2f1f 100%);
+}
+
+.hud-damage::after {
+  /* glass sheen on the meter */
+  content: "";
+  position: absolute;
+  inset: 0 0 55% 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent);
+  pointer-events: none;
+}
+
+.hud-damage-pct {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  color: var(--white);
+  text-shadow: 0 1px 2px #000, 0 0 6px #000;
+}
+
+.hud-bot.is-hurt .hud-damage {
+  border-color: rgba(255, 185, 46, 0.55);
+}
+
+.hud-bot.is-critical .hud-damage {
+  border-color: rgba(255, 63, 47, 0.8);
+  animation: criticalBlink 0.7s steps(2, jump-none) infinite;
+}
+
+@keyframes criticalBlink {
+  50% {
+    box-shadow: 0 0 18px rgba(255, 47, 31, 0.75);
+  }
+}
+
+.hud-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 16px;
+}
+
+.hud-tag {
+  padding: 2px 9px 1px;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: #1a0b03;
+  background: linear-gradient(180deg, var(--yellow), var(--amber));
+  clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+  animation: tagIn 0.3s ease;
+}
+
+@keyframes tagIn {
+  from {
+    transform: translateY(-6px);
+    opacity: 0;
+  }
+}
+
+/* -------------------------------------------------------------------- clock */
+
+.hud-clock-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.hud-clock {
+  min-width: 128px;
+  padding: 8px 20px 6px;
+  border: 1px solid var(--line-strong);
+  background:
+    var(--carbon),
+    linear-gradient(180deg, rgba(20, 24, 31, 0.95), rgba(7, 9, 12, 0.92));
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 2.6vw, 2.1rem);
+  letter-spacing: 0.06em;
+  line-height: 1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--white);
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.25);
+  clip-path: polygon(10px 0, calc(100% - 10px) 0, 100% 100%, 0 100%);
+}
+
+.hud-clock.is-final-minute {
+  color: var(--yellow);
+  text-shadow: 0 0 14px rgba(255, 210, 61, 0.5);
+  border-color: rgba(255, 210, 61, 0.5);
+}
+
+.hud-clock.is-critical {
+  color: var(--red-hot);
+  border-color: rgba(255, 93, 71, 0.7);
+  animation: clockPanic 0.5s steps(2, jump-none) infinite;
+}
+
+@keyframes clockPanic {
+  50% {
+    text-shadow: 0 0 20px rgba(255, 93, 71, 0.9);
+  }
+}
+
+.hud-phase {
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.34em;
+  text-indent: 0.34em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------- ticker */
+
+.hud-ticker {
+  position: absolute;
+  left: clamp(14px, 2.4vw, 30px);
+  bottom: 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(380px, 44vw);
+}
+
+.tick {
+  align-self: flex-start;
+  padding: 5px 14px 4px;
+  border-left: 3px solid var(--muted);
+  background: linear-gradient(90deg, rgba(9, 11, 15, 0.9), rgba(9, 11, 15, 0.55));
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--white);
+  clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+  animation: tickIn 0.22s ease;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+.tick b {
+  color: var(--yellow);
+  font-weight: 800;
+}
+
+.tick-alert {
+  border-left-color: var(--red-hot);
+  background: linear-gradient(90deg, rgba(87, 14, 8, 0.92), rgba(9, 11, 15, 0.55));
+}
+
+.tick-alert b {
+  color: var(--red-hot);
+}
+
+.tick.is-leaving {
+  opacity: 0;
+  transform: translateX(-14px);
+}
+
+@keyframes tickIn {
+  from {
+    transform: translateX(-18px);
+    opacity: 0;
+  }
+}
+
+/* --------------------------------------------------------------- countdown */
+
+.hud-countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(4, 5, 7, 0.55), transparent 70%);
+}
+
+#hud-countdown-num {
+  font-family: var(--font-display);
+  font-size: clamp(9rem, 26vh, 15rem);
+  line-height: 1;
+  transform: skewX(var(--skew));
+  background: linear-gradient(180deg, #fff 15%, #b7c1cd 55%, #6e7a89);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.6)) drop-shadow(0 0 40px rgba(255, 255, 255, 0.25));
+}
+
+#hud-countdown-num.is-word {
+  font-size: clamp(4.4rem, 16vh, 9rem);
+  letter-spacing: 0.04em;
+}
+
+#hud-countdown-num.is-fight {
+  background: linear-gradient(180deg, #ffd9a1 0%, var(--red-hot) 45%, var(--red-deep) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.65)) drop-shadow(0 0 52px rgba(255, 93, 71, 0.65));
+}
+
+#hud-countdown-num.pop {
+  animation: countPop 0.9s cubic-bezier(0.16, 1.2, 0.3, 1);
+}
+
+@keyframes countPop {
+  0% {
+    transform: skewX(var(--skew)) scale(2.1);
+    opacity: 0;
+  }
+  30% {
+    transform: skewX(var(--skew)) scale(1);
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: skewX(var(--skew)) scale(0.94);
+    opacity: 0.85;
+  }
+}
+
+/* ------------------------------------------------------------------- banner */
+
+.hud-banner {
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  padding: 14px 60px 10px;
+  font-family: var(--font-display);
+  font-size: clamp(4.5rem, 13vw, 9rem);
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--white);
+  text-shadow:
+    0 4px 0 rgba(0, 0, 0, 0.6),
+    0 0 46px rgba(255, 93, 71, 0.8);
+  background: linear-gradient(180deg, var(--red-hot), var(--red) 45%, var(--red-deep));
+  clip-path: polygon(26px 0, 100% 0, calc(100% - 26px) 100%, 0 100%);
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.45),
+    0 24px 70px rgba(232, 54, 42, 0.5);
+  transform: translateX(-50%) skewX(var(--skew));
+}
+
+.hud-banner.slam {
+  animation: bannerSlam 0.5s cubic-bezier(0.18, 1.4, 0.32, 1);
+}
+
+@keyframes bannerSlam {
+  0% {
+    transform: translateX(-50%) skewX(var(--skew)) scale(3.2);
+    opacity: 0;
+  }
+  55% {
+    transform: translateX(-50%) skewX(var(--skew)) scale(0.96);
+    opacity: 1;
+  }
+  70% {
+    transform: translateX(-51%) skewX(var(--skew)) scale(1.03) rotate(-0.6deg);
+  }
+  100% {
+    transform: translateX(-50%) skewX(var(--skew)) scale(1);
+  }
+}
+
+/* ------------------------------------------------------------ hazard callout */
+
+.hud-callout {
+  position: absolute;
+  top: 108px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0;
+  overflow: hidden;
+}
+
+.hud-callout span {
+  display: inline-block;
+  padding: 9px 34px 7px;
+  border-top: 3px solid var(--yellow);
+  border-bottom: 3px solid var(--yellow);
+  font-family: var(--font-display);
+  font-size: clamp(1.2rem, 2.6vw, 1.9rem);
+  letter-spacing: 0.24em;
+  text-indent: 0.24em;
+  text-transform: uppercase;
+  color: var(--yellow);
+  text-shadow: 0 0 18px rgba(255, 210, 61, 0.7), 0 2px 0 #000;
+  background:
+    repeating-linear-gradient(-45deg, rgba(255, 210, 61, 0.12) 0 12px, transparent 12px 24px),
+    rgba(8, 9, 12, 0.88);
+  clip-path: polygon(14px 0, 100% 0, calc(100% - 14px) 100%, 0 100%);
+}
+
+.hud-callout.is-in span {
+  animation: calloutIn 3.4s ease both;
+}
+
+@keyframes calloutIn {
+  0% {
+    transform: translateY(-120%);
+    opacity: 0;
+  }
+  10%,
+  88% {
+    transform: none;
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-120%);
+    opacity: 0;
+  }
+}
+
+/* --------------------------------------------------------------------- hint */
+
+.hud-hint {
+  position: absolute;
+  right: clamp(14px, 2.4vw, 30px);
+  bottom: 18px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: rgba(147, 160, 177, 0.5);
+}
+
+/* --------------------------------------------------------------- responsive */
+
+@media (max-width: 960px) {
+  .hud-damage {
+    width: clamp(150px, 26vw, 240px);
+  }
+
+  .hud-hint {
+    display: none;
+  }
+
+  .hud-ticker {
+    bottom: 20px;
+  }
+}

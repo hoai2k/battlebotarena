@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>v2 model viewer</title>
+  <style>
+    body { margin: 0; background: #14161a; color: #dde; font: 13px/1.4 system-ui; }
+    #hud { position: fixed; top: 10px; left: 10px; background: #000a; padding: 10px 14px; border-radius: 8px; white-space: pre; }
+    #hud b.weapon { color: #ff5d4d; } #hud b.wheel { color: #58aaff; } #hud b.body { color: #9a9; }
+  </style>
+  <script type="importmap">
+    { "imports": {
+      "three": "../vendor/three/three.module.js",
+      "three/addons/": "../vendor/three/addons/"
+    } }
+  </script>
+</head>
+<body>
+<div id="hud">loading…</div>
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const params = new URLSearchParams(location.search);
+const bot = params.get("bot") || "minotaur";
+const tint = params.get("tint") !== "0"; // tint parts by role; &tint=0 shows textures
+const src = params.get("src") || `../public/models/${bot}.glb`;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14161a);
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.01, 100);
+camera.position.set(1.4, 0.9, 1.4);
+const controls = new OrbitControls(camera, renderer.domElement);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x334, 2.2));
+const key = new THREE.DirectionalLight(0xffffff, 2.5);
+key.position.set(3, 5, 2);
+scene.add(key);
+scene.add(new THREE.GridHelper(2, 20, 0x333333, 0x222222));
+
+const hud = document.querySelector("#hud");
+window.__viewer = { scene, camera, controls, THREE }; // debug hook
+const partsMode = params.get("parts") === "1"; // rainbow-tint raw tripo_part_N nodes
+new GLTFLoader().load(src, (gltf) => {
+  scene.add(gltf.scene);
+  const lines = [`${src}`];
+  if (partsMode) {
+    const palette = [0xe6194b, 0x3cb44b, 0xffe119, 0x4363d8, 0xf58231, 0x911eb4, 0x46f0f0, 0xf032e6,
+      0xbcf60c, 0xfabebe, 0x008080, 0xe6beff, 0x9a6324, 0xfffac8, 0x800000, 0xaaffc3,
+      0x808000, 0xffd8b1, 0x000075, 0x808080, 0xffffff, 0xff4500, 0x7fff00, 0x1e90ff];
+    gltf.scene.traverse((object) => {
+      const match = /^tripo_part_(\d+)$/.exec(object.name || "");
+      if (!match) return;
+      const index = Number(match[1]);
+      const color = palette[index % palette.length];
+      object.traverse((child) => {
+        if (child.isMesh) child.material = new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.3 });
+      });
+      lines.push(`<span style="color:#${color.toString(16).padStart(6, "0")}">■ part ${index}</span>`);
+    });
+    hud.innerHTML = lines.join("\n");
+    return;
+  }
+  const tints = { modelWeapon: 0xff5d4d, "modelWheel": 0x58aaff };
+  gltf.scene.traverse((object) => {
+    if (["modelBody", "modelWeapon"].includes(object.name) || object.name.startsWith("modelWheel")) {
+      const cls = object.name === "modelWeapon" ? "weapon" : object.name === "modelBody" ? "body" : "wheel";
+      let verts = 0;
+      object.traverse((child) => { if (child.isMesh) verts += child.geometry.attributes.position.count; });
+      lines.push(`<b class="${cls}">${object.name}</b> children=${object.children.length} verts=${verts}` +
+        (object.userData.pivotLocal ? ` pivot=[${object.userData.pivotLocal.map((v) => v.toFixed(2))}]` : ""));
+      if (tint) {
+        const color = object.name === "modelWeapon" ? 0xff5d4d : object.name.startsWith("modelWheel") ? 0x58aaff : null;
+        if (color) object.traverse((child) => {
+          if (child.isMesh) child.material = new THREE.MeshStandardMaterial({ color, roughness: 0.5, metalness: 0.4 });
+        });
+      }
+      if (object.userData.pivotLocal) {
+        const marker = new THREE.Mesh(new THREE.SphereGeometry(0.02), new THREE.MeshBasicMaterial({ color: 0xffff00 }));
+        marker.position.fromArray(object.userData.pivotLocal);
+        scene.add(marker);
+      }
+    }
+  });
+  hud.innerHTML = lines.join("\n");
+}, undefined, (error) => { hud.textContent = "load error: " + error; });
+
+// &spin=1 animates modelWeapon around its pivot/axis — validates part maps
+// exactly the way the game will drive them.
+const spinMode = params.get("spin") === "1";
+let weaponPivot = null;
+setTimeout(() => {
+  const weapon = scene.getObjectByName("modelWeapon");
+  if (weapon && spinMode) {
+    const pivot = new THREE.Group();
+    const pivotLocal = weapon.userData.pivotLocal || [0, 0, 0];
+    weapon.parent.add(pivot);
+    pivot.position.fromArray(pivotLocal);
+    pivot.attach(weapon);
+    weaponPivot = { pivot, axis: new THREE.Vector3().fromArray(weapon.userData.weaponAxis || [0, 0, 1]).normalize() };
+  }
+}, 2500);
+
+(function frame() {
+  controls.update();
+  if (weaponPivot) weaponPivot.pivot.rotateOnAxis(weaponPivot.axis, 0.09);
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+})();
+addEventListener("resize", () => {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+});
+</script>
+</body>
+</html>
