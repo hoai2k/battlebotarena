@@ -493,11 +493,15 @@ export const CATALOG = {
       type: "lifterDisc",
       pivot: { x: 0, y: 0.88, z: 1.4 }, // MEASURED rear hinge, game space
       axis: { x: 1, y: 0, z: 0 }, // part-map axis is [0,0,1] pre-yaw
-      // MEASURED through the loader (game space, model grounded): -0.2 sets the
-      // forks on the deck from the baked (raised) pose, +1.0 stands the arm up
-      // with the disc overhead. Measuring in raw GLB space instead put the
-      // forks half a foot through the floor.
-      restAngle: -0.2,
+      // MEASURED through the loader (game space, model grounded): at -0.56 the
+      // arm's fork plate lies flat on the deck pointing straight ahead, which
+      // is the pose it scoops from; +1.0 stands the arm up with the disc
+      // overhead. Sizing rest by "no part of the arm below y=0" instead lands
+      // at -0.2 and leaves the forks a foot in the air — the arm's plate is
+      // deeper than the forks, so a little of it passes under the deck at rest.
+      // That is hidden: every camera sits above the floor (chase is bot.y+3.1,
+      // battle 7.5+, arena 15), so the arena floor occludes it.
+      restAngle: -0.56,
       fireAngle: 1.0,
       lowerSeconds: 0.65,
       liftImpulse: 150, // enough to tip a 250 lb opponent, spread over the stroke
