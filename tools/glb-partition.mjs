@@ -215,14 +215,64 @@ for (const [auxName, ids] of Object.entries(auxNodeIds)) {
 json.nodes.push(...newNodes);
 json.scenes[0].nodes = rootChildren;
 
-// --- 4. Repack BIN keeping only referenced bufferViews ---------------------
+// --- 4. Repack BIN keeping only LIVE data ----------------------------------
+// Reachability starts at the meshes, not at the accessor list: glb-carve
+// replaces a primitive's index accessor and leaves the old one behind, so
+// keeping every accessor's view kept megabytes of dead index buffers alive.
+const usedAccessors = new Set();
+for (const mesh of json.meshes || []) {
+  for (const primitive of mesh.primitives || []) {
+    if (primitive.indices !== undefined) usedAccessors.add(primitive.indices);
+    for (const accessorIndex of Object.values(primitive.attributes || {})) usedAccessors.add(accessorIndex);
+    for (const target of primitive.targets || []) {
+      for (const accessorIndex of Object.values(target)) usedAccessors.add(accessorIndex);
+    }
+  }
+}
+for (const skin of json.skins || []) {
+  if (skin.inverseBindMatrices !== undefined) usedAccessors.add(skin.inverseBindMatrices);
+}
+for (const animation of json.animations || []) {
+  for (const sampler of animation.samplers || []) {
+    usedAccessors.add(sampler.input);
+    usedAccessors.add(sampler.output);
+  }
+}
+
 const usedViews = new Set();
-(json.accessors || []).forEach((accessor) => {
-  if (accessor.bufferView !== undefined) usedViews.add(accessor.bufferView);
+usedAccessors.forEach((accessorIndex) => {
+  const accessor = json.accessors[accessorIndex];
+  if (accessor?.bufferView !== undefined) usedViews.add(accessor.bufferView);
 });
 (json.images || []).forEach((image, index) => {
   if (imageRemap.get(index) === index && image.bufferView !== undefined) usedViews.add(image.bufferView);
 });
+
+// Compact the accessor array too, so dead accessors don't linger in the JSON.
+const keptAccessors = [...usedAccessors].sort((a, b) => a - b);
+const accessorRemap = new Map(keptAccessors.map((oldIndex, newIndex) => [oldIndex, newIndex]));
+const remapAccessor = (value) => (value === undefined ? undefined : accessorRemap.get(value));
+for (const mesh of json.meshes || []) {
+  for (const primitive of mesh.primitives || []) {
+    if (primitive.indices !== undefined) primitive.indices = remapAccessor(primitive.indices);
+    for (const [semantic, accessorIndex] of Object.entries(primitive.attributes || {})) {
+      primitive.attributes[semantic] = remapAccessor(accessorIndex);
+    }
+    for (const target of primitive.targets || []) {
+      for (const [semantic, accessorIndex] of Object.entries(target)) target[semantic] = remapAccessor(accessorIndex);
+    }
+  }
+}
+for (const skin of json.skins || []) {
+  if (skin.inverseBindMatrices !== undefined) skin.inverseBindMatrices = remapAccessor(skin.inverseBindMatrices);
+}
+for (const animation of json.animations || []) {
+  for (const sampler of animation.samplers || []) {
+    sampler.input = remapAccessor(sampler.input);
+    sampler.output = remapAccessor(sampler.output);
+  }
+}
+json.accessors = keptAccessors.map((oldIndex) => json.accessors[oldIndex]);
 const keptViews = [...usedViews].sort((a, b) => a - b);
 const viewRemap = new Map(keptViews.map((oldIndex, newIndex) => [oldIndex, newIndex]));
 let cursor = 0;
