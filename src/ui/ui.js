@@ -109,7 +109,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       <span class="bot-card-img"><span class="random-glyph">?</span></span>
       <span class="bot-card-name">${RANDOM_CARD.name}</span>
       <span class="bot-card-badge">${RANDOM_CARD.weaponType}</span>
-      <span class="bot-card-stats"><span class="random-note">ANY OF THE EIGHT<br />REVEALED AT THE BOX</span></span>`;
+      <span class="bot-card-stats"><span class="random-note">ANY OF THE ${BOT_CARDS.length}<br />REVEALED AT THE BOX</span></span>`;
     return el;
   }
 
@@ -143,9 +143,23 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     refreshSelect();
   }
 
+  // The roster grid is sized from the card count. Cards fill whole rows and the
+  // random strip gets the trailing `auto` row to itself; hard-coding four
+  // columns meant a ninth and tenth bot spilled onto that strip's row.
+  function layoutRoster() {
+    if (!grid) return;
+    const count = BOT_CARDS.length;
+    const width = window.innerWidth || 1440;
+    const columns = Math.max(1, Math.min(width >= 1280 ? 5 : width >= 960 ? 4 : 3, count));
+    grid.style.setProperty("--roster-cols", String(columns));
+    grid.style.setProperty("--roster-rows", String(Math.ceil(count / columns)));
+  }
+
   if (grid) {
     BOT_CARDS.forEach((card) => grid.appendChild(buildCard(card)));
     grid.appendChild(buildRandomCard());
+    layoutRoster();
+    window.addEventListener("resize", layoutRoster);
     grid.addEventListener("click", (ev) => {
       const cardEl = /** @type {HTMLElement} */ (ev.target instanceof Element ? ev.target.closest(".bot-card") : null);
       if (!cardEl || cardEl.classList.contains("is-disabled")) return;
