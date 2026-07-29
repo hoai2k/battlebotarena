@@ -9,7 +9,7 @@
  *   name: string,
  *   tagline: string,
  *   weaponType: string,          // badge copy, e.g. "DRUM SPINNER"
- *   weaponClass: 'spinner'|'flipper'|'crusher'|'hammerSaw',
+ *   weaponClass: 'spinner'|'flipper'|'crusher'|'hammerSaw'|'hammer'|'lifterDisc',
  *   stats: { speed: number, power: number, armor: number }, // 1-5
  *   accent: string,              // CSS color for card edge / glow
  *   image: string,               // resolved relative to v2/index.html
@@ -96,6 +96,26 @@ export const BOT_CARDS = [
     stats: { speed: 2, power: 5, armor: 2 },
     accent: "#c8ccd4",
     image: "./public/reference/tombstone.png",
+  },
+  {
+    id: "beta",
+    name: "Beta",
+    tagline: "Comes in from the top.",
+    weaponType: "OVERHEAD HAMMER",
+    weaponClass: "hammer",
+    stats: { speed: 2, power: 5, armor: 4 },
+    accent: "#d8dbe0",
+    image: "./public/reference/beta.png",
+  },
+  {
+    id: "whiplash",
+    name: "Whiplash",
+    tagline: "Lift them, then bury the disc.",
+    weaponType: "LIFTER + DISC",
+    weaponClass: "lifterDisc",
+    stats: { speed: 5, power: 3, armor: 3 },
+    accent: "#d8e021",
+    image: "./public/reference/whiplash.png",
   },
 ];
 

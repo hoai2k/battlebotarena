@@ -45,6 +45,10 @@ export function completeInput(input = {}) {
     leftDrive: m.clamp(input.leftDrive ?? 0, -1, 1),
     rightDrive: m.clamp(input.rightDrive ?? 0, -1, 1),
     weapon: Boolean(input.weapon),
+    // Secondary weapon channel (RB): Sawblaze's saw motor, Whiplash's disc.
+    // This used to be dropped here, so the only consumers were the renderer
+    // and the audio layer — the sim never saw the toggle at all.
+    sawActive: Boolean(input.sawActive),
     brake: Boolean(input.brake),
   };
 }

@@ -39,7 +39,7 @@
   wheelAnchors: {x:number,y:number,z:number}[],
   maxSpeedFps: number, accel: number, turnRate: number,
   accent: string, accentDark: string,
-  weapon: { type: 'bar'|'drum'|'flipper'|'crusher'|'hammerSaw',
+  weapon: { type: 'bar'|'drum'|'flipper'|'crusher'|'hammerSaw'|'hammer'|'lifterDisc',
             spinUpSeconds?: number, inertia?: number, maxOmega?: number,
             budgetCap?: number, radius?: number,
             dims: {x:number,y:number,z:number},
@@ -411,12 +411,119 @@ export const CATALOG = {
       { shape: "box", halfExtents: { x: 0.29, y: 0.395, z: 0.49 }, offset: { x: 1.039, y: 0.385, z: 0.363 } }, // right tire block
     ],
   },
+
+  beta: {
+    id: "beta",
+    name: "Beta",
+    tagline: "Comes in from the top.",
+    referenceImage: "./public/reference/beta.png",
+    modelPath: "./public/models/beta.glb",
+    modelYaw: Math.PI, // MEASURED: model faces +Z, game wants -Z
+    // The auto footprint fit is skewed by the hammer overhanging the tail; 2.9
+    // sizes the SHELL to the real robot's 82cm x 80cm instead.
+    modelScale: 2.9,
+    // Beta's wheels live inside the shell and did not segment out, so the
+    // procedural fallback would poke cylinders through the bodywork.
+    hideWheels: true,
+    weightLbs: 250,
+    weaponWeightLbs: 24, // 11 kg head
+    bodyDims: { x: 2.77, y: 1.09, z: 2.49 }, // MEASURED shell at modelScale 2.9
+    wheelAnchors: [
+      { x: -0.95, y: 0.2, z: -0.85 },
+      { x: 0.95, y: 0.2, z: -0.85 },
+      { x: -0.95, y: 0.2, z: 0.65 },
+      { x: 0.95, y: 0.2, z: 0.65 },
+    ],
+    maxSpeedFps: mph(8), // 11.73
+    accel: 7.0,
+    turnRate: 0.95,
+    accent: "#b9bcc0",
+    accentDark: "#17181c",
+    weapon: {
+      type: "hammer",
+      pivot: { x: 0.04, y: 0.87, z: -0.41 }, // MEASURED gearbox hinge, game space
+      axis: { x: 1, y: 0, z: 0 },
+      restAngle: 0, // GLB is baked cocked: head up and back over the tail
+      // MEASURED through the loader (game space, model grounded): at -2.72 the
+      // head bottoms out 0.05ft above the floor, ~1ft past the nose; a shade
+      // further and it digs in. Negative because modelYaw PI flips the model's
+      // lateral axis relative to the catalog's +X convention.
+      fireAngle: -2.72,
+      budgetCap: 320, // heavy single impact
+      dims: { x: 0.16, y: 0.5, z: 0.16 },
+      downforce: 120, // lbf of magnet, held on while grounded
+      reactionScale: 0.15, // magnets eat the strike reaction
+      selfRightRate: 5.5, // rad/s of pitch when fired while inverted
+      tuning: { strokeSeconds: 0.22, returnSeconds: 0.9, reach: 1.8 },
+    },
+    colliders: [
+      // Truncated pyramid, four stacked slabs (MEASURED y-slices of the shell).
+      { shape: "box", halfExtents: { x: 1.3, y: 0.14, z: 1.15 }, offset: { x: 0, y: 0.14, z: -0.27 } },
+      { shape: "box", halfExtents: { x: 0.95, y: 0.16, z: 1.0 }, offset: { x: 0, y: 0.44, z: -0.05 } },
+      { shape: "box", halfExtents: { x: 0.6, y: 0.13, z: 0.7 }, offset: { x: 0, y: 0.73, z: -0.15 } },
+      { shape: "box", halfExtents: { x: 0.25, y: 0.12, z: 0.2 }, offset: { x: 0, y: 0.97, z: -0.3 } }, // hammer gearbox
+    ],
+  },
+
+  whiplash: {
+    id: "whiplash",
+    name: "Whiplash",
+    tagline: "Lift them, then bury the disc.",
+    referenceImage: "./public/reference/whiplash.png",
+    modelPath: "./public/models/whiplash.glb",
+    modelYaw: Math.PI / 2, // MEASURED: model faces +X, game wants -Z
+    modelScale: 3.19, // colliders below are authored at this scale
+    weightLbs: 250,
+    weaponWeightLbs: 22, // the disc
+    bodyDims: { x: 2.2, y: 1.15, z: 3.1 }, // MEASURED shell at modelScale 3.19
+    // Four exposed wheels, MEASURED from the GLB wheel pivots. Both pairs sit
+    // in the rear half — the front of the chassis is all arm and forks.
+    wheelAnchors: [
+      { x: -1.07, y: 0.23, z: -0.14 },
+      { x: 1.07, y: 0.23, z: -0.14 },
+      { x: -1.08, y: 0.23, z: 1.12 },
+      { x: 1.08, y: 0.23, z: 1.12 },
+    ],
+    maxSpeedFps: 16.0, // known for its driving
+    accel: 8.5,
+    turnRate: 1.1,
+    accent: "#d8e021",
+    accentDark: "#141414",
+    weapon: {
+      type: "lifterDisc",
+      pivot: { x: 0, y: 0.88, z: 1.4 }, // MEASURED rear hinge, game space
+      axis: { x: 1, y: 0, z: 0 }, // part-map axis is [0,0,1] pre-yaw
+      // MEASURED through the loader (game space, model grounded): -0.2 sets the
+      // forks on the deck from the baked (raised) pose, +1.0 stands the arm up
+      // with the disc overhead. Measuring in raw GLB space instead put the
+      // forks half a foot through the floor.
+      restAngle: -0.2,
+      fireAngle: 1.0,
+      lowerSeconds: 0.65,
+      liftImpulse: 150, // enough to tip a 250 lb opponent, spread over the stroke
+      liftRecoil: 0.5,
+      dims: { x: 0.14, y: 0.42, z: 0.42 },
+      disc: {
+        spinUpSeconds: 1.4,
+        maxOmega: 380,
+        inertia: 0.55,
+        budgetCap: 90, // moderate per-hit; damage comes from repetition
+        contactDamagePerSecond: 14,
+      },
+      tuning: { strokeSeconds: 0.5, reach: 1.5, hapticScale: 1.2 },
+    },
+    colliders: [
+      { shape: "box", halfExtents: { x: 1.05, y: 0.285, z: 1.28 }, offset: { x: 0, y: 0.35, z: 0.32 } }, // chassis
+      { shape: "box", halfExtents: { x: 0.53, y: 0.28, z: 0.45 }, offset: { x: 0, y: 0.89, z: 1.05 } }, // arm tower
+      { shape: "box", halfExtents: { x: 0.59, y: 0.07, z: 0.32 }, offset: { x: 0, y: 0.12, z: -1.27 } }, // chassis wedgelets
+    ],
+  },
 };
 
 /** Stable display order for UI grids. */
 export const BOT_IDS = Object.freeze([
-  "biteforce", "bronco", "huge", "hypershock",
-  "minotaur", "quantum", "sawblaze", "tombstone",
+  "beta", "biteforce", "bronco", "huge", "hypershock",
+  "minotaur", "quantum", "sawblaze", "tombstone", "whiplash",
 ]);
 
 /** @returns {BotSpec} */

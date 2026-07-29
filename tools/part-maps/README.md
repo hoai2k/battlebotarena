@@ -1,7 +1,14 @@
-# Segmentation notes — Beta & Whiplash
+# Part maps — the model part contract, and how Beta & Whiplash were cut
 
-How each model was cut into moving parts, and what was checked. Read this
-alongside the part maps in `part-maps/` if a part ever needs re-cutting.
+One `<bot>.json` per bot, mapping raw Tripo segmentation parts onto the game's
+part nodes. `glb-partition.mjs` consumes them; read this if a part ever needs
+re-cutting.
+
+Both bots below are integrated. Where these notes propose catalog values
+(`modelYaw`, `restAngle` / `fireAngle`, colliders), the shipped catalog uses
+figures MEASURED through the loader in game space instead — see the comments
+there. The arm angles in particular differ: measuring in raw GLB space put
+Whiplash's forks half a foot through the floor.
 
 ## The part contract
 

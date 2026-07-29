@@ -53,9 +53,9 @@ and haptics subscribe. This replaces v1's tangled direct calls.
 Event payloads (all positions world-space `{x,y,z}`):
 
 - `EV.IMPACT` — `{ botIndex, otherIndex|null, surface: 'bot'|'wall'|'floor'|'ceiling'|'prop', point, normal, force, relSpeed }` from contact force events.
-- `EV.WEAPON_HIT` — `{ attackerIndex, targetIndex|null, point, normal, impulse, energyBefore, heavy }` scripted spinner/flipper/crusher budget hits.
+- `EV.WEAPON_HIT` — `{ attackerIndex, targetIndex|null, point, normal, impulse, appliedImpulse, energyBefore, heavy }` scripted weapon hits. `impulse` is the DAMAGE proxy (what `match.js` scales); `appliedImpulse` is the physical impulse the body received (effects, haptics).
 - `EV.WEAPON_FIRED` — `{ botIndex, weaponType }` flipper stroke / hammer swing start.
-- `EV.WEAPON_SPIN` — `{ botIndex, weaponType, ratio }` emitted when spin ratio changes ≥0.01.
+- `EV.WEAPON_SPIN` — `{ botIndex, weaponType, ratio, hapticScale }` emitted when spin ratio changes ≥0.01.
 - `EV.HAZARD_CONTACT` — `{ botIndex, kind: 'killSaw'|'screw', point, intensity }` continuous while grinding.
 - `EV.HAZARD_LAUNCH` — `{ botIndex, kind, point, impulse }` the big saw pop.
 - `EV.DAMAGE` — `{ botIndex, amount, zone: 'body'|'weapon'|'drive', kind, point }` game layer, post-scaling.
@@ -84,7 +84,8 @@ export async function createSim({ bots, emit }) // bots: [BotSimSpec, BotSimSpec
 
 - Fixed timestep 1/120s accumulator inside `stepFrame`; render state is
   interpolated between the last two ticks. Cap 8 substeps per frame.
-- `DriveInput = { leftDrive: -1..1, rightDrive: -1..1, weapon: bool, brake: bool }`
+- `DriveInput = { leftDrive: -1..1, rightDrive: -1..1, weapon: bool, sawActive: bool, brake: bool }`
+  — `sawActive` is the secondary (RB) channel: Sawblaze's saw motor, Whiplash's disc.
 - `BotSimSpec` comes from the catalog (below): masses, dims, wheel probe
   anchors, weapon type/params, collider spec.
 - Arena colliders (floor/walls/ceiling/deck slab/saw slots/screw shafts) are
@@ -122,6 +123,14 @@ export async function createSim({ bots, emit }) // bots: [BotSimSpec, BotSimSpec
    ticks while engaged.
 6. **Hammer-saw** (sawblaze): arc swing on press; contact during swing =
    medium impulse + grind damage ticks while held on target.
+6b. **Hammer** (beta): fast stroke, slow re-cock, and the strike lands LATE in
+   the arc — the head is worth `stroke²` of the budget, so a graze near the top
+   is nothing. Standing `downforce` (magnets) and a damped strike reaction keep
+   it from throwing itself over; firing while inverted self-rights it.
+6c. **Lifter + disc** (whiplash): the arm is HELD at an angle rather than
+   fired, so lift spreads across the stroke and an opponent can be carried at
+   whatever height the player holds. The disc is an independent spinner on the
+   `sawActive` channel dealing continuous contact damage.
 7. **Kill saws**: solid kinematic cuboids animated with
    `setNextKinematicTranslation` rising from floor slots — Rapier launches
    bots for free; add tangential grind impulse + `EV.HAZARD_CONTACT` from
@@ -165,6 +174,31 @@ Port stats from v1 `src/botConfig.js` (speeds, weights, weapon params) into:
 All 8 v1 bots must be present with sane numbers (copy v1 values; estimate
 wheel anchors from reference images / v1 collider configs).
 
+## Weapon tuning (v2/src/sim/weaponTuning.js — SIM)
+
+The catalog nests per-bot weapon numbers under `weapon.tuning`. `weapons.js`
+does not read them directly: `resolveWeaponTuning(spec)` flattens the block
+(tuning wins over weapon-level wins over defaults) and `createSpinnerModel(spec)`
+runs v1's spinner shaping chain over it. The numbers are raw v1 values in v1
+units, so the module also owns the bridge — v1 rigid bodies used
+`mass = weightLbs * 0.075`, v2 uses true slugs, so a v1 impulse ports across at
+`V1_IMPULSE_TO_V2` (0.41441) and torque impulses port by the per-bot
+angular-inertia ratio.
+
+Consequences worth knowing before touching it:
+
+- `weapon.budgetCap` is v1's `spinnerImpactCap`, applied INSIDE the chain
+  before `impulseScale` and the unit bridge. It is in v1 impulse units.
+- `EV.WEAPON_HIT.impulse` is a DAMAGE proxy (v1's pre-`impulseScale` hit
+  strength); `appliedImpulse` is what the body actually received. `match.js`
+  reads the former, effects/haptics the latter.
+- `DAMAGE_CALIBRATION` sets match pace; `WEAPON_TUNING.hitCooldownSeconds`
+  sets hit rate. Those two are the knobs, in that order.
+
+`node tools/weapon-tuning-verify.mjs` prints the hit ladder per spinner —
+today's sim, the v1 reference, and what the module produces — against the real
+catalog. Re-run it after any tuning edit.
+
 ## Model contract (v2/src/assets/models.js — GAME agent)
 
 `loadBotModel(spec, { onProgress } = {})` → `{ group, parts: { body,
@@ -172,7 +206,18 @@ weapon|null, wheels: [] } }`. `onProgress(fraction|null)` reports GLB download
 progress — a 0..1 fraction while the response carries a total, `null` when it
 does not (chunked/gzipped responses), which callers render as an indeterminate
 bar. Parsed responses are cached, so a rematch does not re-download.
-GLBs have nodes named `modelBody`, `modelWeapon`, `modelWheel-0…N`. **Until
+GLBs have nodes named `modelBody`, `modelWeapon`, `modelWheel-0…N`, plus
+`modelWeaponSub-<name>` for a part that swings with the arm AND spins on its
+own (Sawblaze's saw, Whiplash's disc) and `modelAux-<name>` for a part
+anchored at its base and scaled (Bronco's ram). `tools/part-maps/README.md`
+documents the contract from the segmentation side. `hideWheels: true` skips
+the procedural wheel fallback for a bot whose real wheels are enclosed by its
+shell (Beta) — the suspension still runs off `wheelAnchors`.
+
+**Weapon arm angles (`restAngle` / `fireAngle`) must be measured in GAME
+space, through the loader** — after `modelYaw`, `modelScale` and grounding.
+Measuring in raw GLB space is off by enough to bury a fork half a foot in the
+floor. **Until
 real GLBs land, and whenever a file/part is missing, build placeholder
 geometry from `bodyDims` + weapon type** (box chassis, cylinder drum/bar, box
 flipper plate) with per-bot accent colors — the game must be fully playable

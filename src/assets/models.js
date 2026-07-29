@@ -126,6 +126,29 @@ function placeholderWeapon(spec) {
     tooth.position.set(0, -0.2, -dims.z * 2 + 0.1);
     tooth.rotation.x = Math.PI;
     group.add(tooth);
+  } else if (weapon.type === "hammer") {
+    // Truss arm out to a cylindrical head, hinged at the pivot.
+    const reach = Math.max(0.8, dims.y * 2);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, reach), dark);
+    arm.position.z = -reach / 2;
+    group.add(arm);
+    const head = cylinderAcross(0.22, 0.3, accent, "x");
+    head.position.z = -reach;
+    group.add(head);
+  } else if (weapon.type === "lifterDisc") {
+    // Lifter beam with fork prongs, plus the disc that rides on it.
+    const reach = Math.max(1.0, dims.z * 4);
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.14, reach), dark);
+    beam.position.z = -reach / 2;
+    group.add(beam);
+    for (const side of [-1, 1]) {
+      const prong = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.5), accent);
+      prong.position.set(side * 0.28, -0.06, -reach - 0.2);
+      group.add(prong);
+    }
+    const disc = cylinderAcross(weapon.disc?.radius ?? 0.42, 0.07, accent, "x");
+    disc.position.set(0, 0.25, -reach * 0.55);
+    group.add(disc);
   } else if (weapon.type === "hammerSaw") {
     const sawCenter = weapon.tuning?.sawCenter || { x: 0, y: 0, z: -0.9 };
     const armVec = new THREE.Vector3(
@@ -254,7 +277,8 @@ function detach(node) {
  */
 export function weaponVisualAngle(visual, spec, state) {
   const type = spec.weapon?.type;
-  if (type === "flipper" || type === "hammerSaw" || type === "crusher") {
+  if (type === "flipper" || type === "hammerSaw" || type === "crusher"
+    || type === "hammer" || type === "lifterDisc") {
     const stroke = THREE.MathUtils.clamp(state.weaponAngle ?? 0, 0, 1);
     if (visual.weaponIsPlaceholder) return stroke * (spec.weapon.throwAngle ?? 0.9);
     // GLB arms are baked in one pose (angle 0). restAngle poses the arm at
@@ -379,7 +403,10 @@ export async function loadBotModel(spec, { onProgress } = {}) {
       wheels.push(pivot);
     }
   }
-  if (wheels.length === 0) wheels.push(...placeholderWheels(spec).map((wheel, i) => {
+  // hideWheels: the bot's real wheels are enclosed by its shell and never
+  // segmented out (Beta), so the procedural fallback would push cylinders
+  // through the bodywork. The suspension still runs off wheelAnchors.
+  if (wheels.length === 0 && !spec.hideWheels) wheels.push(...placeholderWheels(spec).map((wheel, i) => {
     const pivot = new THREE.Group();
     pivot.name = `wheelPivot-${i}`;
     pivot.position.copy(wheel.position);
