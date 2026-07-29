@@ -179,6 +179,21 @@ flipper plate) with per-bot accent colors — the game must be fully playable
 with placeholders. Weapon pivot/axis from catalog; when a GLB weapon part
 exists, its bbox center may override pivot.
 
+### Model repair tools (v2/tools/)
+
+The GLBs are photogrammetry, so they carry scan artefacts the reference photos
+could not see around. Repairs are re-runnable steps over the *shipped* GLB
+(they need the `model*` group nodes, so they run after `glb-partition`), each
+driven by a checked-in spec so the edit is reviewable and repeatable:
+
+| Tool | Spec | Fixes |
+|---|---|---|
+| `glb-add-panels.mjs` | `tools/panels/<bot>.json` | surfaces the scan never saw — Tombstone had no rear panel and no floor, so you could see into the chassis from behind or below |
+| `glb-erase-decal.mjs` | `tools/panels/<bot>-*.json` | livery mirrored onto the wrong side — HUGE's eyes are bolted to the front of the frame only, but the scan painted (and embossed) them on the rear faces too |
+
+`glb-erase-decal.mjs` needs `sharp` (`npm i --no-save sharp`) and takes an
+optional debug directory that dumps what it saw and what it selected.
+
 ## Game layer (v2/src/game/ — GAME agent)
 
 - `match.js`: `createMatch({ sim, specs, emit, on })` — countdown (3-2-1-FIGHT),
