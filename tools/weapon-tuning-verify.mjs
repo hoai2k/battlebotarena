@@ -1,15 +1,15 @@
 // Spinner hit ladder: what the sim does today vs what this update makes it do.
 //
-//   node v2/updates/weapon-tuning/verify.mjs
+//   node tools/weapon-tuning-verify.mjs
 //
 // Reports, per spinner, at four spin ratios:
 //   dV+  target horizontal launch speed (ft/s)   dV^  vertical launch (ft/s)
 //   dmg  match.js damage for that hit (% of 100) CAP  the budget cap clamped it
 // "now" = current v2/src/sim/weapons.js, "v1" = root src/physics.js reference,
-// "new" = v2/updates/weapon-tuning/weaponTuning.js.
+// "new" = v2/src/sim/weaponTuning.js (what the sim now does).
 
-import { CATALOG } from "../../src/assets/catalog.js";
-import { createSpinnerModel, V1, V1_IMPULSE_TO_V2 } from "./weaponTuning.js";
+import { CATALOG } from "../src/assets/catalog.js";
+import { createSpinnerModel, V1, V1_IMPULSE_TO_V2 } from "../src/sim/weaponTuning.js";
 
 const G = 32.174;
 const SLUG = (lbs) => lbs / G;

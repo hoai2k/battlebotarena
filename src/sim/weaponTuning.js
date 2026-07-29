@@ -1,6 +1,6 @@
 // BattleBot Arena v2 — weapon tuning resolver.
 //
-// DROP-IN TARGET: v2/src/sim/weaponTuning.js  (SIM area, imported by weapons.js)
+// Imported by weapons.js (SIM area).
 //
 // Two jobs:
 //   1. Flatten `catalog.weapon.tuning` into the names the sim reads, with

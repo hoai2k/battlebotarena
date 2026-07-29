@@ -252,14 +252,15 @@ function syncBotVisual(visual, spec, state) {
   }
 }
 
-// Sawblaze's saw disc: nested sub-spinner inside the arm. Spins up while the
-// RB toggle is on, coasts down when off; rides the arm's swing either way.
+// Nested sub-spinner inside a weapon arm (Sawblaze's saw, Whiplash's disc).
+// Spins up while the RB toggle is on, coasts down when off; rides the arm's
+// swing either way.
 // Negative: the disc cuts on the DOWNSWING, so the teeth travel toward the
 // target as the arm chops rather than away from it.
 const SAW_DISC_SPEED = -67.2; // rad/s at full speed (was 42, +60%)
 function updateWeaponSub(visual, spec, slot, dt, active) {
   const sub = visual.parts.weaponSub;
-  if (!sub || spec.weapon?.type !== "hammerSaw") return;
+  if (!sub || !["hammerSaw", "lifterDisc"].includes(spec.weapon?.type)) return;
   const state = (visual.__subSpin ||= { angle: 0, speed: 0 });
   const target = active ? SAW_DISC_SPEED : 0;
   state.speed += (target - state.speed) * Math.min(1, dt * (active ? 2.2 : 1.1));
@@ -288,7 +289,9 @@ function shapePlayerInput(raw, spec, slot) {
     if (weaponEdge) weaponLatch[slot] = !weaponLatch[slot];
     return { ...raw, weapon: weaponLatch[slot] };
   }
-  if (type === "hammerSaw") {
+  // hammerSaw and lifterDisc both split their controls: the trigger drives the
+  // arm, RB toggles the disc motor.
+  if (type === "hammerSaw" || type === "lifterDisc") {
     if (altEdge) sawActive[slot] = !sawActive[slot];
     return { ...raw, sawActive: sawActive[slot] };
   }

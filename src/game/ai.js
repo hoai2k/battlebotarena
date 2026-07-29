@@ -235,10 +235,28 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
     } else if (distance < 2.6) {
       weapon = true; // keep grinding while parked on the foe
     }
+  } else if (type === "hammer") {
+    // One heavy swing, then wait out the slow re-cock: swinging early wastes
+    // the stroke, since the head only pays off at the bottom of the arc.
+    const cycle = (spec.weapon.tuning?.strokeSeconds || 0.22)
+      + (spec.weapon.tuning?.returnSeconds || 0.9) + 0.15;
+    if (ai.mode === "strike" && distance < strikeRange * 0.8 && ai.t - ai.lastFireAt > cycle) {
+      ai.lastFireAt = ai.t;
+    }
+    weapon = ai.t - ai.lastFireAt < (spec.weapon.tuning?.strokeSeconds || 0.22);
+  } else if (type === "lifterDisc") {
+    // Get under them and hold the arm up — the lift is the point, the disc is
+    // opportunistic. Hold the arm DOWN while closing so the forks can scoop.
+    weapon = distance < strikeRange * 0.85;
+    if (weapon && distance < 2.4) throttleScale = 0.6; // stay under them
   }
+
+  // Disc/saw motor is a separate channel; the AI simply runs it whenever it is
+  // anywhere near the fight. Without this an AI Sawblaze never spun its saw.
+  const sawActive = (type === "hammerSaw" || type === "lifterDisc") && distance < engage + 3;
 
   const throttle = steer.throttle * level.drive * throttleScale;
   const turn = clamp(steer.turn * level.turnGain, -1, 1);
   const { leftDrive, rightDrive } = tankFrom(throttle, turn);
-  return { leftDrive, rightDrive, weapon, brake: false };
+  return { leftDrive, rightDrive, weapon, brake: false, sawActive };
 }
