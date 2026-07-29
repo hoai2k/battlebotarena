@@ -93,6 +93,19 @@ game animates independently. The pipeline lives in `tools/`:
 `tools/glb-carve.mjs` does triangle-level surgery (deleting junk geometry or
 extracting a sub-part like a saw disc) when segmentation fuses things together.
 
+Two more tools keep the shipped models small:
+
+```bash
+node tools/glb-size-report.mjs public/models/*.glb        # where the bytes go
+node tools/glb-texture-optimize.mjs in.glb out.glb 92     # metallicRoughness PNG -> JPEG
+```
+
+`glb-partition.mjs` already drops unreferenced buffers, and the texture pass
+re-encodes only the metallicRoughness maps (smooth non-colour data, where JPEG
+is visually free) — base-colour and normal maps are left untouched. Together
+these cut the model set from 144 MB to 111 MB with identical geometry, UVs,
+node names and pivots.
+
 The game never requires these: any bot with a missing GLB or missing part falls
 back to procedural placeholder geometry and stays fully playable.
 
