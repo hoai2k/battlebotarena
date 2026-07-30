@@ -249,11 +249,23 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
     // opportunistic. Hold the arm DOWN while closing so the forks can scoop.
     weapon = distance < strikeRange * 0.85;
     if (weapon && distance < 2.4) throttleScale = 0.6; // stay under them
+  } else if (type === "grappler") {
+    // Bite, hoist, throw. The forks have to be DOWN for the sim to take a grip,
+    // so the lift channel stays off until the jaw has had time to shut on them.
+    if (distance < strikeRange * 0.75) ai.latchedUntil = ai.t + 3.2;
+    const latched = ai.t < ai.latchedUntil;
+    const heldFor = latched ? 3.2 - (ai.latchedUntil - ai.t) : 0;
+    weapon = latched && heldFor > 0.6 && heldFor < 2.6; // hoist, then let it drop
+    if (latched && distance < 2.6) throttleScale = 0.5; // stay planted on the carry
   }
 
   // Disc/saw motor is a separate channel; the AI simply runs it whenever it is
   // anywhere near the fight. Without this an AI Sawblaze never spun its saw.
-  const sawActive = (type === "hammerSaw" || type === "lifterDisc") && distance < engage + 3;
+  // For the grappler the same channel is the jaw: shut it near the foe, and
+  // open it again at the top of the hoist so the throw actually releases.
+  const sawActive = type === "grappler"
+    ? (ai.t < ai.latchedUntil && ai.latchedUntil - ai.t > 0.55)
+    : ((type === "hammerSaw" || type === "lifterDisc") && distance < engage + 3);
 
   const throttle = steer.throttle * level.drive * throttleScale;
   const turn = clamp(steer.turn * level.turnGain, -1, 1);

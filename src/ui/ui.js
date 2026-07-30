@@ -150,7 +150,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     if (!grid) return;
     const count = BOT_CARDS.length;
     const width = window.innerWidth || 1440;
-    const columns = Math.max(1, Math.min(width >= 1280 ? 5 : width >= 960 ? 4 : 3, count));
+    const columns = Math.max(1, Math.min(width >= 1120 ? 5 : width >= 960 ? 4 : 3, count));
     grid.style.setProperty("--roster-cols", String(columns));
     grid.style.setProperty("--roster-rows", String(Math.ceil(count / columns)));
   }

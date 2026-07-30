@@ -164,7 +164,10 @@ Port stats from v1 `src/botConfig.js` (speeds, weights, weapon params) into:
   bodyDims: {x,y,z},                      // footprint ft — also placeholder box dims
   wheelAnchors: [{x,y,z}...],             // probe positions, body-local
   maxSpeedFps, accel, turnRate,
-  weapon: { type: 'bar'|'drum'|'flipper'|'crusher'|'hammerSaw',
+  canDriveInverted?,                       // keeps driving upside down (Witch Doctor)
+  hideWheels?,                             // no procedural wheel fallback (enclosed drive)
+  weapon: { type: 'bar'|'drum'|'flipper'|'crusher'|'hammerSaw'
+                 |'hammer'|'lifterDisc'|'grappler',
             spinUpSeconds?, inertia?, maxOmega?, budgetCap?,
             pivot: {x,y,z}, axis: {x,y,z} },   // body-local, placeholder until models land
   colliders: [{ shape:'box'|'cylinder'|'hull', ...dims, offset }],
@@ -172,7 +175,27 @@ Port stats from v1 `src/botConfig.js` (speeds, weights, weapon params) into:
 ```
 
 All 8 v1 bots must be present with sane numbers (copy v1 values; estimate
-wheel anchors from reference images / v1 collider configs).
+wheel anchors from reference images / v1 collider configs). The roster has
+since grown to 14; `BOT_IDS` is the single source of truth for it, and both
+the sim tests and the roster grid size themselves off it.
+
+### Weapon types beyond v1's five
+
+- `hammer` (Beta) — one heavy overhead stroke on a slow re-cock. The hit lands
+  near the BOTTOM of the arc (`strikeAt`), scaled by `stroke²`; firing at first
+  possible contact instead delivers about a tenth of the power.
+- `lifterDisc` (Whiplash) — a lifting arm plus an arm-mounted disc on its own
+  channel. The disc motor rides `input.sawActive`, not the weapon button.
+- `grappler` (Claw Viper) — forks on the weapon button, jaw on `sawActive`.
+  It takes a grip when the jaw is shut, the forks are DOWN and the foe is in
+  the front zone, then servos the victim onto a grip point that sweeps with the
+  arm, reacting the pull back into the hinge. Opening the jaw releases and
+  hands over the arm tip's speed, so a lift past vertical throws.
+- `weapon.selfRight` lets a flipper right itself by firing against the floor;
+  its `getRatio()` doubles as a reload meter (0 while cocked, ramping to 1 as
+  the stroke returns).
+- `tuning.ownerPitchScale > 0` (Deep Six) makes a spinner's own hits tumble it
+  — the reason the biggest weapon in the game is not simply the best.
 
 ## Weapon tuning (v2/src/sim/weaponTuning.js — SIM)
 
@@ -207,12 +230,14 @@ progress — a 0..1 fraction while the response carries a total, `null` when it
 does not (chunked/gzipped responses), which callers render as an indeterminate
 bar. Parsed responses are cached, so a rematch does not re-download.
 GLBs have nodes named `modelBody`, `modelWeapon`, `modelWheel-0…N`, plus
-`modelWeaponSub-<name>` for a part that swings with the arm AND spins on its
-own (Sawblaze's saw, Whiplash's disc) and `modelAux-<name>` for a part
+`modelWeaponSub-<name>` for a part that swings with the arm AND turns on its
+own (Sawblaze's saw, Whiplash's disc, Claw Viper's jaw — its
+`extras.pivotLocal` is honoured when present, since a jaw hinges at its
+knuckle while a disc turns about its bbox centre) and `modelAux-<name>` for a part
 anchored at its base and scaled (Bronco's ram). `tools/part-maps/README.md`
 documents the contract from the segmentation side. `hideWheels: true` skips
 the procedural wheel fallback for a bot whose real wheels are enclosed by its
-shell (Beta) — the suspension still runs off `wheelAnchors`.
+shell (Beta, Deep Six, Hydra) — the suspension still runs off `wheelAnchors`.
 
 **Weapon arm angles (`restAngle` / `fireAngle`) must be measured in GAME
 space, through the loader** — after `modelYaw`, `modelScale` and grounding.

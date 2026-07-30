@@ -75,6 +75,7 @@ const SPINNER_DEFAULTS = Object.freeze({
   kickbackScale: 1,
   impactScale: 1,
   gyroScale: 0.75,
+  ownerPitchScale: 0, // >0 makes the bot's own hits tumble it (Deep Six)
   reach: 1.45,
   halfSpeedPowerMultiplier: 1,
   fullSpeedPowerMultiplier: 1,
@@ -199,7 +200,7 @@ export function createSpinnerModel(spec) {
      * @param {{ratio:number, targetSpec:object, approachSpeed?:number, plow?:object}} args
      * @returns {{push:number, lift:number, liftVelocityFloor:number, damageImpulse:number,
      *   kickback:number, kickbackLift:number, targetYawTorque:number, targetPitchTorque:number,
-     *   ownerYawTorque:number, spinRetained:number, bite:number, capped:boolean}}
+     *   ownerYawTorque:number, ownerPitchTorque:number, spinRetained:number, bite:number, capped:boolean}}
      */
     hit({ ratio, targetSpec, approachSpeed = 0, plow = null }) {
       const r = clamp(ratio, 0, 1.45);
@@ -234,6 +235,10 @@ export function createSpinnerModel(spec) {
       const yawV1 = torqueMag * bias.yaw * 0.42 * V1.extraTorqueScale;
       const pitchV1 = torqueMag * bias.pitch * 0.32 * V1.extraTorqueScale;
       const ownerYawV1 = torqueMag * bias.yaw * 0.42 * V1.extraTorqueScale * t.kickbackScale * ownerYawShare;
+      // v1 only reflected yaw onto the attacker. A blade heavy enough to lift
+      // its own machine needs pitch too, or the biggest weapon in the game has
+      // no downside; opt-in per bot so nothing else changes.
+      const ownerPitchV1 = torqueMag * bias.pitch * 0.32 * V1.extraTorqueScale * t.ownerPitchScale;
 
       const drainLoss = clamp(0.72 + bite * 0.16 + r * 0.08, 0.72, 0.97);
 
@@ -247,6 +252,7 @@ export function createSpinnerModel(spec) {
         targetYawTorque: toV2Torque(targetSpec || spec, "y", yawV1),
         targetPitchTorque: toV2Torque(targetSpec || spec, "x", pitchV1),
         ownerYawTorque: toV2Torque(spec, "y", ownerYawV1),
+        ownerPitchTorque: toV2Torque(spec, "x", ownerPitchV1),
         spinRetained: clamp(1 - drainLoss, 0.03, 0.96), // multiply omega by this after a hit
         bite,
         capped: raw > cap,

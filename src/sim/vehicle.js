@@ -269,7 +269,12 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
       const rot = body.rotation();
       const linvel = body.linvel();
       const angvel = body.angvel();
-      const up = m.qRotate(rot, { x: 0, y: 1, z: 0 });
+      // Bots with appendages that work either way up (Witch Doctor's "bunny
+      // ears") keep driving when inverted: flip the effective up so the
+      // suspension probes cast toward whichever face is against the floor.
+      // Steering mirrors, exactly as it does on the real machine.
+      let up = m.qRotate(rot, { x: 0, y: 1, z: 0 });
+      if (spec.canDriveInverted && up.y < 0) up = m.scale(up, -1);
       const fwdH = m.flatNorm(m.qRotate(rot, { x: 0, y: 0, z: -1 }));
 
       const worldAnchors = updateSuspension(dt, pos, rot, linvel, angvel, up);

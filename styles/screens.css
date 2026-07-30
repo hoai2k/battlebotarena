@@ -447,10 +447,11 @@
   /* Column and row counts come from the roster size (ui.js sets the custom
      properties), not from the eight bots this screen launched with: the extra
      pair landed on the `auto` row meant for the random strip and squashed the
-     two 1fr rows above it to 63px slivers. The row floor lets the grid scroll
-     on short viewports instead of crushing the cards. */
+     two 1fr rows above it to 63px slivers. The row floor is a card's own
+     content height (image + name + badge + stat pips) so the grid scrolls on
+     short viewports instead of clipping the ARM row off every card. */
   grid-template-columns: repeat(var(--roster-cols, 4), 1fr);
-  grid-template-rows: repeat(var(--roster-rows, 2), minmax(150px, 1fr)) auto;
+  grid-template-rows: repeat(var(--roster-rows, 2), minmax(178px, 1fr)) auto;
   gap: clamp(8px, 1.2vw, 14px);
   overflow-y: auto;
   padding: 2px 2px 8px;

@@ -126,6 +126,17 @@ function placeholderWeapon(spec) {
     tooth.position.set(0, -0.2, -dims.z * 2 + 0.1);
     tooth.rotation.x = Math.PI;
     group.add(tooth);
+  } else if (weapon.type === "grappler") {
+    // Fork pair out front with a jaw plate hinged above them.
+    const reach = Math.max(1.0, dims.z * 3);
+    for (const side of [-1, 1]) {
+      const fork = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.1, reach), accent);
+      fork.position.set(side * 0.34, -0.04, -reach / 2);
+      group.add(fork);
+    }
+    const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, reach * 0.7), dark);
+    jaw.position.set(0, 0.42, -reach * 0.45);
+    group.add(jaw);
   } else if (weapon.type === "hammer") {
     // Truss arm out to a cylindrical head, hinged at the pivot.
     const reach = Math.max(0.8, dims.y * 2);
@@ -278,7 +289,7 @@ function detach(node) {
 export function weaponVisualAngle(visual, spec, state) {
   const type = spec.weapon?.type;
   if (type === "flipper" || type === "hammerSaw" || type === "crusher"
-    || type === "hammer" || type === "lifterDisc") {
+    || type === "hammer" || type === "lifterDisc" || type === "grappler") {
     const stroke = THREE.MathUtils.clamp(state.weaponAngle ?? 0, 0, 1);
     if (visual.weaponIsPlaceholder) return stroke * (spec.weapon.throwAngle ?? 0.9);
     // GLB arms are baked in one pose (angle 0). restAngle poses the arm at
@@ -286,7 +297,8 @@ export function weaponVisualAngle(visual, spec, state) {
     // pose": bronco is baked FIRED (rest -x, fire 0), sawblaze/quantum are
     // baked at REST (rest 0, fire -x chops/clamps down).
     const rest = spec.weapon.restAngle ?? 0;
-    const fired = spec.weapon.fireAngle ?? 0;
+    // Grapplers name their top-of-travel liftAngle; it is the same thing.
+    const fired = spec.weapon.fireAngle ?? spec.weapon.liftAngle ?? 0;
     return rest + stroke * (fired - rest);
   }
   return state.weaponAngle ?? 0;
@@ -351,9 +363,18 @@ export async function loadBotModel(spec, { onProgress } = {}) {
         if (!subNode && child.name?.startsWith("modelWeaponSub-")) subNode = child;
       });
       if (subNode) {
-        const subBox = new THREE.Box3().setFromObject(subNode);
         const subCenter = new THREE.Vector3();
-        if (!subBox.isEmpty()) subBox.getCenter(subCenter);
+        // A hinged jaw (clawviper) turns about its knuckle, not its middle, so
+        // the part map's pivotOverride wins when the partitioner baked one.
+        // Without it (sawblaze's disc) the bbox center is the axle.
+        const subPivotLocal = subNode.userData?.pivotLocal;
+        if (Array.isArray(subPivotLocal) && subNode.parent) {
+          subNode.parent.updateWorldMatrix(true, false);
+          subCenter.fromArray(subPivotLocal).applyMatrix4(subNode.parent.matrixWorld);
+        } else {
+          const subBox = new THREE.Box3().setFromObject(subNode);
+          if (!subBox.isEmpty()) subBox.getCenter(subCenter);
+        }
         const subPivot = new THREE.Group();
         subPivot.name = "weaponSubPivot";
         // Parent to the WEAPON PIVOT, not to the sub node's GLB parent. The

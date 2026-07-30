@@ -39,7 +39,7 @@
   wheelAnchors: {x:number,y:number,z:number}[],
   maxSpeedFps: number, accel: number, turnRate: number,
   accent: string, accentDark: string,
-  weapon: { type: 'bar'|'drum'|'flipper'|'crusher'|'hammerSaw'|'hammer'|'lifterDisc',
+  weapon: { type: 'bar'|'drum'|'flipper'|'crusher'|'hammerSaw'|'hammer'|'lifterDisc'|'grappler',
             spinUpSeconds?: number, inertia?: number, maxOmega?: number,
             budgetCap?: number, radius?: number,
             dims: {x:number,y:number,z:number},
@@ -522,12 +522,202 @@ export const CATALOG = {
       { shape: "box", halfExtents: { x: 0.59, y: 0.07, z: 0.32 }, offset: { x: 0, y: 0.12, z: -1.27 } }, // chassis wedgelets
     ],
   },
+
+  clawviper: {
+    id: "clawviper",
+    name: "Claw Viper",
+    tagline: "Grab, lift, suplex.",
+    referenceImage: "./public/reference/clawviper.png",
+    modelPath: "./public/models/clawviper.glb",
+    modelYaw: Math.PI / 2, // MEASURED: model faces +X (weaponAxis [0,0,1] pre-yaw)
+    modelScale: 3.2, // colliders below are authored at this scale
+    weightLbs: 250,
+    weaponWeightLbs: 40,
+    bodyDims: { x: 2.2, y: 0.9, z: 2.9 }, // MEASURED shell
+    // Both wheel pairs sit in the rear half — the front is all forks.
+    wheelAnchors: [
+      { x: -0.78, y: 0.22, z: 0.06 },
+      { x: 0.78, y: 0.22, z: 0.06 },
+      { x: -0.78, y: 0.22, z: 1.34 },
+      { x: 0.78, y: 0.22, z: 1.34 },
+    ],
+    maxSpeedFps: 17.0, // weapon-class motor on every wheel
+    accel: 9.5,
+    turnRate: 1.15,
+    accent: "#3355cc",
+    accentDark: "#141414",
+    weapon: {
+      type: "grappler",
+      pivot: { x: 0, y: 0.39, z: 0.16 }, // MEASURED fork hinge, game space
+      axis: { x: 1, y: 0, z: 0 },
+      // MEASURED through the loader (game space, model grounded). The baked
+      // pose already has the forks flat on the deck, and the arm lifts on
+      // POSITIVE angle here — the drop's -2.1 drove the forks under the floor.
+      restAngle: 0, // forks flat on the deck — they are also the wedge
+      liftAngle: 1.5, // ~86deg: past vertical for the suplex, arm still clear of the floor
+      liftSeconds: 0.7,
+      lowerSeconds: 0.9,
+      gripReach: 1.85, // where a gripped bot rides, ahead of the hinge
+      gripHeight: 0.45,
+      gripStrength: 16,
+      throwScale: 0.6, // share of the arm's tip speed handed over on release
+      downforceLbs: 250, // magnets: very hard to shove or flip
+      dims: { x: 0.2, y: 0.2, z: 0.5 },
+      claw: { openAngle: 0, closedAngle: -0.8, clampSeconds: 0.25 },
+      tuning: { reach: 1.4, holdDamagePerSecond: 3 },
+    },
+    colliders: [
+      { shape: "box", halfExtents: { x: 1.0, y: 0.24, z: 1.32 }, offset: { x: 0, y: 0.27, z: 0.22 } },
+      { shape: "box", halfExtents: { x: 0.6, y: 0.16, z: 0.7 }, offset: { x: 0, y: 0.68, z: 0.6 } },
+    ],
+  },
+
+  deepsix: {
+    id: "deepsix",
+    name: "Deep Six",
+    tagline: "Banned for hitting too hard.",
+    referenceImage: "./public/reference/deepsix.png",
+    modelPath: "./public/models/deepsix.glb",
+    modelYaw: Math.PI / 2, // MEASURED: model faces +X
+    modelScale: 3.6,
+    // Splayed forks make it wider than it is long — that is the real machine.
+    hideWheels: true, // 2WD tucked inside the shell; nothing segmented out
+    weightLbs: 250,
+    weaponWeightLbs: 80, // post-rule-change blade
+    bodyDims: { x: 3.6, y: 1.84, z: 2.74 }, // MEASURED shell
+    // The outrigger forks ARE the support base, so the probes ride on them.
+    wheelAnchors: [
+      { x: -1.3, y: 0.2, z: -0.9 },
+      { x: 1.3, y: 0.2, z: -0.9 },
+      { x: -1.3, y: 0.2, z: 0.9 },
+      { x: 1.3, y: 0.2, z: 0.9 },
+    ],
+    maxSpeedFps: 12.0,
+    accel: 7.0,
+    turnRate: 0.9,
+    accent: "#b1642f",
+    accentDark: "#141414",
+    weapon: {
+      type: "bar",
+      pivot: { x: 0.08, y: 1.62, z: -0.02 }, // MEASURED hub, game space
+      axis: { x: 1, y: 0, z: 0 },
+      spinUpSeconds: 4.5, // enormous inertia: slow, dramatic spool-up
+      inertia: 1.9,
+      maxOmega: 420,
+      budgetCap: 620, // the hardest hit in the game
+      radius: 1.26, // MEASURED blade tip from the hub
+      dims: { x: 0.055, y: 1.26, z: 1.26 },
+      tuning: {
+        efficiency: 0.62, impulseScale: 9.0, kickbackScale: 1.5, liftScale: 26.0,
+        liftVelocity: 5.0, gyroScale: 2.2, impactScale: 1.2,
+        // Its own hits tumble it — the signature failure mode, and the reason
+        // the biggest weapon in the game is not simply the best.
+        ownerPitchScale: 2.4,
+      },
+    },
+    colliders: [
+      { shape: "box", halfExtents: { x: 0.95, y: 0.24, z: 1.3 }, offset: { x: 0, y: 0.24, z: 0 } }, // chassis pan
+      { shape: "box", halfExtents: { x: 0.42, y: 0.11, z: 1.3 }, offset: { x: -1.36, y: 0.13, z: 0 } }, // left fork rail
+      { shape: "box", halfExtents: { x: 0.42, y: 0.11, z: 1.3 }, offset: { x: 1.36, y: 0.13, z: 0 } }, // right fork rail
+      { shape: "box", halfExtents: { x: 0.42, y: 0.58, z: 0.42 }, offset: { x: 0, y: 1.1, z: 0.15 } }, // blade uprights
+    ],
+  },
+
+  hydra: {
+    id: "hydra",
+    name: "Hydra",
+    tagline: "Sends them to the ceiling.",
+    referenceImage: "./public/reference/hydra.png",
+    modelPath: "./public/models/hydra.glb",
+    modelYaw: Math.PI / 2, // MEASURED: model faces +X
+    modelScale: 3.3,
+    hideWheels: true, // drive is enclosed under a very low chassis
+    weightLbs: 250,
+    weaponWeightLbs: 45,
+    bodyDims: { x: 2.65, y: 0.92, z: 3.15 }, // MEASURED shell — very low and flat
+    wheelAnchors: [
+      { x: -1.0, y: 0.2, z: -1.0 },
+      { x: 1.0, y: 0.2, z: -1.0 },
+      { x: -1.0, y: 0.2, z: 1.0 },
+      { x: 1.0, y: 0.2, z: 1.0 },
+    ],
+    maxSpeedFps: 16.5,
+    accel: 9.0,
+    turnRate: 1.1,
+    accent: "#6b3fa0",
+    accentDark: "#12141a",
+    weapon: {
+      type: "flipper",
+      pivot: { x: 0, y: 0.64, z: 0.79 }, // MEASURED rear hinge, game space
+      axis: { x: 1, y: 0, z: 0 },
+      // MEASURED through the loader (game space, model grounded): at -0.45 the
+      // long flipper plate lies down on the deck with its lip out at the nose,
+      // which is closed. The baked pose (0) has it up in the air — fired.
+      restAngle: -0.45,
+      fireAngle: 0,
+      budgetCap: 520, // 450+ lb of flip
+      dims: { x: 1.1, y: 0.09, z: 1.5 },
+      selfRight: true, // hydraulics only right it by firing against the floor
+      tuning: { strokeSeconds: 0.1, returnSeconds: 4.0, reach: 1.9, liftVelocity: 30.0 },
+    },
+    colliders: [
+      { shape: "box", halfExtents: { x: 1.25, y: 0.2, z: 1.5 }, offset: { x: 0, y: 0.2, z: 0.1 } },
+      { shape: "box", halfExtents: { x: 1.0, y: 0.26, z: 1.0 }, offset: { x: 0, y: 0.66, z: 0.6 } },
+    ],
+  },
+
+  witchdoctor: {
+    id: "witchdoctor",
+    name: "Witch Doctor",
+    tagline: "Every season. Every time.",
+    referenceImage: "./public/reference/witchdoctor.png",
+    modelPath: "./public/models/witchdoctor.glb",
+    modelYaw: Math.PI / 2, // MEASURED: model faces +X
+    modelScale: 3.1,
+    // "Bunny ear" appendages work either way up, so it keeps driving inverted.
+    canDriveInverted: true,
+    weightLbs: 250,
+    weaponWeightLbs: 47,
+    bodyDims: { x: 2.7, y: 1.2, z: 3.1 }, // MEASURED shell
+    wheelAnchors: [
+      { x: -1.03, y: 0.22, z: -0.31 },
+      { x: 1.03, y: 0.22, z: -0.31 },
+      { x: -1.05, y: 0.22, z: 1.27 },
+      { x: 1.05, y: 0.22, z: 1.27 },
+    ],
+    maxSpeedFps: 15.0,
+    accel: 8.5,
+    turnRate: 1.05,
+    accent: "#7fd430",
+    accentDark: "#1a1024",
+    weapon: {
+      type: "drum", // vertical disc: same swept volume, same maths
+      pivot: { x: 0.02, y: 0.56, z: -0.36 }, // MEASURED disc axle, game space
+      axis: { x: 1, y: 0, z: 0 },
+      spinUpSeconds: 2.2,
+      inertia: 1.1,
+      maxOmega: 620,
+      budgetCap: 260,
+      radius: 0.6,
+      dims: { x: 0.1, y: 0.6, z: 0.6 },
+      tuning: {
+        efficiency: 0.54, impulseScale: 11.0, liftScale: 30.0, liftVelocity: 4.5,
+        gyroScale: 0.9, impactScale: 1.1,
+      },
+    },
+    colliders: [
+      { shape: "box", halfExtents: { x: 1.3, y: 0.16, z: 1.5 }, offset: { x: 0, y: 0.16, z: 0 } },
+      { shape: "box", halfExtents: { x: 1.15, y: 0.19, z: 1.15 }, offset: { x: 0, y: 0.51, z: 0.35 } },
+      { shape: "box", halfExtents: { x: 0.8, y: 0.08, z: 0.19 }, offset: { x: 0, y: 0.08, z: -1.36 } }, // front wedge
+    ],
+  },
 };
 
 /** Stable display order for UI grids. */
 export const BOT_IDS = Object.freeze([
-  "beta", "biteforce", "bronco", "huge", "hypershock",
-  "minotaur", "quantum", "sawblaze", "tombstone", "whiplash",
+  "beta", "biteforce", "bronco", "clawviper", "deepsix", "huge",
+  "hydra", "hypershock", "minotaur", "quantum", "sawblaze", "tombstone",
+  "whiplash", "witchdoctor",
 ]);
 
 /** @returns {BotSpec} */

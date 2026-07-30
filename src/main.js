@@ -242,6 +242,17 @@ function syncBotVisual(visual, spec, state) {
     const spinIndex = wheel.userData.spinIndex ?? i;
     wheel.rotation.x = -(state.wheelSpin?.[spinIndex] ?? 0);
   });
+  // Claw Viper's jaw: a nested sub-part that HINGES on its own channel rather
+  // than spinning like Sawblaze's saw, so it is posed here from the sim's
+  // clamp stroke instead of being driven by updateWeaponSub.
+  const jaw = visual.parts.weaponSub;
+  if (jaw && spec.weapon?.claw) {
+    const open = spec.weapon.claw.openAngle ?? 0;
+    const shut = spec.weapon.claw.closedAngle ?? -0.8;
+    const clamp = THREE.MathUtils.clamp(state.weaponSubAngle ?? 0, 0, 1);
+    scratchAxis.set(spec.weapon.axis.x, spec.weapon.axis.y, spec.weapon.axis.z).normalize();
+    jaw.quaternion.setFromAxisAngle(scratchAxis, open + clamp * (shut - open));
+  }
   // Bronco's pneumatic ram compresses with the flipper: fully shortened at
   // rest (arm down over it), full length at the top of the stroke. The aux
   // anchor sits at the ram's base, so scaling never pokes below the mount.
@@ -291,7 +302,7 @@ function shapePlayerInput(raw, spec, slot) {
   }
   // hammerSaw and lifterDisc both split their controls: the trigger drives the
   // arm, RB toggles the disc motor.
-  if (type === "hammerSaw" || type === "lifterDisc") {
+  if (type === "hammerSaw" || type === "lifterDisc" || type === "grappler") {
     if (altEdge) sawActive[slot] = !sawActive[slot];
     return { ...raw, sawActive: sawActive[slot] };
   }

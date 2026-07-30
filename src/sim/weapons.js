@@ -150,6 +150,12 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
       true,
     );
     vehicle.body.applyTorqueImpulse({ x: 0, y: -hit.ownerYawTorque, z: 0 }, true);
+    if (hit.ownerPitchTorque) {
+      // Tumble the attacker about its own lateral axis — Deep Six beaching
+      // itself on a big hit is the whole reason it is not simply the best bot.
+      const lateral = m.qRotate(vehicle.body.rotation(), { x: 1, y: 0, z: 0 });
+      vehicle.body.applyTorqueImpulse(m.scale(lateral, hit.ownerPitchTorque), true);
+    }
 
     // v1 drained blade SPEED, not energy — a solid hit costs you the spin-up.
     omega *= hit.spinRetained;
@@ -279,6 +285,17 @@ function createFlipper({ vehicle, index, emit }) {
   let t = 0;
   let hitThisStroke = false;
 
+  // Hydra cannot right itself passively — firing the arm against the floor is
+  // the mechanism, so the srimech is the weapon.
+  function selfRight(dt) {
+    if (!w.selfRight) return;
+    if (m.qRotate(vehicle.body.rotation(), UP).y > 0.2) return;
+    const lateral = m.qRotate(vehicle.body.rotation(), { x: 1, y: 0, z: 0 });
+    const rate = (w.selfRightRate ?? 11) / Math.max(0.05, strokeSeconds);
+    vehicle.body.applyTorqueImpulse(m.scale(lateral, vehicle.inertia.x * rate * dt), true);
+    vehicle.body.applyImpulse(m.scale(UP, vehicle.mass * 3 * dt), true);
+  }
+
   function tryFlip(foe) {
     const local = toLocal(vehicle, foe.body.translation());
     if (!localZoneContains(zone, local)) return;
@@ -314,6 +331,7 @@ function createFlipper({ vehicle, index, emit }) {
       if (phase === "firing") {
         t += dt;
         if (!hitThisStroke) tryFlip(ctx.foe);
+        selfRight(dt);
         if (t >= strokeSeconds) {
           phase = "returning";
           t = 0;
@@ -329,8 +347,12 @@ function createFlipper({ vehicle, index, emit }) {
       if (phase === "returning") return Math.max(0, 1 - t / returnSeconds);
       return 0;
     },
+    // The meter reads CHARGE, not arm position: a flipper's reload is the thing
+    // the player needs to see. Bronco's 2s and Hydra's 4s recharge are both a
+    // core part of their rhythm and were previously invisible.
     getRatio() {
-      return this.getAngle();
+      if (phase === "returning") return m.clamp(t / returnSeconds, 0, 1);
+      return phase === "idle" ? 1 : 0;
     },
     reset() {
       phase = "idle";
@@ -765,6 +787,124 @@ function createLifterDisc({ vehicle, index, emit }) {
 }
 
 // ---------------------------------------------------------------------------
+// Grappler (claw viper)
+// ---------------------------------------------------------------------------
+
+// A control weapon, not a damage one. The forks lift on the trigger and the
+// jaw clamps on the RB channel; the hard part is neither of those, it is
+// HOLDING what you grabbed. A clamped opponent is servoed to a grip point that
+// rides with the arm, so raising the forks raises the victim and swinging past
+// vertical suplexes it — the whole point of the machine. Releasing hands the
+// arm's tip velocity to the victim, which is what turns a lift into a throw.
+function createGrappler({ vehicle, index, emit }) {
+  const spec = vehicle.spec;
+  const w = spec.weapon;
+  const tune = resolveWeaponTuning(spec);
+  const claw = w.claw ?? {};
+  const liftSeconds = w.liftSeconds ?? tune.strokeSeconds;
+  const lowerSeconds = w.lowerSeconds ?? liftSeconds * 1.3;
+  const clampSeconds = claw.clampSeconds ?? 0.25;
+  // Grab zone: low and right in front, where the forks actually are.
+  const grabZone = w.zone ?? frontZone(spec, tune.reach ?? 1.4, { minY: -0.9, maxY: 0.9 });
+  const downforce = w.downforceLbs ?? 0;
+  const gripStrength = w.gripStrength ?? 16; // 1/s spring onto the grip point
+  const gripImpulseCap = w.gripImpulseCap ?? 140;
+
+  let lift = 0; // 0 forks down, 1 fully raised
+  let clamp = 0; // 0 jaw open, 1 jaw shut
+  let gripped = false;
+  let lastTickAt = -Infinity;
+
+  /** Grip point in BODY-local space, carried around the fork hinge by `lift`. */
+  function gripLocal() {
+    const reach = w.gripReach ?? (spec.bodyDims.z / 2 + 0.7);
+    const arm = { x: 0, y: (w.gripHeight ?? 0.35) - w.pivot.y, z: -reach - w.pivot.z };
+    // The forks sweep about the lateral axis, so the grip point sweeps with it.
+    const angle = (w.restAngle ?? 0) + lift * ((w.liftAngle ?? -2.1) - (w.restAngle ?? 0));
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    return {
+      x: w.pivot.x + arm.x,
+      y: w.pivot.y + arm.y * cos - arm.z * sin,
+      z: w.pivot.z + arm.y * sin + arm.z * cos,
+    };
+  }
+
+  function armWorld(local) {
+    return m.add(vehicle.body.translation(), m.qRotate(vehicle.body.rotation(), local));
+  }
+
+  return {
+    type: "grappler",
+    update(dt, fire, ctx) {
+      const { foe, simTime } = ctx;
+      if (downforce > 0 && vehicle.isGrounded()) {
+        vehicle.body.applyImpulse(m.scale(UP, -downforce * dt), true);
+      }
+      const jawClosing = Boolean(ctx.input?.sawActive);
+      const previousLift = lift;
+      lift = m.clamp(lift + (fire ? dt / liftSeconds : -dt / lowerSeconds), 0, 1);
+      clamp = m.clamp(clamp + (jawClosing ? dt / clampSeconds : -dt / clampSeconds), 0, 1);
+
+      const local = toLocal(vehicle, foe.body.translation());
+      const inReach = localZoneContains(grabZone, local);
+      if (!gripped && clamp > 0.6 && inReach && lift < 0.35) {
+        gripped = true;
+        emit(EV.WEAPON_FIRED, { botIndex: index, weaponType: "grappler" });
+      }
+      if (gripped && clamp < 0.4) {
+        // Release: hand the victim the speed of the arm tip so a lift that ends
+        // past vertical actually throws rather than just letting go.
+        const swing = (previousLift - lift) / Math.max(dt, 1e-6);
+        const tip = m.sub(armWorld(gripLocal()), vehicle.body.translation());
+        const throwImpulse = m.scale(tip, -swing * foe.mass * (w.throwScale ?? 0.6));
+        foe.body.applyImpulse(throwImpulse, true);
+        gripped = false;
+      }
+      if (!gripped) return;
+
+      // Carry: servo the victim onto the grip point, matching the carrier's own
+      // velocity so the pair moves as one unit.
+      const target = armWorld(gripLocal());
+      const offset = m.sub(target, foe.body.translation());
+      const wanted = m.add(vehicle.body.linvel(), m.scale(offset, gripStrength));
+      const effective = (vehicle.mass * foe.mass) / (vehicle.mass + foe.mass);
+      let pull = m.scale(m.sub(wanted, foe.body.linvel()), effective * Math.min(1, dt * 12));
+      const cap = effective * gripImpulseCap * dt;
+      const magnitude = m.length(pull);
+      if (magnitude > cap) pull = m.scale(pull, cap / magnitude);
+      foe.body.applyImpulse(pull, true);
+      // Hoisting 250lb has to be felt at the hinge, or the lift is free.
+      vehicle.body.applyImpulseAtPoint(m.scale(pull, -1), armWorld(w.pivot), true);
+
+      if (simTime - lastTickAt >= TU.crusherTickSeconds) {
+        lastTickAt = simTime;
+        emit(EV.WEAPON_HIT, {
+          attackerIndex: index,
+          targetIndex: foe.index,
+          point: target,
+          normal: m.v3(0, -1, 0),
+          impulse: damageImpulseForRate(tune.holdDamagePerSecond || 3, TU.crusherTickSeconds),
+          appliedImpulse: 0,
+          energyBefore: 0,
+          heavy: false,
+        });
+      }
+    },
+    getAngle: () => lift,
+    getSubAngle: () => clamp,
+    getRatio: () => Math.max(lift, clamp),
+    isGripping: () => gripped,
+    reset() {
+      lift = 0;
+      clamp = 0;
+      gripped = false;
+      lastTickAt = -Infinity;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 
 /** Create the weapon system for one bot from its BotSimSpec. */
 export function createWeapon(args) {
@@ -775,6 +915,7 @@ export function createWeapon(args) {
   if (type === "hammerSaw") return createHammerSaw(args);
   if (type === "hammer") return createHammer(args);
   if (type === "lifterDisc") return createLifterDisc(args);
+  if (type === "grappler") return createGrappler(args);
   // Weaponless fallback (keeps the sim robust to partial specs).
   return {
     type: "none",
