@@ -73,7 +73,13 @@ const SPINNER_DEFAULTS = Object.freeze({
   liftVelocity: 0,
   liftClearance: 0,
   kickbackScale: 1,
+  // impactScale moves the whole hit — damage AND shove — because it feeds the
+  // raw impulse before the split. damageScale moves ONLY the damage, for
+  // ordering how much bots HURT without touching how far they THROW. That
+  // split is the point of the chain: Minotaur hurts without shoving, Tombstone
+  // throws you across the box without proportionate damage.
   impactScale: 1,
+  damageScale: 1,
   gyroScale: 0.75,
   // v1's gyro reaction is all but inert here: v2's raycast suspension resists
   // roll and pitch far harder than v1's did, and the yaw servo eats the rest,
@@ -253,7 +259,8 @@ export function createSpinnerModel(spec) {
         push: pushMag * t.impulseScale * V1_IMPULSE_TO_V2,
         lift: liftV1 * V1_IMPULSE_TO_V2,
         liftVelocityFloor: t.liftVelocity * (plow?.liftFactor ?? 1), // ft/s, applied as a top-up impulse
-        damageImpulse: damageMag * (V1.damageBase + r * V1.damageRamp) * DAMAGE_CALIBRATION,
+        damageImpulse:
+          damageMag * (V1.damageBase + r * V1.damageRamp) * DAMAGE_CALIBRATION * t.damageScale,
         kickback: kickbackV1 * V1_IMPULSE_TO_V2,
         kickbackLift: liftV1 * 0.16 * V1_IMPULSE_TO_V2,
         targetYawTorque: toV2Torque(targetSpec || spec, "y", yawV1),

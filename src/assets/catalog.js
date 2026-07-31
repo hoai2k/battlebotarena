@@ -89,14 +89,13 @@ export const CATALOG = {
       dims: { x: 0.85, y: 0.526, z: 0.526 },
       pivot: { x: 0, y: 0.64, z: -0.24 },
       axis: { x: 1, y: 0, z: 0 },
-      tuning: { efficiency: 0.5, impulseScale: 13.8, liftScale: 32.0, liftVelocity: 4.5, liftClearance: 0.55, gyroScale: 0.75 },
+      tuning: { efficiency: 0.5, impulseScale: 13.8, liftScale: 32.0, liftVelocity: 4.5, liftClearance: 0.55, gyroScale: 0.75, damageScale: 1.65 },
     },
-    // Drum front reaches z=-0.66. The fork row ran out to -1.17 and the pods to
-    // -0.97, so the drum could not touch a single opponent in a head-on charge.
-    // The forks are a floor-hugging plate — bots drive over them, as they do on
-    // the real machine — so they carry no collider, and the pods stop level
-    // with the drum.
+    // The fork row is a WEDGE, not a box: opponents ride up it into the drum,
+    // which is the whole point of the machine. Squared off into a level box it
+    // was a bumper holding every opponent 0.5ft outside the drum.
     colliders: [
+      { shape: "wedge", halfExtents: { x: 1.05, y: 0.21, z: 0.285 }, offset: { x: 0, y: 0.21, z: -0.945 }, tipY: 0.03 }, // front fork wedge (MEASURED slope)
       { shape: "box", halfExtents: { x: 1.237, y: 0.171, z: 0.873 }, offset: { x: 0.012, y: 0.175, z: 0.301 } },
       { shape: "box", halfExtents: { x: 0.354, y: 0.16, z: 0.738 }, offset: { x: -0.003, y: 0.495, z: 0.268 } },
       { shape: "box", halfExtents: { x: 0.198, y: 0.294, z: 0.79 }, offset: { x: -1.185, y: 0.294, z: 0.175 } }, // left pod
@@ -142,7 +141,7 @@ export const CATALOG = {
     colliders: [
       { shape: "box", halfExtents: { x: 0.888, y: 0.25, z: 1.237 }, offset: { x: -0.023, y: 0.342, z: 0.167 } },
       { shape: "box", halfExtents: { x: 1.037, y: 0.141, z: 0.492 }, offset: { x: -0.016, y: 0.447, z: 1.026 } },
-      { shape: "box", halfExtents: { x: 0.895, y: 0.237, z: 0.229 }, offset: { x: 0, y: 0.274, z: -1.248 } }, // front wedge
+      { shape: "wedge", halfExtents: { x: 0.9, y: 0.29, z: 0.315 }, offset: { x: 0, y: 0.29, z: -1.385 }, tipY: 0.03 }, // front wedge (MEASURED slope)
       { shape: "box", halfExtents: { x: 0.577, y: 0.137, z: 0.523 }, offset: { x: -0.57, y: 0.163, z: 1.145 } },
       { shape: "box", halfExtents: { x: 0.57, y: 0.136, z: 0.605 }, offset: { x: 0.578, y: 0.163, z: 1.062 } },
     ],
@@ -187,6 +186,7 @@ export const CATALOG = {
       tuning: {
         efficiency: 0.76, impulseScale: 10.0, liftScale: 36.0, liftVelocity: 4.5, liftClearance: 0.55,
         gyroScale: 0.55, halfSpeedPowerMultiplier: 4.0, fullSpeedPowerMultiplier: 2.15, hapticScale: 2.0,
+      damageScale: 1.11,
         impactScale: 1.05,
       },
     },
@@ -283,12 +283,11 @@ export const CATALOG = {
       dims: { x: 0.5, y: 0.44, z: 0.44 },
       pivot: { x: 0, y: 0.38, z: -0.69 },
       axis: { x: 1, y: 0, z: 0 },
-      tuning: { efficiency: 0.52, impulseScale: 8.5, liftScale: 30.0, liftVelocity: 4.5, liftClearance: 0.55, gyroScale: 0.85 },
+      tuning: { efficiency: 0.52, impulseScale: 8.5, liftScale: 30.0, liftVelocity: 4.5, liftClearance: 0.55, gyroScale: 0.85, damageScale: 0.87 },
     },
     colliders: [
       { shape: "box", halfExtents: { x: 0.691, y: 0.213, z: 0.943 }, offset: { x: -0.001, y: 0.304, z: 0.252 } },
-      // Drum front reaches z=-1.13; the wedge ran to -1.26 and stood it off.
-      { shape: "box", halfExtents: { x: 0.691, y: 0.099, z: 0.217 }, offset: { x: -0.001, y: 0.191, z: -0.908 } }, // front wedge
+      { shape: "wedge", halfExtents: { x: 0.691, y: 0.21, z: 0.18 }, offset: { x: -0.001, y: 0.21, z: -1.0 }, tipY: 0.03 }, // front wedge (MEASURED slope)
       { shape: "box", halfExtents: { x: 0.691, y: 0.133, z: 0.133 }, offset: { x: -0.001, y: 0.651, z: -0.32 } }, // fin rail
     ],
   },
@@ -327,13 +326,13 @@ export const CATALOG = {
       dims: { x: 0.39, y: 0.34, z: 0.34 },
       pivot: { x: 0, y: 0.27, z: -0.56 },
       axis: { x: 1, y: 0, z: 0 },
-      tuning: { efficiency: 0.26, impulseScale: 4.4, kickbackScale: 0.12, liftScale: 18.0, liftVelocity: 4.0, liftClearance: 0.35, gyroScale: 1.45 },
+      tuning: { efficiency: 0.26, impulseScale: 4.4, kickbackScale: 0.12, liftScale: 18.0, liftVelocity: 4.0, liftClearance: 0.35, gyroScale: 1.45, damageScale: 0.62 },
     },
     colliders: [
       { shape: "box", halfExtents: { x: 0.686, y: 0.163, z: 0.694 }, offset: { x: -0.001, y: 0.271, z: 0.142 } },
       { shape: "box", halfExtents: { x: 0.162, y: 0.256, z: 0.487 }, offset: { x: -0.6, y: 0.256, z: 0.167 } }, // left pod
       { shape: "box", halfExtents: { x: 0.162, y: 0.256, z: 0.546 }, offset: { x: 0.599, y: 0.256, z: 0.108 } }, // right pod
-      { shape: "box", halfExtents: { x: 0.56, y: 0.055, z: 0.101 }, offset: { x: 0, y: 0.163, z: -0.754 } }, // fork row
+      { shape: "wedge", halfExtents: { x: 0.56, y: 0.15, z: 0.1 }, offset: { x: 0, y: 0.15, z: -0.89 }, tipY: 0.03 }, // fork row (MEASURED slope)
     ],
   },
 
@@ -376,7 +375,8 @@ export const CATALOG = {
       tuning: { sawTouchCap: 10, sawCenter: { x: 0, y: 0.935, z: -0.52 }, swingSeconds: 0.35, grindDamagePerSecond: 5, gyroScale: 0.8 },
     },
     colliders: [
-      { shape: "box", halfExtents: { x: 1.023, y: 0.143, z: 0.977 }, offset: { x: 0, y: 0.226, z: 0.023 } }, // merged pan floor
+      { shape: "wedge", halfExtents: { x: 1.023, y: 0.185, z: 0.215 }, offset: { x: 0, y: 0.185, z: -0.855 }, tipY: 0.03 }, // front wedge (MEASURED slope)
+      { shape: "box", halfExtents: { x: 1.023, y: 0.143, z: 0.82 }, offset: { x: 0, y: 0.226, z: 0.18 } }, // merged pan floor
       { shape: "box", halfExtents: { x: 1.009, y: 0.154, z: 0.507 }, offset: { x: 0.005, y: 0.53, z: 0.474 } },
       { shape: "box", halfExtents: { x: 0.283, y: 0.328, z: 0.471 }, offset: { x: -0.031, y: 1.171, z: -0.164 } }, // tower
     ],
@@ -415,7 +415,7 @@ export const CATALOG = {
       axis: { x: 0, y: 1, z: 0 },
       tuning: {
         efficiency: 0.86, impulseScale: 18.0, kickbackScale: 1.45, liftScale: 7.0, liftVelocity: 4.5, liftClearance: 0.55,
-        gyroScale: 1.35, reach: 2.25, impactScale: 1.55,
+        gyroScale: 1.35, reach: 2.25, impactScale: 1.55, damageScale: 0.92,
         floorLaunch: { enabled: true, angleDeg: 30, scale: 1.15, cap: 180 },
       },
     },
@@ -473,7 +473,8 @@ export const CATALOG = {
     },
     colliders: [
       // Truncated pyramid, four stacked slabs (MEASURED y-slices of the shell).
-      { shape: "box", halfExtents: { x: 1.3, y: 0.14, z: 1.15 }, offset: { x: 0, y: 0.14, z: -0.27 } },
+      { shape: "wedge", halfExtents: { x: 1.3, y: 0.225, z: 0.325 }, offset: { x: 0, y: 0.225, z: -0.925 }, tipY: 0.03 }, // front wedge (MEASURED slope)
+      { shape: "box", halfExtents: { x: 1.3, y: 0.14, z: 0.74 }, offset: { x: 0, y: 0.14, z: 0.14 } },
       { shape: "box", halfExtents: { x: 0.95, y: 0.16, z: 1.0 }, offset: { x: 0, y: 0.44, z: -0.05 } },
       { shape: "box", halfExtents: { x: 0.6, y: 0.13, z: 0.7 }, offset: { x: 0, y: 0.73, z: -0.15 } },
       { shape: "box", halfExtents: { x: 0.25, y: 0.12, z: 0.2 }, offset: { x: 0, y: 0.97, z: -0.3 } }, // hammer gearbox
@@ -532,7 +533,7 @@ export const CATALOG = {
     colliders: [
       { shape: "box", halfExtents: { x: 1.05, y: 0.285, z: 1.28 }, offset: { x: 0, y: 0.35, z: 0.32 } }, // chassis
       { shape: "box", halfExtents: { x: 0.53, y: 0.28, z: 0.45 }, offset: { x: 0, y: 0.89, z: 1.05 } }, // arm tower
-      { shape: "box", halfExtents: { x: 0.59, y: 0.07, z: 0.32 }, offset: { x: 0, y: 0.12, z: -1.27 } }, // chassis wedgelets
+      { shape: "wedge", halfExtents: { x: 0.59, y: 0.13, z: 0.345 }, offset: { x: 0, y: 0.13, z: -1.255 }, tipY: 0.03 }, // fork plate (MEASURED slope)
     ],
   },
 
@@ -629,7 +630,7 @@ export const CATALOG = {
       dims: { x: 0.06, y: 1.368, z: 1.368 },
       tuning: {
         efficiency: 0.62, impulseScale: 9.0, kickbackScale: 1.5, liftScale: 26.0,
-        liftVelocity: 5.0, gyroScale: 2.2, impactScale: 1.2,
+        liftVelocity: 5.0, gyroScale: 2.2, impactScale: 1.2, damageScale: 1.16,
         // 80 lb of blade at 420 rad/s has to be felt through the sticks. At the
         // stock boost of 1 it moves him 0.0 degrees; 40 takes his lean under a
         // hard turn from 7.8 to 9.9 degrees and leaves the straight line intact.
@@ -639,16 +640,15 @@ export const CATALOG = {
         ownerPitchScale: 2.4,
       },
     },
-    // The front 1.2ft of this bot is the outrigger wedge, and it has NO
-    // collider on purpose — opponents drive straight over it, which is the
-    // only way anything reaches the blade. A disc only reaches far forward at
-    // its own axle height (1.62ft up, over everything in the game); the low
-    // part of its sweep is deep inside the machine, so the first solid the
-    // blade can put between itself and a foe has to sit at z=-0.2. The old
-    // stack squared the wedge off into a 0.48ft slab out to z=-1.3, and every
-    // opponent parked against that with the blade a foot short. Even a 0.04ft
-    // pad there takes the hit count on nine test opponents from 10 back to 2:
-    // their own front forks bottom out flush with the floor.
+    // Deep Six is the ONE bot with no front collider of any kind, wedge
+    // included. Its disc reaches furthest forward at its own axle height —
+    // 1.62ft up, over everything in the game — so the low part of the sweep
+    // only opens up around z=-0.9, and anything in front of that is a
+    // stand-off. A wedge there is no better than a box: measured across nine
+    // opponents charging head-on, a full-length outrigger wedge scores 0/9 and
+    // a shortened one still scores 0/9, against 9/9 bare. The outriggers are
+    // what hold the blade up, not something to shove with; opponents drive
+    // over them, which is what the real machine's forks are for.
     // Cost: pitched hard nose-down the wedge plate clips the arena floor. Every
     // camera sits above the floor, so it is occluded.
     colliders: [
@@ -695,7 +695,8 @@ export const CATALOG = {
       tuning: { strokeSeconds: 0.1, returnSeconds: 4.0, reach: 1.9, liftVelocity: 30.0 },
     },
     colliders: [
-      { shape: "box", halfExtents: { x: 1.25, y: 0.2, z: 1.5 }, offset: { x: 0, y: 0.2, z: 0.1 } },
+      { shape: "wedge", halfExtents: { x: 1.25, y: 0.12, z: 0.23 }, offset: { x: 0, y: 0.12, z: -1.33 }, tipY: 0.03 }, // front wedge (MEASURED slope)
+      { shape: "box", halfExtents: { x: 1.25, y: 0.2, z: 1.35 }, offset: { x: 0, y: 0.2, z: 0.25 } },
       { shape: "box", halfExtents: { x: 1.0, y: 0.26, z: 1.0 }, offset: { x: 0, y: 0.66, z: 0.6 } },
     ],
   },
@@ -736,14 +737,12 @@ export const CATALOG = {
       dims: { x: 0.1, y: 0.772, z: 0.772 },
       tuning: {
         efficiency: 0.54, impulseScale: 11.0, liftScale: 30.0, liftVelocity: 4.5,
-        gyroScale: 0.9, impactScale: 1.1,
+        gyroScale: 0.9, impactScale: 1.1, damageScale: 0.66,
       },
     },
-    // Disc front reaches z=-1.13. Nothing may sit ahead of that or the disc
-    // cannot bite (see ARCHITECTURE "Weapon reach"): the pan is pulled back to
-    // -1.10 and the floor-hugging front wedge carries no collider, so bots
-    // drive over it into the disc the way they do over Deep Six's outriggers.
+    // Front wedge is a WEDGE, not a box, so opponents ride up it into the disc.
     colliders: [
+      { shape: "wedge", halfExtents: { x: 0.8, y: 0.15, z: 0.36 }, offset: { x: 0, y: 0.15, z: -1.18 }, tipY: 0.03 }, // front wedge (MEASURED slope)
       { shape: "box", halfExtents: { x: 1.3, y: 0.16, z: 1.19 }, offset: { x: 0, y: 0.16, z: 0.19 } },
       { shape: "box", halfExtents: { x: 1.15, y: 0.19, z: 1.15 }, offset: { x: 0, y: 0.51, z: 0.35 } },
     ],

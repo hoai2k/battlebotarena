@@ -17,7 +17,10 @@ const V1_MASS = (lbs) => Math.max(12, lbs * V1.massPerLb);
 const DAMAGE_PER_IMPULSE = 0.028; // match.js WEAPON_HIT_DAMAGE_PER_IMPULSE
 const HEAVY = 1.25;
 const RATIOS = [0.25, 0.5, 0.75, 1];
-const SPINNERS = ["biteforce", "huge", "hypershock", "minotaur", "tombstone"];
+// Every spinner in the catalog, so a new bot cannot be tuned blind.
+const SPINNERS = Object.values(CATALOG)
+  .filter((b) => b.weapon?.type === "bar" || b.weapon?.type === "drum")
+  .map((b) => b.id);
 const TARGET = CATALOG.biteforce; // 250 lb reference target for every row
 
 // --- current v2 weapons.js, verbatim -----------------------------------------

@@ -486,25 +486,25 @@ await test("render state: interpolation and shape are sane", () =>
     check(Math.abs(after[0].position.z - 19) < 0.5, "reset restored spawn");
   }));
 
-await test("catalog: every spinner's blade leads its own body", async () => {
-  // A disc collider only reaches far forward at its own axle height, so any
-  // body collider ahead of the swept circle is a stand-off that keeps
-  // opponents outside the blade entirely. Deep Six, Bite Force and Witch
-  // Doctor all shipped that way and could not land a single head-on hit.
-  // Nothing in this sim can climb a wedge to get past it — suspension probes
-  // only ever stand on the arena — so the invariant is simply: the blade is
-  // the front of the bot.
+await test("catalog: nothing but a wedge sits in front of a spinner", async () => {
+  // A disc only reaches far forward at its own axle height, so a LEVEL box
+  // ahead of the swept circle is a stand-off that keeps opponents outside the
+  // blade entirely — Deep Six, Bite Force and Witch Doctor all shipped that
+  // way and could not land a single head-on hit. A WEDGE ahead of it is the
+  // opposite: opponents ride up the slope into the blade, which is what those
+  // machines are built to do. So the invariant is about shape, not distance.
   const { CATALOG } = await import("../src/assets/catalog.js");
   for (const spec of Object.values(CATALOG)) {
     const w = spec.weapon;
     if (w?.type !== "bar" && w?.type !== "drum") continue;
     const radius = w.radius ?? Math.max(w.dims?.y ?? 0, w.dims?.z ?? 0);
     const discFront = w.pivot.z - radius;
-    const bodyFront = Math.min(...spec.colliders.map(
-      (c) => (c.offset?.z ?? 0) - (c.halfExtents?.z ?? c.radius ?? 0),
-    ));
-    check(bodyFront > discFront, `${spec.id}: blade leads the body`,
-      `disc ${discFront.toFixed(2)} vs body ${bodyFront.toFixed(2)}`);
+    const blockers = spec.colliders.filter((c) => {
+      const front = (c.offset?.z ?? 0) - (c.halfExtents?.z ?? c.radius ?? 0);
+      return front < discFront && c.shape !== "wedge";
+    });
+    check(blockers.length === 0, `${spec.id}: only wedges lead the blade`,
+      `${blockers.length} level collider(s) ahead of disc front ${discFront.toFixed(2)}`);
   }
 });
 

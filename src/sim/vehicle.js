@@ -85,10 +85,26 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
       .setAdditionalMassProperties(mass, com, { x: ix, y: iy, z: iz }, m.qIdentity()),
   );
 
+  const wedgeColliders = [];
   for (const c of spec.colliders) {
     let desc;
     if (c.shape === "cylinder") {
       desc = RAPIER.ColliderDesc.cylinder(c.halfHeight, c.radius);
+    } else if (c.shape === "wedge") {
+      // A right triangular prism: flat on the floor, its top face climbing from
+      // a knife edge at the front (-z, y = tipY) to `halfExtents.y * 2` at the
+      // back. This is the shape a real wedge presents, and the reason the game
+      // has wedges at all — an opponent's suspension can find the slope and
+      // ride up it, which a stack of level boxes never allows.
+      const { x: hx, y: hy, z: hz } = c.halfExtents;
+      const tip = c.tipY ?? 0;
+      desc = RAPIER.ColliderDesc.convexHull(new Float32Array([
+        -hx, -hy, -hz, hx, -hy, -hz, // front bottom edge
+        -hx, -hy + tip, -hz, hx, -hy + tip, -hz, // front top edge (knife edge at tipY = 0)
+        -hx, -hy, hz, hx, -hy, hz, // back bottom edge
+        -hx, hy, hz, hx, hy, hz, // back top edge
+      ]));
+      if (!desc) throw new Error(`${spec.id}: degenerate wedge collider`);
     } else {
       desc = RAPIER.ColliderDesc.cuboid(c.halfExtents.x, c.halfExtents.y, c.halfExtents.z);
     }
@@ -102,7 +118,9 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
     if (c.offset) desc.setTranslation(c.offset.x, c.offset.y, c.offset.z);
     if (c.rotation) desc.setRotation(c.rotation);
     const collider = world.createCollider(desc, body);
-    tagCollider(meta, collider, { kind: "bot", botIndex: index, surface: "bot" });
+    const surface = c.shape === "wedge" ? "wedge" : "bot";
+    tagCollider(meta, collider, { kind: "bot", botIndex: index, surface });
+    if (surface === "wedge") wedgeColliders.push(collider);
   }
 
   // Per-probe static load share (bilinear over the anchor rectangle) so springs
@@ -151,6 +169,13 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
       const hit = world.castRay(ray, T.probeTravel, true, undefined, SUSPENSION_RAY_GROUPS, undefined, body);
       if (!hit) continue;
       const toi = hit.timeOfImpact ?? hit.toi;
+      // A solid raycast that STARTS inside a shape reports toi 0, which reads
+      // as full compression and therefore maximum spring force. On the floor
+      // that is the recovery we want. On another bot it is a pump: the corner
+      // is buried in the opponent, there is no surface under it, and the two
+      // colliders are already pushing each other apart. Standing on a bot only
+      // counts when there is real geometry BELOW the probe.
+      if (toi <= 0.01 && meta.get(hit.collider?.handle)?.kind === "bot") continue;
       const compression = T.probeTravel - toi;
       if (compression <= 0.005) continue;
       const vUp = m.dot(pointVelocity(worldAnchor, pos, rot, linvel, angvel), up);
@@ -261,6 +286,7 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
     mass,
     inertia: { x: ix, y: iy, z: iz },
     restCenterHeight,
+    wedgeColliders,
 
     /** Apply one fixed step of suspension + drive forces (before world.step). */
     update(dt, rawInput) {

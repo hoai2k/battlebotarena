@@ -217,12 +217,41 @@ Consequences worth knowing before touching it:
   reads the former, effects/haptics the latter.
 - `DAMAGE_CALIBRATION` sets match pace; `WEAPON_TUNING.hitCooldownSeconds`
   sets hit rate. Those two are the knobs, in that order.
+- `tuning.damageScale` (v2-only, default 1) scales ONLY the damage a hit does.
+  `impactScale` moves the whole hit — damage and shove together — because it
+  feeds the raw impulse before the split; `damageScale` orders how much bots
+  HURT without touching how far they THROW. The shipped order at full spin is
+  Deep Six 4.6% > Tombstone 3.8% > Minotaur 2.8% > HUGE 2.6% > Bite Force 2.4%
+  > Hypershock 1.8% > Witch Doctor 1.6%.
 - `tuning.gyroBoost` (v2-only, default 1) multiplies the gyro reaction. v1's
   chain is all but inert here — v2's raycast suspension resists roll and pitch
   far harder than v1's did, and the yaw servo eats the rest, so even at
   `gyroScale`'s ceiling of 4 a grounded bot moves a fraction of a degree. Deep
   Six runs 40, which takes its lean under a hard turn from 7.8° to 9.9° and
   leaves the straight line untouched. Left at 1 the chain is exactly v1's.
+
+## Wedges (v2/src/sim/wedges.js — SIM)
+
+`shape: "wedge"` is a right triangular prism: flat on the floor, its top face
+climbing from a knife edge at the front (`tipY`) to `halfExtents.y * 2` at the
+back. Ten bots carry one, sized from the model's measured front profile.
+
+The shape alone is not enough. Climbing a ramp under drive needs
+`thrust > weight * tan(slope)`, and these bots have ~62 lbf against 250 lb — so
+anything steeper than ~14 degrees is a wall, while the models' noses measure 18
+to 56. `wedges.js` supplies the rest: while a wedge collider touches the
+opponent, it applies an upward impulse to them and the reaction down onto its
+owner, scaled by how hard the owner is driving into them (a parked wedge lifts
+nobody). Measured across five opponents, wedge bots now lift them 0.3-0.9ft,
+pitch them 18-48 degrees and shove them 12-17ft.
+
+Suspension probes stand on the other bot as well as the arena
+(`SUSPENSION_RAY_GROUPS` includes `GROUP.BOT`), which is what lets a bot that
+has been lifted actually ride. One guard matters: a solid raycast that STARTS
+inside a shape reports `toi 0`, which reads as full compression and maximum
+spring force. On the floor that is the recovery we want; on another bot it is a
+pump that fires the bot into the air, so a zero-distance hit on a bot is
+ignored.
 
 ### Weapon reach — the two ways a spinner ends up unable to hit anything
 
@@ -237,6 +266,18 @@ swept numbers are lower bounds, not truth; render the part against the collider
 (`tools/viewer.html`) rather than reading the number off a script. HUGE,
 Tombstone, Witch Doctor, Minotaur and Deep Six segmented cleanly and their
 measurements are real.
+
+A **wedge** in front of a spinner is fine — opponents ride up it into the
+blade, which is what those machines are built to do. A **level box** is not.
+`tools/sim-tests.mjs` asserts exactly that: nothing but a wedge may sit ahead
+of a swept circle.
+
+Deep Six is the one exception, and carries no front collider at all. Its disc
+reaches furthest forward at its own axle height (1.62ft up, over everything in
+the game), so the low part of the sweep only opens around z=-0.9 and anything
+ahead of that is a stand-off whatever its shape: measured over nine opponents,
+a full-length outrigger wedge scores 0/9 and a shortened one 0/9, against 9/9
+bare.
 
 More important, **the body collider in front of a spinner decides whether the
 blade can ever reach**. A disc only reaches far forward at its own axle height;

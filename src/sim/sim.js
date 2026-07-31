@@ -7,6 +7,7 @@ import { SPAWNS } from "./arenaSpec.js";
 import { createVehicle, completeInput } from "./vehicle.js";
 import { createWeapon } from "./weapons.js";
 import { createHazards } from "./hazards.js";
+import { createWedges } from "./wedges.js";
 import { createContactRouter } from "./contacts.js";
 import * as m from "./math.js";
 
@@ -35,6 +36,7 @@ export async function createSim({ bots, emit }) {
   );
   const hazards = createHazards({ world, meta, emit, getVehicle: (i) => vehicles[i] });
   const contacts = createContactRouter({ world, meta, emit });
+  const wedges = createWedges({ world, meta, vehicles });
 
   let paused = false;
   let accumulator = 0;
@@ -71,6 +73,8 @@ export async function createSim({ bots, emit }) {
         input: inputs[i],
       });
     }
+    // Wedges act on the contacts the last step produced, before this one.
+    wedges.update(FIXED_DT);
     world.step(eventQueue);
     contacts.process(eventQueue, simTime);
     simTime += FIXED_DT;

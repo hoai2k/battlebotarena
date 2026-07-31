@@ -28,10 +28,13 @@ export const BOT_GROUPS = packGroups(
 // Weapon colliders hit opponents and arena solids, never the floor or hazards.
 export const WEAPON_GROUPS = packGroups(GROUP.WEAPON, GROUP.ARENA | GROUP.BOT);
 export const HAZARD_GROUPS = packGroups(GROUP.HAZARD, GROUP.BOT);
-// Suspension rays stand on floor, arena solids (deck/ramp), and risen hazards.
+// Suspension rays stand on floor, arena solids (deck/ramp), risen hazards — and
+// on the OTHER BOT. Without that last one a wedge is just a bumper: opponents
+// shove against its face and never climb it, which is most of what wedges are
+// for. The ray already excludes the caster's own body.
 export const SUSPENSION_RAY_GROUPS = packGroups(
   GROUP.BOT,
-  GROUP.FLOOR | GROUP.ARENA | GROUP.HAZARD,
+  GROUP.FLOOR | GROUP.ARENA | GROUP.HAZARD | GROUP.BOT,
 );
 
 let rapierReady = null;
