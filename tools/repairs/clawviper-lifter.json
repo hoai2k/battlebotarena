@@ -84,6 +84,14 @@
     }
   },
   {
+    "_comment": "The carve line through a 300k-tri scan shell leaves loose specks of the donor behind, and they swung with the arm as tiny islands out at the far left and right of it. They are not describable by position or by colour — they are simply everything not attached to the lifter frame. The frame is 63391 tris and the front truss 5210; the next largest island is 285, so 400 splits them cleanly.",
+    "mode": "islands",
+    "part": 910,
+    "minTris": 400,
+    "newPart": 912,
+    "parent": "modelBody"
+  },
+  {
     "_comment": "MEASURED axles. The lifter turns about the boss pair (parts 8/13) at the back of the arm's rear web: centres [-0.246,-0.097,0.085] and [-0.229,-0.106,-0.084], so the axle line is [-0.237,-0.101] on the centre plane. The drop's [-0.05,-0.16,0] was neither.",
     "mode": "pivot",
     "node": "modelWeapon",

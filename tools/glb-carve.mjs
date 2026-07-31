@@ -8,6 +8,11 @@
 //              hubs, which belong to the lifter)
 //   pivot    — rewrite a group node's extras.pivotLocal, i.e. the hinge the
 //              runtime loader turns that assembly about
+//   islands  — MOVE every connected component below `minTris` into a new part.
+//              A region carved out of a scan shell drags loose specks of the
+//              donor along its cut line; they are not describable by position
+//              or by colour, but they are always the components that are not
+//              attached to the thing you actually carved.
 //
 // Append-only strategy: new index buffers are appended to the BIN chunk and
 // the source primitive is re-pointed; vertex data is shared untouched. The
@@ -18,6 +23,8 @@
 //              "region": {"type": "sphere", "center": [x,y,z], "radius": r} }
 //            {"part": 5, "mode": "delete",
 //              "region": {"type": "box", "min": [..], "max": [..]} }]
+//            {"mode": "islands", "part": 910, "minTris": 400, "newPart": 912,
+//             "parent": "modelBody"}
 //            {"mode": "reparent", "part": 5, "parent": "modelWeapon"}
 //            {"mode": "pivot", "node": "modelWeapon", "pivotLocal": [x,y,z]}]
 // Requires `sharp` only when an op uses a colour region: npm i --no-save sharp
@@ -201,6 +208,67 @@ for (const op of ops) {
     parent.children = parent.children || [];
     if (!parent.children.includes(childIndex)) parent.children.push(childIndex);
     console.log(`part ${op.part} [reparent]: ${from || "(scene root)"} -> ${op.parent}`);
+    continue;
+  }
+  if (op.mode === "islands") {
+    const nodeIndex = json.nodes.findIndex((n) => n.name === `tripo_part_${op.part}`);
+    if (nodeIndex < 0) throw new Error(`part ${op.part} not found`);
+    const node = json.nodes[nodeIndex];
+    const primitive = json.meshes[node.mesh].primitives[0];
+    const indices = readIndices(primitive.indices);
+
+    // Weld by rounded position first: a scan shell is riddled with UV seams
+    // that split one surface into many index-distinct vertices.
+    const key = new Map();
+    const weld = new Int32Array(json.accessors[primitive.attributes.POSITION].count);
+    for (let v = 0; v < weld.length; v += 1) {
+      const p = readPosition(primitive.attributes.POSITION, v);
+      const k = `${Math.round(p[0] * 4000)},${Math.round(p[1] * 4000)},${Math.round(p[2] * 4000)}`;
+      let w = key.get(k);
+      if (w === undefined) { w = v; key.set(k, v); }
+      weld[v] = w;
+    }
+    const parent = new Int32Array(weld.length);
+    for (let v = 0; v < parent.length; v += 1) parent[v] = v;
+    const find = (a) => { while (parent[a] !== a) { parent[a] = parent[parent[a]]; a = parent[a]; } return a; };
+    const union = (a, b) => { a = find(a); b = find(b); if (a !== b) parent[a] = b; };
+    for (let t = 0; t < indices.length; t += 3) {
+      union(weld[indices[t]], weld[indices[t + 1]]);
+      union(weld[indices[t + 1]], weld[indices[t + 2]]);
+    }
+    const size = new Map();
+    for (let t = 0; t < indices.length; t += 3) {
+      const r = find(weld[indices[t]]);
+      size.set(r, (size.get(r) || 0) + 1);
+    }
+    const kept = [];
+    const moved = [];
+    for (let t = 0; t < indices.length; t += 3) {
+      const big = size.get(find(weld[indices[t]])) >= op.minTris;
+      (big ? kept : moved).push(indices[t], indices[t + 1], indices[t + 2]);
+    }
+    const islands = [...size.values()].filter((n) => n < op.minTris).length;
+    if (!moved.length) {
+      console.log(`part ${op.part} [islands]: nothing under ${op.minTris} tris`);
+      continue;
+    }
+    primitive.indices = appendIndexBuffer(kept);
+    console.log(`part ${op.part} [islands]: kept ${kept.length / 3} tris,`
+      + ` moved ${islands} island(s) totalling ${moved.length / 3} tris`);
+    const meshIndex = json.meshes.length;
+    json.meshes.push({
+      name: `tripo_mesh_part_${op.newPart}`,
+      primitives: [{ attributes: { ...primitive.attributes }, indices: appendIndexBuffer(moved), material: primitive.material }],
+    });
+    const newNodeIndex = json.nodes.length;
+    json.nodes.push({ name: `tripo_part_${op.newPart}`, mesh: meshIndex, translation: [...(node.translation || [0, 0, 0])] });
+    if (op.parent) {
+      const parentNode = json.nodes[nodeIndexByName(op.parent)];
+      parentNode.children = parentNode.children || [];
+      parentNode.children.push(newNodeIndex);
+    } else {
+      json.scenes[0].nodes.push(newNodeIndex);
+    }
     continue;
   }
   const nodeIndex = json.nodes.findIndex((n) => n.name === `tripo_part_${op.part}`);

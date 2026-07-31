@@ -152,6 +152,15 @@ tool now defaults `doubleSided` to false whenever `alpha` is set), and alpha
 below about 0.2 is invisible against light internals. 0.30 reads as clear
 polycarbonate; 0.42 is already frosted.
 
+Every dimension in that spec comes off an (x,z) -> highest-body-geometry map,
+which is the only way to get a panel that hugs a scan without piercing it. Top
+at -0.122 is the orange plate's own top; half-width 0.218 is where the armour
+wall's inner face starts at |x| 0.23; the front edge at z=0.060 is where the
+bay floor drops into a trough, with a bite out of the middle because the
+hammer's gearbox stands up to -0.03 there. To check the fit, re-run the spec
+with `alpha` near 1 and a loud colour: anything poking through the shell is
+then unmissable from a low angle, where a transparent panel would hide it.
+
 ### Integration note — Beta has no wheel parts
 
 `models.js` falls back to procedural placeholder wheels when a GLB has no
@@ -281,6 +290,15 @@ them stayed bolted to the chassis. Three separate faults, all fixed by
    the chassis; the claw turns about the small boss at the base of its stub
    (part 6, `[-0.1385,-0.044,0.002]`). The claw's authored y of `0.14` was its
    bbox mid-height, a fifth of the model above the real knuckle.
+
+A third pass cleaned up what the carve line left behind. Cutting a region out
+of a 300k-triangle scan shell drags loose specks of the donor along with it,
+and they swung with the arm as tiny islands out at its far left and right.
+Those are describable neither by position nor by colour — they are simply
+everything not attached to the lifter frame — so `glb-carve` gained an
+`islands` mode that welds by position, finds connected components and moves
+every one below `minTris` elsewhere. The frame is 63391 triangles and the front
+truss 5210; the next largest island is 285, so the threshold is not delicate.
 
 The lesson for the next hinged arm: **find the axle in the geometry**. Tripo
 segments the axle bosses as their own small parts, so the pivot is a part
