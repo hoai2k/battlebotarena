@@ -217,6 +217,29 @@ Consequences worth knowing before touching it:
   reads the former, effects/haptics the latter.
 - `DAMAGE_CALIBRATION` sets match pace; `WEAPON_TUNING.hitCooldownSeconds`
   sets hit rate. Those two are the knobs, in that order.
+- `tuning.gyroBoost` (v2-only, default 1) multiplies the gyro reaction. v1's
+  chain is all but inert here — v2's raycast suspension resists roll and pitch
+  far harder than v1's did, and the yaw servo eats the rest, so even at
+  `gyroScale`'s ceiling of 4 a grounded bot moves a fraction of a degree. Deep
+  Six runs 40, which takes its lean under a hard turn from 7.8° to 9.9° and
+  leaves the straight line untouched. Left at 1 the chain is exactly v1's.
+
+### Weapon reach — the two ways a spinner ends up unable to hit anything
+
+`weapon.radius` sizes the swept-disc collider, and it must be the **swept**
+radius: the max perpendicular distance from the axle over every blade vertex,
+measured through the loader. The bbox at the baked pose understates an
+asymmetric blade — Deep Six's S-blade reads 1.26 that way against a true 1.368.
+
+More important, **the body collider in front of a spinner decides whether the
+blade can ever reach**. A disc only reaches far forward at its own axle height;
+the low part of its sweep is deep inside the machine. So any solid forward of
+that is a stand-off that keeps opponents outside the disc entirely. Deep Six's
+front 1.2ft of outrigger wedge therefore carries no collider at all — bots
+drive over it, which is what the real machine's forks do. Nothing can climb a
+wedge in this sim: `SUSPENSION_RAY_GROUPS` excludes `GROUP.BOT`, so probes only
+ever stand on the arena, and adding a mere 0.04ft pad in front of Deep Six
+takes his hit count across nine test opponents from 10 back to 2.
 
 `node tools/weapon-tuning-verify.mjs` prints the hit ladder per spinner —
 today's sim, the v1 reference, and what the module produces — against the real

@@ -585,7 +585,7 @@ export const CATALOG = {
     hideWheels: true, // 2WD tucked inside the shell; nothing segmented out
     weightLbs: 250,
     weaponWeightLbs: 80, // post-rule-change blade
-    bodyDims: { x: 3.6, y: 1.84, z: 2.74 }, // MEASURED shell
+    bodyDims: { x: 3.6, y: 1.84, z: 2.75 }, // MEASURED shell
     // The outrigger forks ARE the support base, so the probes ride on them.
     wheelAnchors: [
       { x: -1.3, y: 0.2, z: -0.9 },
@@ -606,21 +606,39 @@ export const CATALOG = {
       inertia: 1.9,
       maxOmega: 420,
       budgetCap: 620, // the hardest hit in the game
-      radius: 1.26, // MEASURED blade tip from the hub
-      dims: { x: 0.055, y: 1.26, z: 1.26 },
+      // MEASURED swept radius: the max perpendicular distance from the axle
+      // over every blade vertex, NOT the bbox at the baked pose. The S-blade is
+      // asymmetric, so its bbox reads 1.26 and undersized the collider until it
+      // sat entirely inside the chassis and could not touch anything.
+      radius: 1.368,
+      dims: { x: 0.06, y: 1.368, z: 1.368 },
       tuning: {
         efficiency: 0.62, impulseScale: 9.0, kickbackScale: 1.5, liftScale: 26.0,
         liftVelocity: 5.0, gyroScale: 2.2, impactScale: 1.2,
+        // 80 lb of blade at 420 rad/s has to be felt through the sticks. At the
+        // stock boost of 1 it moves him 0.0 degrees; 40 takes his lean under a
+        // hard turn from 7.8 to 9.9 degrees and leaves the straight line intact.
+        gyroBoost: 40,
         // Its own hits tumble it — the signature failure mode, and the reason
         // the biggest weapon in the game is not simply the best.
         ownerPitchScale: 2.4,
       },
     },
+    // The front 1.2ft of this bot is the outrigger wedge, and it has NO
+    // collider on purpose — opponents drive straight over it, which is the
+    // only way anything reaches the blade. A disc only reaches far forward at
+    // its own axle height (1.62ft up, over everything in the game); the low
+    // part of its sweep is deep inside the machine, so the first solid the
+    // blade can put between itself and a foe has to sit at z=-0.2. The old
+    // stack squared the wedge off into a 0.48ft slab out to z=-1.3, and every
+    // opponent parked against that with the blade a foot short. Even a 0.04ft
+    // pad there takes the hit count on nine test opponents from 10 back to 2:
+    // their own front forks bottom out flush with the floor.
+    // Cost: pitched hard nose-down the wedge plate clips the arena floor. Every
+    // camera sits above the floor, so it is occluded.
     colliders: [
-      { shape: "box", halfExtents: { x: 0.95, y: 0.24, z: 1.3 }, offset: { x: 0, y: 0.24, z: 0 } }, // chassis pan
-      { shape: "box", halfExtents: { x: 0.42, y: 0.11, z: 1.3 }, offset: { x: -1.36, y: 0.13, z: 0 } }, // left fork rail
-      { shape: "box", halfExtents: { x: 0.42, y: 0.11, z: 1.3 }, offset: { x: 1.36, y: 0.13, z: 0 } }, // right fork rail
-      { shape: "box", halfExtents: { x: 0.42, y: 0.58, z: 0.42 }, offset: { x: 0, y: 1.1, z: 0.15 } }, // blade uprights
+      { shape: "box", halfExtents: { x: 1.8, y: 0.25, z: 0.79 }, offset: { x: 0, y: 0.25, z: 0.59 } }, // chassis pan
+      { shape: "box", halfExtents: { x: 0.46, y: 0.68, z: 0.33 }, offset: { x: 0, y: 1.18, z: 0.23 } }, // blade tower
     ],
   },
 

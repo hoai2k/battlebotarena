@@ -75,6 +75,13 @@ const SPINNER_DEFAULTS = Object.freeze({
   kickbackScale: 1,
   impactScale: 1,
   gyroScale: 0.75,
+  // v1's gyro reaction is all but inert here: v2's raycast suspension resists
+  // roll and pitch far harder than v1's did, and the yaw servo eats the rest,
+  // so the ported torque moves a grounded bot by a fraction of a degree even
+  // at gyroScale's ceiling of 4. gyroBoost is the v2-only multiplier on top,
+  // for a bot whose rotor is supposed to be felt through the controls. Left at
+  // 1 the chain is exactly v1's.
+  gyroBoost: 1,
   ownerPitchScale: 0, // >0 makes the bot's own hits tumble it (Deep Six)
   reach: 1.45,
   halfSpeedPowerMultiplier: 1,
@@ -271,7 +278,7 @@ export function createSpinnerModel(spec) {
         0.12,
         V1.gyroInertiaMax,
       ) * r;
-      const amount = inertia * clamp(t.gyroScale, 0, 4) * 0.036 * (dt * 60);
+      const amount = inertia * clamp(t.gyroScale, 0, 4) * clamp(t.gyroBoost, 1, 60) * 0.036 * (dt * 60);
       return {
         x: toV2Torque(spec, "x", clamp(throttle, -1, 1) * amount * bias.pitch),
         y: toV2Torque(spec, "y", -clamp(turn, -1, 1) * amount * bias.yaw * 0.45),
