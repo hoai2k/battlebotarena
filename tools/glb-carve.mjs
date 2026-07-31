@@ -20,11 +20,22 @@
 //              "region": {"type": "box", "min": [..], "max": [..]} }]
 //            {"mode": "reparent", "part": 5, "parent": "modelWeapon"}
 //            {"mode": "pivot", "node": "modelWeapon", "pivotLocal": [x,y,z]}]
+// Requires `sharp` only when an op uses a colour region: npm i --no-save sharp
 // Regions are in MODEL space (node translation applied), matching the
 // coordinates shown by glb-parts-report / the rainbow viewer. A region may
 // also be {"type": "union", "regions": [ ... ]} — an arm that runs diagonally
 // through a chassis needs several boxes, and one op per box would file each
-// slice as its own part.
+// slice as its own part — or {"type": "intersect", "regions": [...]}.
+//
+// {"type": "colour", "rgb": [r,g,b], "tolerance": 60} matches on the BASE
+// COLOUR TEXEL under the triangle's UV centroid instead of on position. Some
+// mistakes are only describable by livery: when a carve out of a chassis takes
+// a few of the chassis's own painted rails with it, the rails are not in a box
+// you can draw around, but they are unmistakably the body colour.
+// {"type": "colour", "dominant": "b", "margin": 20} matches on hue instead of
+// on distance — livery in shadow is the same hue at a fraction of the
+// brightness, and a fixed RGB target misses most of it. Intersect it with a box
+// when the same hue appears somewhere you want to keep.
 //
 // Two options make extract usable on an ALREADY-PARTITIONED GLB, where the
 // point is usually to hand a stowaway back to the chassis rather than to split
@@ -36,6 +47,7 @@
 //                       at the scene root, so it inherits that part's transform
 //                       and the runtime loader sees it as body geometry.
 import fs from "node:fs";
+import sharp from "sharp";
 
 function align4(value) {
   return (value + 3) & ~3;
@@ -83,7 +95,42 @@ function readPosition(accessorIndex, vertexIndex) {
   return [bin.readFloatLE(offset), bin.readFloatLE(offset + 4), bin.readFloatLE(offset + 8)];
 }
 
-function inRegion(point, region) {
+// --- base-colour sampling (only paid for when a colour region is used) -------
+const textureCache = new Map(); // image index -> { width, height, channels, data }
+
+async function loadTexture(materialIndex) {
+  const material = json.materials?.[materialIndex];
+  const baseColor = material?.pbrMetallicRoughness?.baseColorTexture;
+  if (!baseColor) return null;
+  const image = json.textures[baseColor.index].source;
+  if (!textureCache.has(image)) {
+    const view = json.bufferViews[json.images[image].bufferView];
+    const bytes = bin.subarray(view.byteOffset || 0, (view.byteOffset || 0) + view.byteLength);
+    const raw = await sharp(bytes).raw().toBuffer({ resolveWithObject: true });
+    textureCache.set(image, {
+      width: raw.info.width, height: raw.info.height, channels: raw.info.channels, data: raw.data,
+    });
+  }
+  return textureCache.get(image);
+}
+
+function readUV(accessorIndex, vertexIndex) {
+  const accessor = json.accessors[accessorIndex];
+  const view = json.bufferViews[accessor.bufferView];
+  const stride = view.byteStride || 8;
+  const offset = (view.byteOffset || 0) + (accessor.byteOffset || 0) + vertexIndex * stride;
+  return [bin.readFloatLE(offset), bin.readFloatLE(offset + 4)];
+}
+
+/** glTF UV origin is TOP-LEFT: y = v * height, never (1 - v) * height. */
+function sampleTexel(texture, u, v) {
+  const x = Math.min(texture.width - 1, Math.max(0, Math.round(u * texture.width)));
+  const y = Math.min(texture.height - 1, Math.max(0, Math.round(v * texture.height)));
+  const i = (y * texture.width + x) * texture.channels;
+  return [texture.data[i], texture.data[i + 1], texture.data[i + 2]];
+}
+
+function inRegion(point, region, sample = null) {
   if (region.type === "sphere") {
     const [cx, cy, cz] = region.center;
     return Math.hypot(point[0] - cx, point[1] - cy, point[2] - cz) <= region.radius;
@@ -95,7 +142,20 @@ function inRegion(point, region) {
       point[2] >= region.min[2] && point[2] <= region.max[2]
     );
   }
-  if (region.type === "union") return region.regions.some((r) => inRegion(point, r));
+  if (region.type === "union") return region.regions.some((r) => inRegion(point, r, sample));
+  if (region.type === "intersect") return region.regions.every((r) => inRegion(point, r, sample));
+  if (region.type === "colour") {
+    if (!sample) return false;
+    if (region.dominant) {
+      // Livery in shadow is the same hue at a fraction of the brightness, so a
+      // fixed RGB distance misses most of it. Ask which channel wins instead.
+      const channel = { r: 0, g: 1, b: 2 }[region.dominant];
+      const margin = region.margin ?? 20;
+      return [0, 1, 2].every((i) => i === channel || sample[channel] - sample[i] >= margin);
+    }
+    const [r, g, b] = region.rgb;
+    return Math.hypot(sample[0] - r, sample[1] - g, sample[2] - b) <= (region.tolerance ?? 48);
+  }
   throw new Error(`Unknown region type ${region.type}`);
 }
 
@@ -151,6 +211,11 @@ for (const op of ops) {
   const translation = node.translation || [0, 0, 0];
   const indices = readIndices(primitive.indices);
 
+  const usesColour = JSON.stringify(op.region).includes('"colour"');
+  const texture = usesColour ? await loadTexture(primitive.material) : null;
+  if (usesColour && !texture) throw new Error(`part ${op.part}: no base colour texture to sample`);
+  const uvAccessor = primitive.attributes.TEXCOORD_0;
+
   const kept = [];
   const moved = [];
   for (let t = 0; t < indices.length; t += 3) {
@@ -162,7 +227,17 @@ for (const op of ops) {
       c[2] += p[2] / 3;
     }
     const world = [c[0] + translation[0], c[1] + translation[1], c[2] + translation[2]];
-    const inside = inRegion(world, op.region) !== Boolean(op.invert);
+    let sample = null;
+    if (texture) {
+      let u = 0, v = 0;
+      for (let k = 0; k < 3; k += 1) {
+        const uv = readUV(uvAccessor, indices[t + k]);
+        u += uv[0] / 3;
+        v += uv[1] / 3;
+      }
+      sample = sampleTexel(texture, u, v);
+    }
+    const inside = inRegion(world, op.region, sample) !== Boolean(op.invert);
     (inside ? moved : kept).push(indices[t], indices[t + 1], indices[t + 2]);
   }
   if (!moved.length) throw new Error(`part ${op.part}: region matched 0 triangles — check coordinates`);

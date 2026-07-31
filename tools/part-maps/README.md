@@ -268,3 +268,19 @@ them stayed bolted to the chassis. Three separate faults, all fixed by
 The lesson for the next hinged arm: **find the axle in the geometry**. Tripo
 segments the axle bosses as their own small parts, so the pivot is a part
 centre to read off, not a number to estimate from a bbox.
+
+Two follow-ups, both in the repair spec:
+
+- **The carve took some of the chassis with it.** A few of the body's own blue
+  livery rails ended up in the lifter and swung with the arm. They are not in a
+  box you can draw around them, so `glb-carve` gained a `colour` region that
+  samples the base-colour texel under each triangle's UV centroid. Match on
+  HUE, not on a fixed RGB — the same paint in shadow is a fifth of the
+  brightness, and an RGB-distance test caught less than half of it.
+- **The shell is hollow.** Like most of these reconstructions Claw Viper is an
+  open box: from behind you see straight through the chassis and out the front.
+  `tools/repairs/clawviper-interior.json` fills the cavity with a plain dark
+  panel, inset inside the blue bodywork on every side so the shell still frames
+  it. The cavity was measured by voxel-scanning `modelBody` (floor at y=-0.25,
+  deck underside at -0.15, side rails' inner faces around |z|=0.24) rather than
+  eyeballed — a box sized by eye bled out past the rails and hid them.

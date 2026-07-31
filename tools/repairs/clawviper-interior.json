@@ -1,0 +1,18 @@
+{
+  "_comment": "Claw Viper is reconstructed as an open shell: from behind you see straight through the chassis and out the front. This is the interior, not a rear panel — a plain dark box filling the cavity between the floor pan and the deck, inset inside the blue bodywork on every side so the shell still frames it. Cavity measured by voxel-scanning modelBody: the floor sits at y=-0.25, the deck underside at -0.15, and the side rails' inner faces around |z|=0.24.",
+  "parent": "modelBody",
+  "material": {
+    "name": "ClawViperInterior",
+    "baseColorFactor": [0.045, 0.045, 0.05, 1],
+    "metallicFactor": 0.35,
+    "roughnessFactor": 0.75
+  },
+  "panels": [
+    {
+      "name": "panelInterior",
+      "type": "box",
+      "min": [-0.45, -0.24, -0.215],
+      "max": [0.04, -0.175, 0.215]
+    }
+  ]
+}
