@@ -244,3 +244,27 @@ were measured from the segmentation geometry rather than eyeballed.
   under the floor. Hydra rests at `-0.45`, arm flat on the deck with its lip at
   the nose, and fires to the baked pose (`0`).
 - **The mirrored HYDRA lettering is shipped as-is**, per the cosmetic note.
+
+### Claw Viper's lifter — a second pass
+
+The first integration moved only three parts with the arm, and the lifter read
+as broken in game: the forks and claw swung while the black frame that carries
+them stayed bolted to the chassis. Three separate faults, all fixed by
+`tools/repairs/clawviper-lifter.json`:
+
+1. **The frame was fused into the chassis mesh.** Part 11 is a single 308k-tri
+   shell covering both the body and the whole lifter A-frame, and it has no
+   internal connected components to split on — so the frame is carved out of it
+   by region (two boxes: the beam above the deck, and the truss that dives to
+   the fork ahead of the nose) and handed to `modelWeapon` as part 910.
+2. **Three loose parts were filed under the body**: the fork hubs (5, 15) and
+   the claw's axle boss (6). All three bolt to the lifter.
+3. **Both pivots were wrong.** The lifter turns about the boss pair at the back
+   of the arm's rear web (parts 8/13, so `[-0.237,-0.101,0]`), not the front of
+   the chassis; the claw turns about the small boss at the base of its stub
+   (part 6, `[-0.1385,-0.044,0.002]`). The claw's authored y of `0.14` was its
+   bbox mid-height, a fifth of the model above the real knuckle.
+
+The lesson for the next hinged arm: **find the axle in the geometry**. Tripo
+segments the axle bosses as their own small parts, so the pivot is a part
+centre to read off, not a number to estimate from a bbox.

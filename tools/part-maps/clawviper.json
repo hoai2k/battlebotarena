@@ -1,11 +1,12 @@
 {
-  "weapon": [14, 12, 7],
+  "_comment": "Parts 5/15/6 and both pivotOverrides are corrections applied by tools/repairs/clawviper-lifter.json, which also carves part 910 (the lifter frame) out of the chassis mesh. Re-partitioning from raw Tripo output reproduces the map below minus 910; run the repair afterwards.",
+  "weapon": [14, 12, 7, 5, 15, 6],
   "weaponSub": {
     "name": "claw",
     "parts": [10],
-    "pivotOverride": [-0.14, 0.14, 0.002]
+    "pivotOverride": [-0.1385, -0.044, 0.002]
   },
   "wheels": [[18], [1], [16], [3]],
   "weaponAxis": [0, 0, 1],
-  "pivotOverride": [-0.05, -0.16, 0]
+  "pivotOverride": [-0.237, -0.101, 0]
 }

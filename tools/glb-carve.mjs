@@ -1,8 +1,13 @@
-// Triangle-level surgery on a Tripo segmentation GLB (indexed geometry).
-// Two modes per operation:
-//   delete  — remove triangles of a part inside a region (junk cleanup)
-//   extract — MOVE triangles of a part inside a region into a NEW part node
-//             (e.g. split sawblaze's saw disc out of the arm so it can spin)
+// Part surgery on a Tripo segmentation GLB (indexed geometry).
+// Four modes per operation:
+//   delete   — remove triangles of a part inside a region (junk cleanup)
+//   extract  — MOVE triangles of a part inside a region into a NEW part node
+//              (e.g. split sawblaze's saw disc out of the arm so it can spin)
+//   reparent — move a whole tripo_part_N node under a different group, for a
+//              part the map filed under the wrong assembly (clawviper's fork
+//              hubs, which belong to the lifter)
+//   pivot    — rewrite a group node's extras.pivotLocal, i.e. the hinge the
+//              runtime loader turns that assembly about
 //
 // Append-only strategy: new index buffers are appended to the BIN chunk and
 // the source primitive is re-pointed; vertex data is shared untouched. The
@@ -13,8 +18,13 @@
 //              "region": {"type": "sphere", "center": [x,y,z], "radius": r} }
 //            {"part": 5, "mode": "delete",
 //              "region": {"type": "box", "min": [..], "max": [..]} }]
+//            {"mode": "reparent", "part": 5, "parent": "modelWeapon"}
+//            {"mode": "pivot", "node": "modelWeapon", "pivotLocal": [x,y,z]}]
 // Regions are in MODEL space (node translation applied), matching the
-// coordinates shown by glb-parts-report / the rainbow viewer.
+// coordinates shown by glb-parts-report / the rainbow viewer. A region may
+// also be {"type": "union", "regions": [ ... ]} — an arm that runs diagonally
+// through a chassis needs several boxes, and one op per box would file each
+// slice as its own part.
 //
 // Two options make extract usable on an ALREADY-PARTITIONED GLB, where the
 // point is usually to hand a stowaway back to the chassis rather than to split
@@ -85,6 +95,7 @@ function inRegion(point, region) {
       point[2] >= region.min[2] && point[2] <= region.max[2]
     );
   }
+  if (region.type === "union") return region.regions.some((r) => inRegion(point, r));
   throw new Error(`Unknown region type ${region.type}`);
 }
 
@@ -105,7 +116,33 @@ function appendIndexBuffer(indices) {
   return accessorIndex;
 }
 
+function nodeIndexByName(name) {
+  const i = json.nodes.findIndex((n) => n.name === name);
+  if (i < 0) throw new Error(`node ${name} not found`);
+  return i;
+}
+
 for (const op of ops) {
+  if (op.mode === "pivot") {
+    const node = json.nodes[nodeIndexByName(op.node)];
+    node.extras = { ...(node.extras || {}), pivotLocal: op.pivotLocal };
+    console.log(`${op.node} [pivot]: pivotLocal = [${op.pivotLocal.join(", ")}]`);
+    continue;
+  }
+  if (op.mode === "reparent") {
+    const childIndex = nodeIndexByName(`tripo_part_${op.part}`);
+    let from = null;
+    for (const node of json.nodes) {
+      if (!node.children?.includes(childIndex)) continue;
+      from = node.name;
+      node.children = node.children.filter((c) => c !== childIndex);
+    }
+    const parent = json.nodes[nodeIndexByName(op.parent)];
+    parent.children = parent.children || [];
+    if (!parent.children.includes(childIndex)) parent.children.push(childIndex);
+    console.log(`part ${op.part} [reparent]: ${from || "(scene root)"} -> ${op.parent}`);
+    continue;
+  }
   const nodeIndex = json.nodes.findIndex((n) => n.name === `tripo_part_${op.part}`);
   if (nodeIndex < 0) throw new Error(`part ${op.part} not found`);
   const node = json.nodes[nodeIndex];
@@ -153,8 +190,86 @@ for (const op of ops) {
   }
 }
 
-// Reassemble GLB with appended BIN.
-const newBin = Buffer.concat([bin, ...appendChunks]);
+// Reassemble GLB with appended BIN, then drop every bufferView nothing points
+// at any more. Re-pointing a primitive orphans its old index view, and on a
+// 300k-triangle chassis that is megabytes — clawviper's file grew 23% before
+// this pass existed.
+let newBin = Buffer.concat([bin, ...appendChunks]);
+
+// Accessors are referenced by INDEX from a handful of known places, so they
+// have to be collected by name rather than by walking for a `bufferView` key.
+function accessorSlots() {
+  const slots = [];
+  for (const mesh of json.meshes || []) {
+    for (const prim of mesh.primitives || []) {
+      if (typeof prim.indices === "number") slots.push([prim, "indices"]);
+      for (const key of Object.keys(prim.attributes || {})) slots.push([prim.attributes, key]);
+      for (const target of prim.targets || []) {
+        for (const key of Object.keys(target)) slots.push([target, key]);
+      }
+    }
+  }
+  for (const skin of json.skins || []) {
+    if (typeof skin.inverseBindMatrices === "number") slots.push([skin, "inverseBindMatrices"]);
+  }
+  for (const animation of json.animations || []) {
+    for (const sampler of animation.samplers || []) {
+      slots.push([sampler, "input"], [sampler, "output"]);
+    }
+  }
+  return slots;
+}
+{
+  const slots = accessorSlots();
+  const live = new Set(slots.map(([holder, key]) => holder[key]));
+  if (live.size < json.accessors.length) {
+    const remap = new Map();
+    const kept = [];
+    json.accessors.forEach((accessor, index) => {
+      if (!live.has(index)) return;
+      remap.set(index, kept.length);
+      kept.push(accessor);
+    });
+    console.log(`compact: dropped ${json.accessors.length - kept.length} orphaned accessor(s)`);
+    json.accessors = kept;
+    for (const [holder, key] of slots) holder[key] = remap.get(holder[key]);
+  }
+}
+
+const used = new Set();
+(function collect(value) {
+  if (Array.isArray(value)) return value.forEach(collect);
+  if (!value || typeof value !== "object") return;
+  if (typeof value.bufferView === "number") used.add(value.bufferView);
+  Object.values(value).forEach(collect);
+})(json);
+if (used.size < json.bufferViews.length) {
+  const chunks = [];
+  const remap = new Map();
+  const views = [];
+  let cursor = 0;
+  json.bufferViews.forEach((view, index) => {
+    if (!used.has(index)) return;
+    const start = view.byteOffset || 0;
+    const bytes = newBin.subarray(start, start + view.byteLength);
+    const padded = Buffer.concat([bytes, Buffer.alloc(align4(bytes.length) - bytes.length)]);
+    remap.set(index, views.length);
+    views.push({ ...view, byteOffset: cursor });
+    chunks.push(padded);
+    cursor += padded.length;
+  });
+  const dropped = json.bufferViews.length - views.length;
+  const savedBytes = newBin.length - cursor;
+  json.bufferViews = views;
+  (function repoint(value) {
+    if (Array.isArray(value)) return value.forEach(repoint);
+    if (!value || typeof value !== "object") return;
+    if (typeof value.bufferView === "number") value.bufferView = remap.get(value.bufferView);
+    Object.values(value).forEach(repoint);
+  })(json);
+  newBin = Buffer.concat(chunks);
+  console.log(`compact: dropped ${dropped} orphaned bufferView(s), ${(savedBytes / 1048576).toFixed(1)}MB`);
+}
 json.buffers[0].byteLength = newBin.length;
 const jsonBytes = Buffer.from(JSON.stringify(json), "utf8");
 const jsonPadded = Buffer.concat([jsonBytes, Buffer.alloc(align4(jsonBytes.length) - jsonBytes.length, 0x20)]);

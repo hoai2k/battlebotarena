@@ -242,7 +242,11 @@ shell (Beta, Deep Six, Hydra) — the suspension still runs off `wheelAnchors`.
 **Weapon arm angles (`restAngle` / `fireAngle`) must be measured in GAME
 space, through the loader** — after `modelYaw`, `modelScale` and grounding.
 Measuring in raw GLB space is off by enough to bury a fork half a foot in the
-floor. **Until
+floor. Measure the arm's TRANSFORMED VERTICES, not `Box3.setFromObject`: that
+returns the AABB of the arm's rotated AABB, which on a pitched arm reads up to
+0.7ft low and makes an arm resting cleanly on the deck look buried. (Grounding
+the whole model is unaffected — `modelYaw` is a rotation about Y, which leaves
+y extents exact.) **Until
 real GLBs land, and whenever a file/part is missing, build placeholder
 geometry from `bodyDims` + weapon type** (box chassis, cylinder drum/bar, box
 flipper plate) with per-bot accent colors — the game must be fully playable

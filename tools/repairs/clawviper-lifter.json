@@ -1,0 +1,36 @@
+[
+  {
+    "_comment": "The lifter's whole black frame — side rails, cross members and the front truss down to the fork hubs — was fused into the chassis mesh (part 11 is one 308k-tri shell, so no connected-component split was available). Carve it out along the arm and hand it to modelWeapon. Two boxes: the beam that runs above the deck, and the truss that dives to the fork ahead of the chassis nose.",
+    "part": 11,
+    "mode": "extract",
+    "newPart": 910,
+    "parent": "modelWeapon",
+    "region": {
+      "type": "union",
+      "regions": [
+        { "type": "box", "min": [-0.24, -0.13, -0.35], "max": [0.45, 0.06, 0.35] },
+        { "type": "box", "min": [0.16, -0.30, -0.35], "max": [0.46, -0.06, 0.35] }
+      ]
+    }
+  },
+  {
+    "_comment": "Fork hubs (5, 15) and the claw's axle boss (6) rode with the chassis. All three are bolted to the lifter and swing with it.",
+    "mode": "reparent",
+    "part": 5,
+    "parent": "modelWeapon"
+  },
+  { "mode": "reparent", "part": 15, "parent": "modelWeapon" },
+  { "mode": "reparent", "part": 6, "parent": "modelWeapon" },
+  {
+    "_comment": "MEASURED axles. The lifter turns about the boss pair (parts 8/13) at the back of the arm's rear web: centres [-0.246,-0.097,0.085] and [-0.229,-0.106,-0.084], so the axle line is [-0.237,-0.101] on the centre plane. The drop's [-0.05,-0.16,0] was neither.",
+    "mode": "pivot",
+    "node": "modelWeapon",
+    "pivotLocal": [-0.237, -0.101, 0]
+  },
+  {
+    "_comment": "The claw turns about part 6, the small boss at the base of its stub: centre [-0.1385,-0.044,0.133], taken back to the centre plane. The drop's y of 0.14 was the claw's bbox mid-height — a fifth of the model above its real knuckle, so the jaw flew off its mount.",
+    "mode": "pivot",
+    "node": "modelWeaponSub-claw",
+    "pivotLocal": [-0.1385, -0.044, 0.002]
+  }
+]

@@ -493,15 +493,13 @@ export const CATALOG = {
       type: "lifterDisc",
       pivot: { x: 0, y: 0.88, z: 1.4 }, // MEASURED rear hinge, game space
       axis: { x: 1, y: 0, z: 0 }, // part-map axis is [0,0,1] pre-yaw
-      // MEASURED through the loader (game space, model grounded): at -0.56 the
+      // MEASURED through the loader (game space, model grounded): at -0.52 the
       // arm's fork plate lies flat on the deck pointing straight ahead, which
       // is the pose it scoops from; +1.0 stands the arm up with the disc
-      // overhead. Sizing rest by "no part of the arm below y=0" instead lands
-      // at -0.2 and leaves the forks a foot in the air — the arm's plate is
-      // deeper than the forks, so a little of it passes under the deck at rest.
-      // That is hidden: every camera sits above the floor (chase is bot.y+3.1,
-      // battle 7.5+, arena 15), so the arena floor occludes it.
-      restAngle: -0.56,
+      // overhead. The earlier -0.56 came from Box3.setFromObject, which reports
+      // the AABB of the arm's ROTATED AABB and so reads up to 0.7ft low on a
+      // pitched arm — measure the transformed vertices instead.
+      restAngle: -0.52,
       fireAngle: 1.0,
       lowerSeconds: 0.65,
       liftImpulse: 150, // enough to tip a 250 lb opponent, spread over the stroke
@@ -548,7 +546,9 @@ export const CATALOG = {
     accentDark: "#141414",
     weapon: {
       type: "grappler",
-      pivot: { x: 0, y: 0.39, z: 0.16 }, // MEASURED fork hinge, game space
+      // MEASURED: the lifter's axle is the boss pair at the back of the arm's
+      // rear web (raw parts 8/13), not the front of the chassis.
+      pivot: { x: 0, y: 0.581, z: 0.61 }, // game space, via the loader
       axis: { x: 1, y: 0, z: 0 },
       // MEASURED through the loader (game space, model grounded). The baked
       // pose already has the forks flat on the deck, and the arm lifts on
@@ -557,13 +557,14 @@ export const CATALOG = {
       liftAngle: 1.5, // ~86deg: past vertical for the suplex, arm still clear of the floor
       liftSeconds: 0.7,
       lowerSeconds: 0.9,
-      gripReach: 1.85, // where a gripped bot rides, ahead of the hinge
-      gripHeight: 0.45,
+      gripReach: 1.6, // where a gripped bot rides: on the fork blades
+      gripHeight: 0.4,
       gripStrength: 16,
       throwScale: 0.6, // share of the arm's tip speed handed over on release
       downforceLbs: 250, // magnets: very hard to shove or flip
       dims: { x: 0.2, y: 0.2, z: 0.5 },
-      claw: { openAngle: 0, closedAngle: -0.8, clampSeconds: 0.25 },
+      // MEASURED: at -0.9 the jaw shuts onto the red fork tip it grips against.
+      claw: { openAngle: 0, closedAngle: -0.9, clampSeconds: 0.25 },
       tuning: { reach: 1.4, holdDamagePerSecond: 3 },
     },
     colliders: [
@@ -650,10 +651,10 @@ export const CATALOG = {
       type: "flipper",
       pivot: { x: 0, y: 0.64, z: 0.79 }, // MEASURED rear hinge, game space
       axis: { x: 1, y: 0, z: 0 },
-      // MEASURED through the loader (game space, model grounded): at -0.45 the
-      // long flipper plate lies down on the deck with its lip out at the nose,
-      // which is closed. The baked pose (0) has it up in the air — fired.
-      restAngle: -0.45,
+      // MEASURED through the loader (game space, model grounded): -0.55 is
+      // where the plate's lip reaches the floor (arm low point -0.003), so it
+      // rests as a wedge along the deck. The baked pose (0) is fired.
+      restAngle: -0.55,
       fireAngle: 0,
       budgetCap: 520, // 450+ lb of flip
       dims: { x: 1.1, y: 0.09, z: 1.5 },
