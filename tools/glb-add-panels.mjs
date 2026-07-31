@@ -19,7 +19,8 @@
 // panels.json:
 //   { "parent": "modelBody",
 //     "material": { "name": "...", "baseColorFactor": [r,g,b,a],
-//                   "metallicFactor": 0.55, "roughnessFactor": 0.5 },
+//                   "metallicFactor": 0.55, "roughnessFactor": 0.5,
+//                   "alpha": 0.28 },   // set alpha for a glass/lexan window
 //     "panels": [
 //       { "name": "panelBack", "type": "box",
 //         "min": [x,y,z], "max": [x,y,z] },
@@ -202,15 +203,26 @@ if (parent.translation || parent.rotation || parent.scale || parent.matrix) {
 
 const material = spec.material || {};
 const materialIndex = json.materials.length;
-json.materials.push({
+const panelMaterial = {
   name: material.name || "PanelPlain",
-  doubleSided: true,
+  // Single-sided for glass: a doubleSided transparent box blends its own back
+  // faces over its front ones and comes out milky.
+  doubleSided: material.doubleSided ?? !material.alpha,
   pbrMetallicRoughness: {
     baseColorFactor: material.baseColorFactor || [0.04, 0.04, 0.045, 1],
     metallicFactor: material.metallicFactor ?? 0.55,
     roughnessFactor: material.roughnessFactor ?? 0.5,
   },
-});
+};
+// `alpha` makes the panel a window rather than a plate: polycarbonate over an
+// electronics bay reads as glass, and the parts inside stay visible.
+if (material.alpha !== undefined) {
+  panelMaterial.alphaMode = "BLEND";
+  panelMaterial.pbrMetallicRoughness.baseColorFactor = [
+    ...(material.baseColorFactor || [0.04, 0.04, 0.045]).slice(0, 3), material.alpha,
+  ];
+}
+json.materials.push(panelMaterial);
 
 parent.children = parent.children || [];
 for (const panel of spec.panels) {

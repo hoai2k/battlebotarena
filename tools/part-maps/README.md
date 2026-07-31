@@ -135,6 +135,23 @@ Options if you want it better, cheapest first:
    it would look sharper than the generated mesh.
 3. **Ship as-is** and revisit; nothing about it blocks integration.
 
+### The electronics bay is open
+
+Beta's bay is reconstructed open: the orange beta plate, the motors and the
+loom sit exposed between the armour walls with nothing over them.
+`tools/repairs/beta-canopy.json` puts a lexan canopy over it — transparent, so
+the parts stay visible, and tucked down between the shell's side walls so the
+armour is still what protects it. It stops short of the hammer's gearbox, which
+lives forward of the bay: a canopy over that would have the arm swinging
+through glass.
+
+`glb-add-panels` gained `material.alpha` for this. Two notes if another bot
+needs a window: the panel must be **single-sided** (a doubleSided transparent
+box blends its own back faces over its front ones and comes out milky — the
+tool now defaults `doubleSided` to false whenever `alpha` is set), and alpha
+below about 0.2 is invisible against light internals. 0.30 reads as clear
+polycarbonate; 0.42 is already frosted.
+
 ### Integration note — Beta has no wheel parts
 
 `models.js` falls back to procedural placeholder wheels when a GLB has no

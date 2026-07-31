@@ -1,0 +1,68 @@
+{
+  "_comment": "Beta's electronics bay is reconstructed open: the orange beta plate, the motors and the loom sit exposed between the armour walls with nothing over them. This is a lexan canopy over that bay — transparent, so the parts stay visible, and tucked down between the shell's side walls so the armour is still what protects it. It stops short of z=0.02 rather than covering the whole bay: the hammer's gearbox and its hinge live forward of that, and a canopy over them would have the arm swinging through glass. Bay measured by voxel-scanning modelBody: floor at y=-0.384, the rear cluster tops out at -0.104, the armour walls top out at -0.175, and the bay narrows from x=+-0.240 at the front to +-0.125 at the rear rim — the outline follows that taper.",
+  "parent": "modelBody",
+  "material": {
+    "name": "BetaCanopy",
+    "baseColorFactor": [
+      0.58,
+      0.68,
+      0.78
+    ],
+    "alpha": 0.3,
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.04
+  },
+  "panels": [
+    {
+      "name": "panelCanopy",
+      "type": "plate",
+      "axis": "y",
+      "range": [
+        -0.33,
+        -0.083
+      ],
+      "outline": [
+        [
+          -0.125,
+          -0.325
+        ],
+        [
+          0.125,
+          -0.325
+        ],
+        [
+          0.175,
+          -0.285
+        ],
+        [
+          0.196,
+          -0.215
+        ],
+        [
+          0.204,
+          -0.1
+        ],
+        [
+          0.208,
+          0.015
+        ],
+        [
+          -0.208,
+          0.015
+        ],
+        [
+          -0.204,
+          -0.1
+        ],
+        [
+          -0.196,
+          -0.215
+        ],
+        [
+          -0.175,
+          -0.285
+        ]
+      ]
+    }
+  ]
+}
