@@ -135,6 +135,25 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
   const ai = stateFor(stateKey);
   ai.t += Math.max(0, dt || 0);
 
+  // On its back, nothing else matters until it is back on its wheels. A bot
+  // that can drive inverted just carries on — the controls mirror themselves in
+  // the sim, so the AI needs no special case for those.
+  const q = selfState.quaternion || { x: 0, y: 0, z: 0, w: 1 };
+  const upY = 1 - 2 * (q.x * q.x + q.z * q.z);
+  if (upY < 0.25 && !spec?.canDriveInverted) {
+    const spinner = spec?.weapon?.type === "bar" || spec?.weapon?.type === "drum";
+    if (spinner) {
+      // Saw the sticks lock to lock with the rotor lit: the reaction walks it
+      // over. Reversing every third of a second is what actually builds the
+      // roll — holding one lock just leans on it.
+      const flip = Math.floor(ai.t * 3) % 2 === 0 ? 1 : -1;
+      return { leftDrive: flip, rightDrive: -flip, weapon: true, brake: false, sawActive: true };
+    }
+    // Stroke weapons: pulse, so each swing re-arms and kicks again.
+    const firing = Math.floor(ai.t * 1.6) % 2 === 0;
+    return { leftDrive: 0, rightDrive: 0, weapon: firing, brake: false, sawActive: firing };
+  }
+
   const selfPos = selfState.position;
   // Reaction lag: the AI steers at a low-passed foe position.
   const actualFoe = foeState.position;

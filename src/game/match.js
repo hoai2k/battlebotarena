@@ -17,10 +17,12 @@
 // Zones from the contact point in the target's local frame (yaw only):
 // front third -> 'weapon', outer sides or low hits -> 'drive' (side tracked
 // internally), otherwise 'body'. Zone thresholds emit EV.PART_BREAK once:
-// weapon at 25%, each drive side at 16%. The sim has no disable flag, so
-// breakage is enforced through filterInputs(): broken weapon -> weapon input
-// forced false (spin decays naturally in the sim); broken drive side -> that
-// side's drive input x 0.4.
+// weapon at 25%, each drive side at 16% — but ONLY once the bot is 75% gone
+// overall. Systems failing is the endgame, not something that happens to you
+// in the first exchange; the zone still decides WHICH system goes. The sim has
+// no disable flag, so breakage is enforced through filterInputs(): broken
+// weapon -> weapon input forced false (spin decays naturally in the sim);
+// broken drive side -> that side's drive input x 0.4.
 //
 // KO: total >=100, or immobilized (speed < 0.35 ft/s) for 10s while the
 // opponent has moved within the last 2s.
@@ -50,6 +52,10 @@ const HAZARD_LAUNCH_SCALE = 0.02;
 
 const WEAPON_BREAK_THRESHOLD = 25;
 const DRIVE_SIDE_BREAK_THRESHOLD = 16;
+// Nothing breaks until the bot is three-quarters destroyed. Zone damage alone
+// used to do it, so a couple of clean hits to one side could cripple a bot
+// that was otherwise barely marked.
+const PART_BREAK_MIN_TOTAL = 75;
 const BROKEN_DRIVE_SCALE = 0.4;
 
 const KO_TOTAL = 100;
@@ -151,6 +157,7 @@ export function createMatch({ sim, specs, emit, on }) {
 
   function checkPartBreaks(botIndex, point) {
     const bot = damage[botIndex];
+    if (bot.total < PART_BREAK_MIN_TOTAL) return;
     if (!bot.weaponBroken && bot.zones.weapon >= WEAPON_BREAK_THRESHOLD) {
       bot.weaponBroken = true;
       emit(EV.PART_BREAK, { botIndex, zone: "weapon", point: point || null });

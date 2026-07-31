@@ -486,6 +486,59 @@ await test("render state: interpolation and shape are sane", () =>
     check(Math.abs(after[0].position.z - 19) < 0.5, "reset restored spawn");
   }));
 
+await test("srimech: an overturned bot gets itself back onto its wheels", async () => {
+  // Two ways off your back: shove the arm into the floor, or — with a rotor
+  // lit — throw the drive lock to lock and let the reaction walk you over.
+  // Both need the bot to be ON something; neither works in mid-air.
+  const onBack = (sim) => {
+    const body = sim._test.body(0);
+    body.setTranslation({ x: 0, y: 1.6, z: 0 }, true);
+    body.setRotation({ x: 0, y: 0, z: 1, w: 0 }, true);
+    body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    frames(sim, 90);
+  };
+  const upY = (sim) => {
+    const q = sim._test.body(0).rotation();
+    return 1 - 2 * (q.x * q.x + q.z * q.z);
+  };
+
+  await withSim([flipperSpec(), drumSpec()], (sim) => {
+    sim._test.setPose(1, { x: 16, z: 16 }, 0);
+    onBack(sim);
+    check(upY(sim) < -0.5, "starts on its back", upY(sim).toFixed(2));
+    for (let i = 0; i < 240 && upY(sim) < 0.5; i += 1) {
+      frames(sim, 1, [{ weapon: Math.floor(i / 60) % 2 === 0 }, {}]);
+    }
+    check(upY(sim) > 0.5, "flipper fired itself over", upY(sim).toFixed(2));
+  });
+
+  await withSim([drumSpec(), flipperSpec()], (sim) => {
+    sim._test.setPose(1, { x: 16, z: 16 }, 0);
+    onBack(sim);
+    sim._test.setWeaponOmega(0, drumSpec().weapon.maxOmega);
+    for (let i = 0; i < 480 && upY(sim) < 0.5; i += 1) {
+      const lock = Math.floor(i / 20) % 2 === 0 ? 1 : -1;
+      frames(sim, 1, [{ leftDrive: lock, rightDrive: -lock, weapon: true }, {}]);
+    }
+    check(upY(sim) > 0.5, "spinner walked itself over on the sticks", upY(sim).toFixed(2));
+  });
+
+  // Upright and hammering every control at once, nothing may launch it.
+  await withSim([flipperSpec(), drumSpec()], (sim) => {
+    sim._test.setPose(1, { x: 16, z: 16 }, 0);
+    frames(sim, 60);
+    const rest = sim._test.vehicles[0].restCenterHeight;
+    let peak = 0;
+    for (let i = 0; i < 480; i += 1) {
+      const lock = Math.floor(i / 20) % 2 === 0 ? 1 : -1;
+      frames(sim, 1, [{ leftDrive: lock, rightDrive: -lock, weapon: true, sawActive: true }, {}]);
+      peak = Math.max(peak, sim._test.body(0).translation().y - rest);
+    }
+    check(peak < 0.6, "no srimech while upright", `${peak.toFixed(2)}ft hop`);
+  });
+});
+
 await test("catalog: nothing but a wedge sits in front of a spinner", async () => {
   // A disc only reaches far forward at its own axle height, so a LEVEL box
   // ahead of the swept circle is a stand-off that keeps opponents outside the

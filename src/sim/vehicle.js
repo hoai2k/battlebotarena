@@ -142,6 +142,15 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
     return { k, c, maxForce: load * T.maxSuspensionForceFactor };
   });
 
+  // Upside down, a bot that can still drive is standing on the OTHER side of
+  // its wheels, and the probe anchors have to move with them or the rays never
+  // reach the floor. Mirroring the anchor about the collider stack's top puts
+  // the probe the same distance above the contact patch as it is when upright.
+  const colliderTop = Math.max(
+    ...spec.colliders.map((c) => (c.offset?.y ?? 0) + (c.halfExtents?.y ?? c.halfHeight ?? 0)),
+  );
+  const invertedAnchorY = colliderTop - (T.probeTravel - T.restCompression);
+
   const ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
   const probeState = anchors.map(() => ({ grounded: false, compression: 0, normalForce: 0, longForce: 0 }));
   const wheelSpin = anchors.map(() => 0);
@@ -153,10 +162,11 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
     return m.add(linvel, m.cross(angvel, m.sub(worldPoint, comWorld)));
   }
 
-  function updateSuspension(dt, pos, rot, linvel, angvel, up) {
+  function updateSuspension(dt, pos, rot, linvel, angvel, up, inverted = false) {
     const worldAnchors = [];
     for (let i = 0; i < anchors.length; i++) {
-      const worldAnchor = m.add(pos, m.qRotate(rot, anchors[i]));
+      const anchor = inverted ? { ...anchors[i], y: invertedAnchorY } : anchors[i];
+      const worldAnchor = m.add(pos, m.qRotate(rot, anchor));
       worldAnchors.push(worldAnchor);
       const state = probeState[i];
       state.grounded = false;
@@ -300,10 +310,11 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
       // suspension probes cast toward whichever face is against the floor.
       // Steering mirrors, exactly as it does on the real machine.
       let up = m.qRotate(rot, { x: 0, y: 1, z: 0 });
-      if (spec.canDriveInverted && up.y < 0) up = m.scale(up, -1);
+      const inverted = spec.canDriveInverted && up.y < 0;
+      if (inverted) up = m.scale(up, -1);
       const fwdH = m.flatNorm(m.qRotate(rot, { x: 0, y: 0, z: -1 }));
 
-      const worldAnchors = updateSuspension(dt, pos, rot, linvel, angvel, up);
+      const worldAnchors = updateSuspension(dt, pos, rot, linvel, angvel, up, inverted);
       const grounded = probeState.some((p) => p.grounded);
 
       if (grounded && up.y > T.driveMinUpY && fwdH) {
@@ -335,6 +346,23 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
         );
       }
       applySafetyRails(dt, pos, linvel);
+    },
+
+    /**
+     * Is the chassis close enough to the floor to shove off it? Unlike
+     * isGrounded() this does not care which way up the bot is — the suspension
+     * probes switch off when it is inverted, which is exactly when a srimech
+     * needs to know the ground is there.
+     */
+    touchingGround(margin = 0.4) {
+      ray.origin = body.translation();
+      ray.dir = { x: 0, y: -1, z: 0 };
+      // Full body height, not half: a bot on its back rests on whatever sticks
+      // up furthest, so its centre sits higher than half its own depth. Half a
+      // height was short enough that Hydra and Sawblaze read as airborne while
+      // lying on the floor.
+      const reach = spec.bodyDims.y + margin;
+      return Boolean(world.castRay(ray, reach, true, undefined, SUSPENSION_RAY_GROUPS, undefined, body));
     },
 
     isGrounded() {

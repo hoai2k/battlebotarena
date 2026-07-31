@@ -230,6 +230,39 @@ Consequences worth knowing before touching it:
   Six runs 40, which takes its lean under a hard turn from 7.8° to 9.9° and
   leaves the straight line untouched. Left at 1 the chain is exactly v1's.
 
+## Getting off your back (v2/src/sim/weapons.js)
+
+Being overturned is a setback, not the end of the fight. Three ways out:
+
+- **`canDriveInverted`** — Minotaur, Tombstone, Hypershock and Witch Doctor are
+  symmetric enough to keep driving upside down; steering mirrors with the
+  wheels, which is what the real machines do. `vehicle.js` flips the up vector
+  AND mirrors the suspension anchors about the collider stack's top: the bot is
+  standing on the other side of its wheels, and probes cast from the upright
+  anchors never reach the floor from there.
+- **`armSrimech()`** — any arm that can reach the floor (flipper, hammer,
+  hammer-saw, lifter, grappler, crusher) shoves off it. ONE impulse per stroke
+  at the arm's business end, not a torque spread across it: rolling a flat
+  250lb machine over its own edge has to beat `m*g*halfWidth` the whole way, so
+  a distributed torque just rocks it and it drops back the moment the arm
+  stops. The impulse is DERIVED, not dialled — `m*v` at arm `r` turns
+  `m*v^2*r/(pi*g*I)` revolutions before landing, so solving for
+  `srimechTurns` lands every bot the same way up whatever its mass or length.
+  A flat 11.5 ft/s had Bronco pulling 2.2 revolutions a second and Deep Six
+  peaking 7ft up.
+- **Gyro** — a spun-up rotor plus the drive thrown lock to lock walks a spinner
+  over. The suspension is off at that attitude, so nothing damps the roll.
+
+All three are gated on `upY < 0.25` and on `vehicle.touchingGround()`, which
+unlike `isGrounded()` does not care which way up the bot is — the suspension
+probes switch off when inverted, which is exactly when a srimech needs to know
+the floor is there. Its reach is a full body height, not half: a bot on its
+back rests on whatever sticks up furthest, so its centre sits higher than half
+its own depth.
+
+`tools/sim-tests.mjs` covers all three, including the negative: upright with
+every control hammered at once, nothing may launch the bot.
+
 ## Wedges (v2/src/sim/wedges.js — SIM)
 
 `shape: "wedge"` is a right triangular prism: flat on the floor, its top face

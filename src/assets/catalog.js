@@ -241,6 +241,7 @@ export const CATALOG = {
 
   hypershock: {
     id: "hypershock",
+    canDriveInverted: true, // big exposed wheels reach the floor upside down
     name: "Hypershock",
     tagline: "Fastest thing in the box. Blink and it's behind you.",
     referenceImage: "./public/reference/hypershock.png",
@@ -294,6 +295,9 @@ export const CATALOG = {
 
   minotaur: {
     id: "minotaur",
+    // Drum and wedge are symmetric about the deck, so it keeps driving on its
+    // back — the wheels are the same wheels, and steering mirrors with them.
+    canDriveInverted: true,
     name: "Minotaur",
     tagline: "The drum never stops. Neither does it.",
     referenceImage: "./public/reference/minotaur.png",
@@ -384,6 +388,7 @@ export const CATALOG = {
 
   tombstone: {
     id: "tombstone",
+    canDriveInverted: true, // flat slab, bar clear of the deck either way up
     name: "Tombstone",
     tagline: "The bar. You know the bar.",
     referenceImage: "./public/reference/tombstone.png",

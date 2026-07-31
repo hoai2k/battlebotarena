@@ -19,6 +19,29 @@ export const WEAPON_TUNING = Object.freeze({
   flipperImpulseDir: { up: 1, forward: 0.45 },
   flipperRecoilFraction: 0.3,
   crusherTickSeconds: 0.25,
+  // --- self-righting ---------------------------------------------------------
+  // A bot on its back is not out of the fight: any arm that can reach the floor
+  // shoves against it, and a spun-up rotor can be walked over by throwing the
+  // drive from lock to lock. Both need the bot to actually be ON something —
+  // neither works in mid-air.
+  srimechUpY: 0.25, // above this the bot is upright enough; do nothing
+  // The srimech is ONE impulse per stroke, not a torque spread across it:
+  // rolling a flat 250lb machine over its own edge has to beat m*g*halfWidth
+  // the whole way, so a distributed torque just rocks it and it drops back. A
+  // kick that leaves the floor finishes the rotation in the air. Its size is
+  // derived rather than dialled — see srimechKickSpeed() — because a fixed
+  // speed that turns a light bot half a revolution sends a heavy one to the
+  // ceiling: at 11.5 ft/s flat, Bronco pulled 2.2 revolutions a second and
+  // Deep Six peaked 7ft up.
+  srimechTurns: 0.62, // revolutions to aim for while airborne (a bit past half)
+  srimechCooldownSeconds: 0.6, // one kick per stroke, and no machine-gunning
+  gyroSelfRightLift: 2.6, // ft/s^2 of unweighting while the rotor walks it over
+  // Roll authority for a spun-up rotor being walked over on the sticks. Also
+  // has to beat gravity's restoring torque, which for a 250lb bot about its own
+  // edge is ~80 rad/s^2 of angular acceleration — hence the size of this.
+  gyroSelfRightRate: 150,
+  gyroSelfRightMinRatio: 0.25,
+  gyroSelfRightMinEffort: 0.3,
   crusherDragBlendRate: 3.5, // 1/s velocity bleed while clamped
   hammerContactAfter: 0.35, // fraction of swing before the head can connect
   hammerGrindTickSeconds: 0.3,
@@ -26,6 +49,47 @@ export const WEAPON_TUNING = Object.freeze({
 
 const TU = WEAPON_TUNING;
 const UP = { x: 0, y: 1, z: 0 };
+
+/**
+ * Drive a swinging arm into the floor to throw an overturned bot back over.
+ * The impulse lands at the arm's business end, which is ahead of the centre of
+ * mass, so the bot leaves the ground pitching — the roll finishes in the air.
+ * Returns whether it fired, so a weapon can rate-limit itself.
+ */
+/**
+ * How hard to kick, from the bot's own numbers. An impulse `m*v` at arm `r`
+ * spins the bot at `w = m*v*r/I` and buys `t = 2v/g` of airtime, so it turns
+ * `w*t/2pi = m*v^2*r/(pi*g*I)` revolutions. Solve that for the speed that turns
+ * `srimechTurns`, and every bot lands the same way up regardless of its mass,
+ * length or how far its arm reaches.
+ */
+function srimechKickSpeed(vehicle, arm) {
+  const turns = TU.srimechTurns;
+  return Math.sqrt((turns * Math.PI * 32.174 * vehicle.inertia.x) / (vehicle.mass * Math.max(0.2, arm)));
+}
+
+function armSrimech(vehicle, state, simTime, scale = 1) {
+  const rot = vehicle.body.rotation();
+  if (m.qRotate(rot, UP).y > TU.srimechUpY) return false;
+  if (simTime - state.lastSrimechAt < TU.srimechCooldownSeconds) return false;
+  if (!vehicle.touchingGround()) return false;
+  state.lastSrimechAt = simTime;
+  const spec = vehicle.spec;
+  // Where the arm meets the floor: out at the nose, level with its hinge.
+  const at = {
+    x: spec.weapon.pivot?.x ?? 0,
+    y: spec.weapon.pivot?.y ?? 0,
+    z: -spec.bodyDims.z * 0.42,
+  };
+  const arm = Math.abs(at.z - 0.08 * spec.bodyDims.z); // about the COM, not the origin
+  const point = m.add(vehicle.body.translation(), m.qRotate(rot, at));
+  vehicle.body.applyImpulseAtPoint(
+    m.scale(UP, vehicle.mass * srimechKickSpeed(vehicle, arm) * scale),
+    point,
+    true,
+  );
+  return true;
+}
 
 function horizontalBetween(fromPos, toPos) {
   return m.flatNorm(m.sub(toPos, fromPos)) ?? { x: 0, y: 0, z: -1 };
@@ -239,6 +303,33 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
         });
       }
 
+      // Upside down with the rotor lit, throwing the drive from lock to lock
+      // walks the bot over: the suspension is switched off at that attitude, so
+      // there is nothing damping the roll the rotor's reaction puts in. This is
+      // how a Minotaur gets off its back, and it costs the same stick work.
+      if (ratio > TU.gyroSelfRightMinRatio && vehicle.touchingGround()) {
+        const rot = vehicle.body.rotation();
+        if (m.qRotate(rot, UP).y < TU.srimechUpY) {
+          const left = ctx.input?.leftDrive ?? 0;
+          const right = ctx.input?.rightDrive ?? 0;
+          const steer = (left - right) / 2;
+          const effort = m.clamp(Math.abs(steer) + Math.abs((left + right) / 2) * 0.4, 0, 1);
+          if (effort >= TU.gyroSelfRightMinEffort) {
+            const forward = m.qRotate(rot, { x: 0, y: 0, z: -1 });
+            // gyroScale only leans the result: a bot tuned for a heavy gyro in
+            // normal driving should not also be the one that rockets off its
+            // back (Deep Six at 2.2 ran 330 rad/s^2 and left the floor).
+            const rate = TU.gyroSelfRightRate * ratio * effort
+              * m.clamp(tuning.gyroScale, 0.6, 1.4);
+            vehicle.body.applyTorqueImpulse(
+              m.scale(forward, Math.sign(steer || 1) * vehicle.inertia.z * rate * dt),
+              true,
+            );
+            vehicle.body.applyImpulse(m.scale(UP, vehicle.mass * TU.gyroSelfRightLift * dt), true);
+          }
+        }
+      }
+
       // Gyroscopic reaction: a spun-up rotor fights the drive, pitching the bot
       // under throttle and rolling/yawing it into turns. Needs the drive axes,
       // which is why sim.js passes the whole input through.
@@ -285,16 +376,9 @@ function createFlipper({ vehicle, index, emit }) {
   let t = 0;
   let hitThisStroke = false;
 
-  // Hydra cannot right itself passively — firing the arm against the floor is
-  // the mechanism, so the srimech is the weapon.
-  function selfRight(dt) {
-    if (!w.selfRight) return;
-    if (m.qRotate(vehicle.body.rotation(), UP).y > 0.2) return;
-    const lateral = m.qRotate(vehicle.body.rotation(), { x: 1, y: 0, z: 0 });
-    const rate = (w.selfRightRate ?? 11) / Math.max(0.05, strokeSeconds);
-    vehicle.body.applyTorqueImpulse(m.scale(lateral, vehicle.inertia.x * rate * dt), true);
-    vehicle.body.applyImpulse(m.scale(UP, vehicle.mass * 3 * dt), true);
-  }
+  // Firing the plate against the floor is how a flipper gets off its back. It
+  // is the srimech on the real machines too, which is why Hydra has no other.
+  const srimech = { lastSrimechAt: -Infinity };
 
   function tryFlip(foe) {
     const local = toLocal(vehicle, foe.body.translation());
@@ -331,7 +415,7 @@ function createFlipper({ vehicle, index, emit }) {
       if (phase === "firing") {
         t += dt;
         if (!hitThisStroke) tryFlip(ctx.foe);
-        selfRight(dt);
+        armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
         if (t >= strokeSeconds) {
           phase = "returning";
           t = 0;
@@ -383,6 +467,7 @@ function createCrusher({ vehicle, index, emit }) {
 
   let engaged = false;
   let stroke = 0;
+  const srimech = { lastSrimechAt: -Infinity };
   let lastTickAt = -Infinity;
 
   return {
@@ -398,7 +483,10 @@ function createCrusher({ vehicle, index, emit }) {
       // Once bitten, the jaw keeps its grip until the trigger is released or
       // the target is torn out of the wider hold zone.
       if (engaged && (!fire || !localZoneContains(holdZone, local))) engaged = false;
+      const previousStroke = stroke;
       stroke = m.clamp(stroke + (fire ? dt / 0.25 : -dt / 0.4), 0, 1);
+      // Closing the jaw against the floor is Quantum's srimech.
+      if (stroke > previousStroke) armSrimech(vehicle, srimech, simTime, w.selfRightScale ?? 1);
       if (!engaged) return;
 
       const carrier = vehicle.body;
@@ -471,6 +559,7 @@ function createHammerSaw({ vehicle, index, emit }) {
 
   let phase = "idle"; // idle | swinging | held | returning
   let t = 0;
+  const srimech = { lastSrimechAt: -Infinity };
   let hitThisSwing = false;
   let lastGrindAt = -Infinity;
 
@@ -523,6 +612,7 @@ function createHammerSaw({ vehicle, index, emit }) {
       }
       if (phase === "swinging") {
         t += dt;
+        armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
         if (!hitThisSwing && t >= swingSeconds * TU.hammerContactAfter) trySlam(ctx.foe);
         if (t >= swingSeconds) {
           phase = fire ? "held" : "returning";
@@ -620,20 +710,9 @@ function createHammer({ vehicle, index, emit }) {
     });
   }
 
-  function inverted() {
-    return m.qRotate(vehicle.body.rotation(), UP).y < 0.2;
-  }
-
   // Driving the head into the floor levers the body back over — the hammer is
-  // Beta's srimech as much as its weapon. Spread across the stroke rather than
-  // fired as one impulse: a single kick just rocks a wide flat wedge and lets
-  // it drop back. The small lift unweights it so the roll can carry through.
-  function selfRight(dt) {
-    const lateral = m.qRotate(vehicle.body.rotation(), { x: 1, y: 0, z: 0 });
-    const rate = (w.selfRightRate ?? 9) / Math.max(0.05, strokeSeconds);
-    vehicle.body.applyTorqueImpulse(m.scale(lateral, vehicle.inertia.x * rate * dt), true);
-    vehicle.body.applyImpulse(m.scale(UP, vehicle.mass * 2.5 * dt), true);
-  }
+  // Beta's srimech as much as its weapon.
+  const srimech = { lastSrimechAt: -Infinity };
 
   return {
     type: "hammer",
@@ -651,7 +730,7 @@ function createHammer({ vehicle, index, emit }) {
         t += dt;
         const stroke = Math.min(1, t / strokeSeconds);
         if (!hitThisSwing && stroke >= strikeAt) trySlam(ctx.foe, stroke);
-        if (inverted()) selfRight(dt);
+        armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
         if (t >= strokeSeconds) {
           phase = "returning";
           t = 0;
@@ -705,6 +784,7 @@ function createLifterDisc({ vehicle, index, emit }) {
   let omega = 0;
   let carrying = false;
   let lastEmittedRatio = -1;
+  const srimech = { lastSrimechAt: -Infinity };
   let lastDiscHitAt = -Infinity;
 
   function pivotWorld() {
@@ -718,6 +798,9 @@ function createLifterDisc({ vehicle, index, emit }) {
       const previous = stroke;
       stroke = m.clamp(stroke + (fire ? dt / raiseSeconds : -dt / lowerSeconds), 0, 1);
       const rise = stroke - previous;
+      // Upside down, raising the forks drives them into the floor instead —
+      // which is how a lifter gets back onto its wheels.
+      if (rise > 0) armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
 
       // Lift: spread over the whole stroke rather than fired in one impulse, so
       // holding the arm halfway holds the opponent halfway up.
@@ -813,6 +896,7 @@ function createGrappler({ vehicle, index, emit }) {
   let lift = 0; // 0 forks down, 1 fully raised
   let clamp = 0; // 0 jaw open, 1 jaw shut
   let gripped = false;
+  const srimech = { lastSrimechAt: -Infinity };
   let lastTickAt = -Infinity;
 
   /** Grip point in BODY-local space, carried around the fork hinge by `lift`. */
@@ -844,6 +928,7 @@ function createGrappler({ vehicle, index, emit }) {
       const jawClosing = Boolean(ctx.input?.sawActive);
       const previousLift = lift;
       lift = m.clamp(lift + (fire ? dt / liftSeconds : -dt / lowerSeconds), 0, 1);
+      if (lift > previousLift) armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
       clamp = m.clamp(clamp + (jawClosing ? dt / clampSeconds : -dt / clampSeconds), 0, 1);
 
       const local = toLocal(vehicle, foe.body.translation());
