@@ -81,18 +81,26 @@ export const CATALOG = {
       inertia: 1.0,
       maxOmega: 487,
       budgetCap: 120,
-      radius: 0.42,
-      dims: { x: 0.85, y: 0.42, z: 0.42 },
+      // Tripo only segmented a sliver of this drum, so the swept measurement is
+      // a LOWER BOUND rather than the truth — but 0.526 still beats the 0.42
+      // guess it replaces, and it drops the drum's ground clearance from 0.22ft
+      // to 0.11ft, under the nose of every wedge that used to slide beneath it.
+      radius: 0.526,
+      dims: { x: 0.85, y: 0.526, z: 0.526 },
       pivot: { x: 0, y: 0.64, z: -0.24 },
       axis: { x: 1, y: 0, z: 0 },
       tuning: { efficiency: 0.5, impulseScale: 13.8, liftScale: 32.0, liftVelocity: 4.5, liftClearance: 0.55, gyroScale: 0.75 },
     },
+    // Drum front reaches z=-0.66. The fork row ran out to -1.17 and the pods to
+    // -0.97, so the drum could not touch a single opponent in a head-on charge.
+    // The forks are a floor-hugging plate — bots drive over them, as they do on
+    // the real machine — so they carry no collider, and the pods stop level
+    // with the drum.
     colliders: [
       { shape: "box", halfExtents: { x: 1.237, y: 0.171, z: 0.873 }, offset: { x: 0.012, y: 0.175, z: 0.301 } },
       { shape: "box", halfExtents: { x: 0.354, y: 0.16, z: 0.738 }, offset: { x: -0.003, y: 0.495, z: 0.268 } },
-      { shape: "box", halfExtents: { x: 1.05, y: 0.144, z: 0.305 }, offset: { x: 0, y: 0.148, z: -0.865 } }, // front fork row
-      { shape: "box", halfExtents: { x: 0.198, y: 0.294, z: 0.967 }, offset: { x: -1.185, y: 0.294, z: 0 } }, // left pod
-      { shape: "box", halfExtents: { x: 0.198, y: 0.294, z: 0.967 }, offset: { x: 1.184, y: 0.294, z: 0 } }, // right pod
+      { shape: "box", halfExtents: { x: 0.198, y: 0.294, z: 0.79 }, offset: { x: -1.185, y: 0.294, z: 0.175 } }, // left pod
+      { shape: "box", halfExtents: { x: 0.198, y: 0.294, z: 0.79 }, offset: { x: 1.184, y: 0.294, z: 0.175 } }, // right pod
     ],
   },
 
@@ -169,8 +177,11 @@ export const CATALOG = {
       inertia: 0.75,
       maxOmega: 352,
       budgetCap: 280,
-      radius: 1.29,
-      dims: { x: 0.15, y: 1.29, z: 0.2 }, // vertical bar, disc plane Y-Z
+      // MEASURED swept radius: max perpendicular distance from the axle over
+      // every blade vertex. 1.29 was the bbox guess and left 3in of visible
+      // blade outside the collider.
+      radius: 1.539,
+      dims: { x: 0.15, y: 1.539, z: 0.2 }, // vertical bar, disc plane Y-Z
       pivot: { x: -0.1, y: 1.35, z: -0.04 },
       axis: { x: 1, y: 0, z: 0 },
       tuning: {
@@ -276,7 +287,8 @@ export const CATALOG = {
     },
     colliders: [
       { shape: "box", halfExtents: { x: 0.691, y: 0.213, z: 0.943 }, offset: { x: -0.001, y: 0.304, z: 0.252 } },
-      { shape: "box", halfExtents: { x: 0.691, y: 0.099, z: 0.283 }, offset: { x: -0.001, y: 0.191, z: -0.974 } }, // front wedge
+      // Drum front reaches z=-1.13; the wedge ran to -1.26 and stood it off.
+      { shape: "box", halfExtents: { x: 0.691, y: 0.099, z: 0.217 }, offset: { x: -0.001, y: 0.191, z: -0.908 } }, // front wedge
       { shape: "box", halfExtents: { x: 0.691, y: 0.133, z: 0.133 }, offset: { x: -0.001, y: 0.651, z: -0.32 } }, // fin rail
     ],
   },
@@ -308,8 +320,11 @@ export const CATALOG = {
       inertia: 1.15,
       maxOmega: 1200,
       budgetCap: 130,
-      radius: 0.27,
-      dims: { x: 0.39, y: 0.27, z: 0.27 },
+      // The drum measures 0.24 through the loader, but the scan smooths off the
+      // outward notches that do the real work, so the collider is deliberately
+      // generous — 0.34 gives it the bite the teeth should have.
+      radius: 0.34,
+      dims: { x: 0.39, y: 0.34, z: 0.34 },
       pivot: { x: 0, y: 0.27, z: -0.56 },
       axis: { x: 1, y: 0, z: 0 },
       tuning: { efficiency: 0.26, impulseScale: 4.4, kickbackScale: 0.12, liftScale: 18.0, liftVelocity: 4.0, liftClearance: 0.35, gyroScale: 1.45 },
@@ -394,8 +409,8 @@ export const CATALOG = {
       inertia: 1.2,
       maxOmega: 338,
       budgetCap: 500,
-      radius: 1.21,
-      dims: { x: 1.21, y: 0.12, z: 0.3 }, // horizontal bar, spins around Y
+      radius: 1.359, // MEASURED swept radius (bbox guess was 1.21)
+      dims: { x: 1.359, y: 0.12, z: 0.3 }, // horizontal bar, spins around Y
       pivot: { x: 0, y: 0.22, z: -0.72 },
       axis: { x: 0, y: 1, z: 0 },
       tuning: {
@@ -717,17 +732,20 @@ export const CATALOG = {
       inertia: 1.1,
       maxOmega: 620,
       budgetCap: 260,
-      radius: 0.6,
-      dims: { x: 0.1, y: 0.6, z: 0.6 },
+      radius: 0.772, // MEASURED swept radius (bbox guess was 0.6)
+      dims: { x: 0.1, y: 0.772, z: 0.772 },
       tuning: {
         efficiency: 0.54, impulseScale: 11.0, liftScale: 30.0, liftVelocity: 4.5,
         gyroScale: 0.9, impactScale: 1.1,
       },
     },
+    // Disc front reaches z=-1.13. Nothing may sit ahead of that or the disc
+    // cannot bite (see ARCHITECTURE "Weapon reach"): the pan is pulled back to
+    // -1.10 and the floor-hugging front wedge carries no collider, so bots
+    // drive over it into the disc the way they do over Deep Six's outriggers.
     colliders: [
-      { shape: "box", halfExtents: { x: 1.3, y: 0.16, z: 1.5 }, offset: { x: 0, y: 0.16, z: 0 } },
+      { shape: "box", halfExtents: { x: 1.3, y: 0.16, z: 1.19 }, offset: { x: 0, y: 0.16, z: 0.19 } },
       { shape: "box", halfExtents: { x: 1.15, y: 0.19, z: 1.15 }, offset: { x: 0, y: 0.51, z: 0.35 } },
-      { shape: "box", halfExtents: { x: 0.8, y: 0.08, z: 0.19 }, offset: { x: 0, y: 0.08, z: -1.36 } }, // front wedge
     ],
   },
 };

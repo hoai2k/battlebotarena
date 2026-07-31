@@ -231,15 +231,34 @@ radius: the max perpendicular distance from the axle over every blade vertex,
 measured through the loader. The bbox at the baked pose understates an
 asymmetric blade — Deep Six's S-blade reads 1.26 that way against a true 1.368.
 
+Check the weapon part is the WHOLE weapon before trusting that measurement.
+Tripo segmented only a sliver of Bite Force's and Hypershock's drums, so their
+swept numbers are lower bounds, not truth; render the part against the collider
+(`tools/viewer.html`) rather than reading the number off a script. HUGE,
+Tombstone, Witch Doctor, Minotaur and Deep Six segmented cleanly and their
+measurements are real.
+
 More important, **the body collider in front of a spinner decides whether the
 blade can ever reach**. A disc only reaches far forward at its own axle height;
 the low part of its sweep is deep inside the machine. So any solid forward of
-that is a stand-off that keeps opponents outside the disc entirely. Deep Six's
-front 1.2ft of outrigger wedge therefore carries no collider at all — bots
-drive over it, which is what the real machine's forks do. Nothing can climb a
+that is a stand-off that keeps opponents outside the disc entirely. Deep Six,
+Bite Force and Witch Doctor all shipped that way and could not land a single
+head-on hit; the front wedges and fork rows now carry no collider at all, and
+bots drive over them the way they do on the real machines. Nothing can climb a
 wedge in this sim: `SUSPENSION_RAY_GROUPS` excludes `GROUP.BOT`, so probes only
 ever stand on the arena, and adding a mere 0.04ft pad in front of Deep Six
 takes his hit count across nine test opponents from 10 back to 2.
+
+The invariant — every spinner's swept circle must reach further forward than
+any of its own body colliders — is asserted in `tools/sim-tests.mjs`. Aim for
+0.1-0.2ft of protrusion; that leaves a wedge bot able to get under a drum that
+rides high, which is a matchup, not a bug (Whiplash still slides under Bite
+Force, Minotaur under Witch Doctor).
+
+Fixing reach changes hit RATE, never hit STRENGTH — `model.hit()` never sees a
+collider. Over four 30s AI matches per bot the repair took Bite Force from 3
+hits to 35, Witch Doctor from 1 to 29 and Hypershock from 31 to 60, with
+per-hit damage identical on the `weapon-tuning-verify` ladder.
 
 `node tools/weapon-tuning-verify.mjs` prints the hit ladder per spinner —
 today's sim, the v1 reference, and what the module produces — against the real
