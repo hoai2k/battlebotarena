@@ -21,6 +21,7 @@ import { computeAiInput, resetAiState } from "./game/ai.js";
 import { createInput } from "./game/input.js";
 import { createGameAudio } from "./game/audio.js";
 import { createMusic } from "./game/music.js";
+import { createWeaponInputShaper } from "./game/weaponControls.js";
 
 const bus = createEventBus();
 const stage = createRenderer(document.querySelector("#scene"));
@@ -39,12 +40,16 @@ const loader = createLoader();
 // 3D showcase on the bot select screen: each chosen bot renders on a lit
 // turntable inside its pod. ui.js only emits selection actions; the routing
 // to this module happens below (UI never imports three.js).
+const podEls = (side) => ({
+  view: document.querySelector(`#pod-view-${side}`),
+  primary: document.querySelector(`#pod-primary-${side}`),
+  secondary: document.querySelector(`#pod-secondary-${side}`),
+  primaryMeter: document.querySelector(`#pod-primary-meter-${side}`),
+  secondaryMeter: document.querySelector(`#pod-secondary-meter-${side}`),
+});
 const botPreview = createBotPreview({
   canvas: document.querySelector("#preview-canvas"),
-  pods: [
-    { view: document.querySelector("#pod-view-player"), test: document.querySelector("#pod-test-player") },
-    { view: document.querySelector("#pod-view-rival"), test: document.querySelector("#pod-test-rival") },
-  ],
+  pods: [podEls("player"), podEls("rival")],
 });
 let arenaVisuals = null;
 let session = null; // { sim, match, botVisuals: [{group, parts, spec}], raf }
@@ -166,8 +171,7 @@ async function startMatch({ playerBotId, rivalBotId, difficulty }) {
   const audio = createGameAudio(bus, { specs });
   audio.setListenerProvider?.(() => stage.camera);
   resetAiState();
-  weaponLatch[0] = weaponLatch[1] = false;
-  sawActive[0] = sawActive[1] = false;
+  playerWeapons.reset();
   setPaused(false);
   // Align each model's ground line with the physics floor by MEASUREMENT:
   // settle the sim silently for a moment, read where each body actually rests
@@ -258,37 +262,12 @@ const ui = createUI({
 // the bot-select showcase so a test-fired weapon moves exactly like the match.
 
 // --- Player weapon semantics (v1 parity) -----------------------------------
-// Spinners (bar/drum): RT/Space TOGGLES the spinner on press. Flipper: press
-// to fire (momentary). Crusher: hold to bite. HammerSaw: RT held swings the
-// arm forward; RB toggles the saw motor (drives audio + the disc feel).
-const weaponLatch = [false, false];
-const sawActive = [false, false];
-const prevWeaponDown = [false, false];
-const prevAltDown = [false, false];
+// The rules themselves live in game/weaponControls.js, shared with the
+// bot-select practice viewer so a weapon you learn on the plinth is driven the
+// same way in the arena.
+const playerWeapons = createWeaponInputShaper();
+const shapePlayerInput = (raw, spec, slot) => playerWeapons.shape(raw, spec, slot);
 let splitActive = false;
-
-function shapePlayerInput(raw, spec, slot) {
-  const type = spec.weapon?.type;
-  const weaponEdge = raw.weapon && !prevWeaponDown[slot];
-  const altEdge = raw.weaponAlt && !prevAltDown[slot];
-  prevWeaponDown[slot] = raw.weapon;
-  prevAltDown[slot] = raw.weaponAlt;
-  if (type === "bar" || type === "drum") {
-    if (weaponEdge) weaponLatch[slot] = !weaponLatch[slot];
-    // Tantrum's fists are the exception: its drum latches like any spinner, but
-    // the punch is momentary — a toggle would leave the arms stuck out.
-    if (spec.weapon.fists) return { ...raw, weapon: weaponLatch[slot], sawActive: raw.weaponAlt };
-    return { ...raw, weapon: weaponLatch[slot] };
-  }
-  // hammerSaw and lifterDisc both split their controls: the trigger drives the
-  // arm, RB toggles the disc motor. Free Shipping spends the same channel on
-  // its flamethrowers; Duck has nothing on it and simply ignores it.
-  if (type === "hammerSaw" || type === "lifterDisc" || type === "grappler" || type === "lifter") {
-    if (altEdge) sawActive[slot] = !sawActive[slot];
-    return { ...raw, sawActive: sawActive[slot] };
-  }
-  return raw; // flipper fires on press, crusher bites while held
-}
 
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
