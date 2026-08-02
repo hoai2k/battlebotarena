@@ -1,0 +1,244 @@
+{
+  "round": "mammoth-copperhead-endgame-blip-tantrum (+ finish shatter/duck)",
+  "priority": [
+    "overhaul",
+    "freeshipping",
+    "shatter",
+    "duck",
+    "mammoth",
+    "copperhead",
+    "endgame",
+    "blip",
+    "tantrum"
+  ],
+  "creditsAtStart": 1005,
+  "costs": {
+    "generate": 30,
+    "segment": 40
+  },
+  "plan": "Round complete. All 9 bots generated, segmented, part-mapped and partitioned. 575 credits remain.",
+  "resume": "node tools/bot-pipeline.mjs status   /   node tools/bot-pipeline.mjs advance   (run with sandbox disabled: Tripo's CDN blocks downloads otherwise)",
+  "updatedAt": "2026-08-01T23:18:15.529Z",
+  "bots": {
+    "overhaul": {
+      "name": "Overhaul",
+      "weapon": "grappler lifter",
+      "reference": "reference/overhaul.png",
+      "referenceSource": "battlebots.com studio shot (local overhaul2.jpg, 1140x760, white bg)",
+      "generate": {
+        "status": "done",
+        "taskId": "5aea95a4-9cf1-4e07-91f6-cd1c95c0d42b",
+        "file": "tripo_out/overhaul_gen.glb",
+        "startedAt": "2026-08-01T22:34:30.401Z"
+      },
+      "segment": {
+        "status": "done",
+        "taskId": "67235fa2-dd78-4fd0-b751-8ac11e8c56b1",
+        "file": "updates/new-bots/raw/overhaul_seg.glb"
+      },
+      "partition": {
+        "status": "done",
+        "model": "updates/new-bots/models/overhaul.glb"
+      },
+      "docs": {
+        "status": "done"
+      }
+    },
+    "freeshipping": {
+      "name": "Free Shipping",
+      "weapon": "lifter + flamethrowers",
+      "reference": "reference/freeshipping.png",
+      "referenceSource": "local thumbnail of the forklift+flamethrower build, upsampled 360->1024 (official 2022 photo is an older build without the forklift)",
+      "generate": {
+        "status": "done",
+        "taskId": "fe398487-33f5-4b80-952d-95caf17d0781",
+        "file": "tripo_out/freeshipping_gen.glb",
+        "startedAt": "2026-08-01T22:34:52.075Z"
+      },
+      "segment": {
+        "status": "done",
+        "taskId": "924a9622-e1e7-4d11-9a53-3e992bb41b18",
+        "file": "updates/new-bots/raw/freeshipping_seg.glb"
+      },
+      "partition": {
+        "status": "done",
+        "model": "updates/new-bots/models/freeshipping.glb"
+      },
+      "docs": {
+        "status": "done"
+      }
+    },
+    "shatter": {
+      "name": "Shatter",
+      "weapon": "hammer, omni-wheel drive",
+      "reference": "reference/shatter.png",
+      "referenceSource": "battlebots.com BB2022-shatter-bot.jpg (1140x760) — matches the iridescent build",
+      "generate": {
+        "status": "done",
+        "taskId": "b7721099-d508-4ff3-bbff-6f4d45bec357",
+        "file": "tripo_out/shatter_gen.glb",
+        "startedAt": "2026-08-01T22:34:55.081Z"
+      },
+      "segment": {
+        "status": "done",
+        "taskId": "266bbc35-df15-4872-b16d-141f88ac09ea",
+        "file": "updates/new-bots/raw/shatter_seg.glb"
+      },
+      "partition": {
+        "status": "done",
+        "model": "updates/new-bots/models/shatter.glb"
+      },
+      "docs": {
+        "status": "done"
+      }
+    },
+    "duck": {
+      "name": "Duck",
+      "weapon": "beak lifter",
+      "reference": "reference/duck.png",
+      "referenceSource": "battlebots.com Duck-Bot-S2018.jpg (1140x760)",
+      "generate": {
+        "status": "done",
+        "taskId": "152a609a-fc98-4a24-bd45-fe581b09d6a1",
+        "file": "tripo_out/duck_gen.glb",
+        "startedAt": "2026-08-01T22:34:58.065Z"
+      },
+      "segment": {
+        "status": "done",
+        "taskId": "c14a635d-57c7-4401-8187-4ecc43ddc3dc",
+        "file": "updates/new-bots/raw/duck_seg.glb"
+      },
+      "partition": {
+        "status": "done",
+        "model": "updates/new-bots/models/duck.glb"
+      },
+      "docs": {
+        "status": "done"
+      }
+    },
+    "mammoth": {
+      "name": "Mammoth",
+      "weapon": "vertical disc spinner (very tall frame)",
+      "reference": "reference/mammoth.png",
+      "referenceSource": "user-supplied render, upsampled to 1024",
+      "generate": {
+        "status": "done",
+        "taskId": "1514d6c1-a686-4c30-bdca-1b960a6dc5c1",
+        "file": "tripo_out/mammoth_gen.glb",
+        "startedAt": "2026-08-01T22:54:20.616Z"
+      },
+      "segment": {
+        "status": "done",
+        "taskId": "3ea32191-67db-48c0-ba47-b2677a87052e",
+        "file": "updates/new-bots/raw/mammoth_seg.glb"
+      },
+      "partition": {
+        "status": "done",
+        "model": "updates/new-bots/models/mammoth.glb"
+      },
+      "docs": {
+        "status": "done"
+      },
+      "notes": "Trunk did not separate from the truss frame (part 23). Only the central hub (28,29) spins. Needs a glb-carve pass."
+    },
+    "copperhead": {
+      "name": "Copperhead",
+      "weapon": "copper drum spinner",
+      "reference": "reference/copperhead.png",
+      "referenceSource": "user-supplied render, upsampled to 1024",
+      "generate": {
+        "status": "done",
+        "taskId": "86a3107f-eed2-46cf-9c1f-c00a383b2dbd",
+        "file": "tripo_out/copperhead_gen.glb",
+        "startedAt": "2026-08-01T22:54:23.040Z"
+      },
+      "segment": {
+        "status": "done",
+        "taskId": "053708b9-7dbd-4a79-8d5b-0522c427cdb3",
+        "file": "updates/new-bots/raw/copperhead_seg.glb"
+      },
+      "partition": {
+        "status": "done",
+        "model": "updates/new-bots/models/copperhead.glb"
+      },
+      "docs": {
+        "status": "done"
+      },
+      "notes": "Drum shell carved out of chassis part 13 as synthetic part 901; see carve-ops/copperhead.json. raw/copperhead_carved.glb is what partition reads."
+    },
+    "endgame": {
+      "name": "Endgame",
+      "weapon": "vertical spinner + forks",
+      "reference": "reference/endgame.png",
+      "referenceSource": "user-supplied render, upsampled to 1024",
+      "generate": {
+        "status": "done",
+        "taskId": "802bb776-771d-4cbb-8b3f-9c18d13437ea",
+        "file": "tripo_out/endgame_gen.glb",
+        "startedAt": "2026-08-01T22:54:25.706Z"
+      },
+      "segment": {
+        "status": "done",
+        "taskId": "d3096a93-225e-4132-89e5-19163c8adebf",
+        "file": "updates/new-bots/raw/endgame_seg.glb"
+      },
+      "partition": {
+        "status": "done",
+        "model": "updates/new-bots/models/endgame.glb"
+      },
+      "docs": {
+        "status": "done"
+      }
+    },
+    "blip": {
+      "name": "Blip",
+      "weapon": "flipper",
+      "reference": "reference/blip.png",
+      "referenceSource": "user-supplied render, upsampled to 1024",
+      "notes": "Flipper is the RECTANGULAR BOLTED PLATE in the middle of the top deck, not the front forks. Springs/flywheel launcher.",
+      "generate": {
+        "status": "done",
+        "taskId": "6c042518-dd0c-4554-ae6c-2c94d3c22cee",
+        "file": "tripo_out/blip_gen.glb",
+        "startedAt": "2026-08-01T22:54:27.817Z"
+      },
+      "segment": {
+        "status": "done",
+        "taskId": "d9da4c7a-d6b5-4bca-b82c-99a7526a4198",
+        "file": "updates/new-bots/raw/blip_seg.glb"
+      },
+      "partition": {
+        "status": "done",
+        "model": "updates/new-bots/models/blip.glb"
+      },
+      "docs": {
+        "status": "done"
+      }
+    },
+    "tantrum": {
+      "name": "Tantrum",
+      "weapon": "translating vertical spinner + punching fist",
+      "reference": "reference/tantrum.png",
+      "referenceSource": "user-supplied render (985px, native)",
+      "notes": "Drum generated slim (part 0 is a 0.30x0.075x0.05 bar). Animates correctly but under-scaled. RB=carriage thrust, LT=fist arms (modelAux-fists).",
+      "generate": {
+        "status": "done",
+        "taskId": "a1d7362e-9d65-4e7f-b09a-be6b794a9de9",
+        "file": "tripo_out/tantrum_gen.glb",
+        "startedAt": "2026-08-01T22:54:30.352Z"
+      },
+      "segment": {
+        "status": "done",
+        "taskId": "b3a3a3ab-0b23-4cb6-b495-8595a4bb3214",
+        "file": "updates/new-bots/raw/tantrum_seg.glb"
+      },
+      "partition": {
+        "status": "done",
+        "model": "updates/new-bots/models/tantrum.glb"
+      },
+      "docs": {
+        "status": "done"
+      }
+    }
+  }
+}
