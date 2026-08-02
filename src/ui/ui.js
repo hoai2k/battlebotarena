@@ -59,6 +59,19 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   const slotPlayer = $("slot-player");
   const slotRival = $("slot-rival");
 
+  // Showcase pods: the big 3D windows the chosen bots render into. The UI owns
+  // their DOM chrome (plate, badge, stats, empty copy); the integrator owns the
+  // 3D itself via the previewSelection actions emitted from refreshSelect.
+  const pods = [$("pod-player"), $("pod-rival")].map((root, i) => ({
+    root,
+    plate: i === 0 ? slotPlayer : slotRival,
+    plateBody: (i === 0 ? slotPlayer : slotRival)?.querySelector(".pod-plate-body") || null,
+    empty: root?.querySelector(".pod-empty") || null,
+    badge: root?.querySelector(".pod-badge") || null,
+    stats: root?.querySelector(".pod-stats") || null,
+    test: root?.querySelector(".pod-test") || null,
+  }));
+
   /** Shimmer an image's container until the bitmap lands. The roster photos
    *  are ~2MB each, so the slot would otherwise read as broken while it
    *  downloads. No-op for images already in cache. */
@@ -78,6 +91,9 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     return `<span class="stat stat-${label.toLowerCase()}"><b class="stat-label">${label}</b><span class="pips">${pips}</span></span>`;
   }
 
+  // Dock cards are deliberately terse — thumbnail, name, weapon badge. The
+  // full sell (stats, tagline, the bot itself in 3D) lives in the pod once a
+  // card is picked, so the dock only has to be scannable.
   function buildCard(card) {
     const el = document.createElement("button");
     el.type = "button";
@@ -88,12 +104,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     el.innerHTML = `
       <span class="bot-card-img"><img src="${card.image}" alt="" loading="lazy" draggable="false" /></span>
       <span class="bot-card-name">${card.name}</span>
-      <span class="bot-card-badge">${card.weaponType}</span>
-      <span class="bot-card-stats">
-        ${statRow("SPD", card.stats.speed)}
-        ${statRow("PWR", card.stats.power)}
-        ${statRow("ARM", card.stats.armor)}
-      </span>`;
+      <span class="bot-card-badge">${card.weaponType}</span>`;
     wireImage(el.querySelector(".bot-card-img"));
     return el;
   }
@@ -108,8 +119,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     el.innerHTML = `
       <span class="bot-card-img"><span class="random-glyph">?</span></span>
       <span class="bot-card-name">${RANDOM_CARD.name}</span>
-      <span class="bot-card-badge">${RANDOM_CARD.weaponType}</span>
-      <span class="bot-card-stats"><span class="random-note">ANY OF THE ${BOT_CARDS.length}<br />REVEALED AT THE BOX</span></span>`;
+      <span class="bot-card-badge">ANY OF THE ${BOT_CARDS.length}</span>`;
     return el;
   }
 
@@ -143,23 +153,11 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     refreshSelect();
   }
 
-  // The roster grid is sized from the card count. Cards fill whole rows and the
-  // random strip gets the trailing `auto` row to itself; hard-coding four
-  // columns meant a ninth and tenth bot spilled onto that strip's row.
-  function layoutRoster() {
-    if (!grid) return;
-    const count = BOT_CARDS.length;
-    const width = window.innerWidth || 1440;
-    const columns = Math.max(1, Math.min(width >= 1120 ? 5 : width >= 960 ? 4 : 3, count));
-    grid.style.setProperty("--roster-cols", String(columns));
-    grid.style.setProperty("--roster-rows", String(Math.ceil(count / columns)));
-  }
-
   if (grid) {
+    // The roster is a single horizontally scrolling dock strip now, so it
+    // needs no column math — flexbox lays out however many bots exist.
     BOT_CARDS.forEach((card) => grid.appendChild(buildCard(card)));
     grid.appendChild(buildRandomCard());
-    layoutRoster();
-    window.addEventListener("resize", layoutRoster);
     grid.addEventListener("click", (ev) => {
       const cardEl = /** @type {HTMLElement} */ (ev.target instanceof Element ? ev.target.closest(".bot-card") : null);
       if (!cardEl || cardEl.classList.contains("is-disabled")) return;
@@ -171,25 +169,51 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     });
   }
 
-  function fillSlot(slotEl, card, emptyCopy) {
-    const body = slotEl.querySelector(".vs-slot-body");
-    if (!card) {
-      body.innerHTML = `<span class="vs-slot-empty">${emptyCopy}</span>`;
-      slotEl.classList.remove("is-filled");
-      return;
+  /** Dress one pod's DOM chrome for a pick (or back to its empty state). The
+   *  3D window itself is filled by the integrator off the previewSelection
+   *  action — this only handles plate, badge, stats and the empty copy. */
+  function fillPod(slot, card, emptyCopy) {
+    const pod = pods[slot];
+    if (!pod.root) return;
+    const isRandom = card?.id === "random";
+    pod.root.classList.toggle("is-filled", Boolean(card));
+    pod.root.classList.toggle("is-random", isRandom);
+    if (card) {
+      pod.root.style.setProperty("--accent", card.accent);
+      if (pod.plateBody)
+        pod.plateBody.innerHTML = `<b class="pod-name">${card.name}</b><span class="pod-tag">${card.tagline}</span>`;
+      if (pod.badge) pod.badge.textContent = card.weaponType;
+      if (pod.stats)
+        pod.stats.innerHTML = isRandom
+          ? `<span class="random-note">REVEALED AT THE BOX</span>`
+          : `${statRow("SPD", card.stats.speed)}${statRow("PWR", card.stats.power)}${statRow("ARM", card.stats.armor)}`;
+      // Random has nothing to render or fire; a real pick gets the test rig.
+      if (pod.test) pod.test.hidden = isRandom;
+    } else {
+      pod.root.style.removeProperty("--accent");
+      if (pod.plateBody) pod.plateBody.innerHTML = `<span class="pod-plate-empty">— OPEN BAY —</span>`;
+      if (pod.empty) pod.empty.innerHTML = emptyCopy;
+      if (pod.badge) pod.badge.textContent = "";
+      if (pod.stats) pod.stats.innerHTML = "";
+      if (pod.test) pod.test.hidden = true;
     }
-    slotEl.classList.add("is-filled");
-    slotEl.style.setProperty("--accent", card.accent);
-    const img =
-      card.id === "random"
-        ? `<span class="vs-slot-img vs-slot-random">?</span>`
-        : `<span class="vs-slot-img"><img src="${card.image}" alt="" draggable="false" /></span>`;
-    body.innerHTML = `${img}
-      <span class="vs-slot-meta">
-        <b class="vs-slot-name">${card.name}</b>
-        <span class="vs-slot-tag">${card.tagline}</span>
-      </span>`;
-    wireImage(body.querySelector(".vs-slot-img"));
+  }
+
+  /** Tell the integrator what to stage in the 3D pods and who owns the
+   *  camera sticks. Solo, focus follows the pick flow: your bay until you
+   *  have picked a real rival, then theirs. */
+  function emitSelection() {
+    onAction({
+      type: "previewSelection",
+      playerBotId: sel.playerBotId,
+      rivalBotId: sel.rivalBotId,
+      duo: duoMode,
+      focusSlot: duoMode
+        ? null
+        : sel.stage === "rival" && sel.rivalBotId && sel.rivalBotId !== "random"
+          ? 1
+          : 0,
+    });
   }
 
   function refreshSelect() {
@@ -203,13 +227,13 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       el.classList.toggle("is-disabled", id === "random" && (duoMode || sel.stage === "player"));
     });
     document.body.classList.toggle("is-duo", duoMode);
-    fillSlot(
-      slotPlayer,
+    fillPod(
+      0,
       sel.playerBotId ? getBotCard(sel.playerBotId) : null,
       duoMode ? "P1 — PRESS A<br />TO PICK" : "PICK<br />YOUR BOT"
     );
-    fillSlot(
-      slotRival,
+    fillPod(
+      1,
       sel.rivalBotId ? (sel.rivalBotId === "random" ? RANDOM_CARD : getBotCard(sel.rivalBotId)) : null,
       duoMode ? "P2 — PRESS A<br />TO PICK" : "PICK THE<br />OPPONENT"
     );
@@ -217,15 +241,16 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     slotRival?.setAttribute("data-role", duoMode ? "P2" : "RIVAL");
     if (duoMode) {
       // Both sides are live at once, so both stay armed until they are filled.
-      slotPlayer.classList.toggle("is-armed", !sel.playerBotId);
-      slotRival.classList.toggle("is-armed", !sel.rivalBotId);
+      pods[0].root?.classList.toggle("is-armed", !sel.playerBotId);
+      pods[1].root?.classList.toggle("is-armed", !sel.rivalBotId);
       stepEl.textContent = "TWO CONTROLLERS — EACH PLAYER PICKS THEIR OWN BOT";
     } else {
-      slotPlayer.classList.toggle("is-armed", sel.stage === "player");
-      slotRival.classList.toggle("is-armed", sel.stage === "rival");
+      pods[0].root?.classList.toggle("is-armed", sel.stage === "player");
+      pods[1].root?.classList.toggle("is-armed", sel.stage === "rival");
       stepEl.textContent = sel.stage === "player" ? "STEP 1 — CHOOSE YOUR BOT" : "STEP 2 — CHOOSE THE OPPONENT";
     }
     fightBtn.disabled = !(sel.playerBotId && sel.rivalBotId);
+    emitSelection();
   }
 
   /** Second pad plugged in / pulled out — reshape the screen around it. */
