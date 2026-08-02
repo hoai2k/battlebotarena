@@ -1454,7 +1454,10 @@ export const CATALOG = {
       // out with a cylinder about the spin axis; the axle below is the smallest
       // circle it sweeps. That file also hands parts 14 and 16 back to the
       // chassis — they were mapped as wheels, so a gearbox was rotating with
-      // the tyres.
+      // the tyres. tools/repairs/mammoth-bar.json then hands the two long
+      // TRUNK ARMS (parts 23 and 30) to the weapon: they are the bar, they sit
+      // opposite each other about the axle, and until that repair the hub
+      // turned inside a bar that stood still.
       pivotFromCatalog: true,
       pivot: { x: -0.02, y: 3.317, z: -0.912 },
       axis: { x: 1, y: 0, z: 0 },
@@ -1463,20 +1466,21 @@ export const CATALOG = {
       inertia: 1.0,
       maxOmega: 300,
       budgetCap: 90,
-      // MEASURED swept radius of the animated hub is 0.428 — but the hub is not
-      // the weapon. Segmentation fused Mammoth's trunk into the truss and only
-      // the centre spins (updates/new-bots/SEGMENTATION.md), so the part that
-      // turns is a fraction of what the machine swings.
+      // MEASURED swept radius with the trunk arms attached: 3.012, weapon x
+      // span [-0.765, 0.724] so the bar is 1.49ft thick and dims.x stays 0.74.
+      // This is now the drawn geometry rather than a fudge — the hitbox used to
+      // be 2.022 against a 0.428 hub because only the hub turned, and the two
+      // numbers finally agree.
       //
-      // 1.0 is also the number that makes this bot exist. Its axle sits at
-      // y 1.59, higher than the TOP of every collider stack in the roster (Deep
-      // Six is the tallest at 1.86 local, and rides low): measured over a full
-      // 40-second fight, radius 0.6 landed 0 hits, 0.75 landed 1, 0.85 landed
-      // 5 and 1.0 landed 7 — the same band as Beta and Deep Six. Below 1.0
-      // Mammoth is a 250lb punching bag. The visual disc is smaller than the
-      // hitbox, the same compromise Tantrum and Minotaur already ship.
-      radius: 2.022,
-      dims: { x: 0.74, y: 2.022, z: 2.022 },
+      // The size is the point of the bot. The axle sits at y 3.317, above the
+      // TOP of every collider stack in the roster, so a small radius meant
+      // Mammoth swung over everything: measured over a full 40-second fight,
+      // 0.6 landed 0 hits and 1.0 landed 7. At 3.012 the tip bottoms out at
+      // y 0.305 — it reaches the floor, which is what a 6ft trunk on a 250lb
+      // machine is supposed to do, and is why the wedge note below still holds
+      // even though the blade no longer needs help to connect.
+      radius: 3.012,
+      dims: { x: 0.74, y: 3.012, z: 3.012 },
       // A displacement weapon: it throws opponents rather than cutting them, so
       // the lift is the largest in the game and the damage the smallest.
       tuning: { efficiency: 0.5, impulseScale: 9.0, liftScale: 46.0, liftVelocity: 7.0, gyroScale: 0.9, damageScale: 0.35 },
