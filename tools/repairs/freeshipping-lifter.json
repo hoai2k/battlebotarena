@@ -1,0 +1,10 @@
+[
+ {
+  "_comment": "Free Shipping's fork carriage (part 9) was built too NARROW and too far FORWARD to work with its own bodywork. MEASURED in game space through the loader: the three front wedge plates (parts 17 / 12 / 4) leave a channel either side of the middle plate, x -0.534..-0.318 and 0.323..0.537 — 0.215ft wide, open from the plate tips at z=-2.0 back to z=-1.2 and again from -1.05 to the chassis face at -0.82. The fork's two tines measured 0.137ft wide at x -0.318..-0.181 and 0.181..0.318, i.e. both of them inside the middle plate: at rest the whole carriage was buried in the middle wedge and the tines poked out of its front face. Scaling the part 1.73x about the centre plane puts the tine centres on the channel centres (0.2265 * 1.73 = 0.392, against a channel centre of 0.428 once the tine's flared tip is included) and the tines land at -0.550..-0.313 — 0.013ft of overhang each side of a 0.215 channel, the best a single uniform scale can do, and the plates are only 0.11ft tall where the tine tip crosses them. The 0.19ft offset along the arm's own axis (GLB +x is the arm running aft) sets the carriage BACK so its rear face sits at z=-0.92 at rest, in the open gap between the wedge assembly's cross member and the chassis nose, instead of at -1.09 inside the plates. Game space -> GLB: yaw is +PI/2 and scale 4.1993, so game x maps to GLB z (hence the scale on z) and 0.19ft of game z is 0.19/4.1993 = 0.04525 of GLB -x. Costs 0.025rad of restAngle and 0.06rad of fireAngle, both re-measured in the catalog.",
+  "mode": "transform",
+  "node": "tripo_part_9",
+  "scale": [1, 1, 1.73],
+  "centre": [0, 0, 0],
+  "offset": [-0.04525, 0, 0]
+ }
+]

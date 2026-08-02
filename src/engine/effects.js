@@ -149,5 +149,55 @@ export function createEffects(scene) {
     if (camera) billboard.copy(camera.quaternion);
   }
 
-  return { spawnSparks, spawnDebris, spawnFlame, faceCamera, update };
+  /** Drop everything currently alive. The bot-select viewer owns one of these
+   *  per bay and has to empty it when the bay's bot changes, or the last jet a
+   *  player lit hangs in the air over the next bot they pick. */
+  function clear() {
+    for (const group of [flameGroup, sparkGroup]) {
+      for (const child of [...group.children]) {
+        child.material?.dispose?.();
+        group.remove(child);
+      }
+    }
+    debrisGroup.clear(); // shared geometry + material, nothing per-chunk to free
+  }
+
+  return { spawnSparks, spawnDebris, spawnFlame, faceCamera, update, clear };
+}
+
+// --- flamethrower jet --------------------------------------------------------
+// Both the match loop and the bot-select practice viewer draw a lit flamethrower
+// from the same render state, so the shaping lives here rather than in either
+// caller. The viewer used to draw NOTHING: `weapon.flame` was a damage cone in
+// the sim and a ramp in previewWeapon, and the only thing that ever turned it
+// into pixels was main.js — so on the plinth Free Shipping's second channel
+// latched, lit its meter and produced no fire at all.
+const jetOrigin = new THREE.Vector3();
+const jetDir = new THREE.Vector3();
+
+/**
+ * One frame of jet for every nozzle on `spec`, if it has any and is lit.
+ * @param {{spawnFlame:Function}} effects
+ * @param {object} spec catalog bot spec
+ * @param {{position:{x:number,y:number,z:number}, quaternion:THREE.Quaternion}} state
+ * @param {number} lit 0..1 burn ramp (the sim's `burning`, reported as weaponSubAngle)
+ * @param {number} groundDrop model-content y shift applied by the match's chassis
+ *        calibration; the nozzles are body-local like every other catalog point,
+ *        so the jet has to follow the DRAWN geometry rather than the physics origin.
+ */
+export function spawnBotFlame(effects, spec, state, lit, groundDrop = 0) {
+  const flame = spec?.weapon?.flame;
+  if (!flame || !(lit > 0.05)) return;
+  const dir = flame.dir || { x: 0, y: 0.07, z: -1 };
+  for (const nozzle of flame.nozzles || [{ x: 0, y: 0.66, z: -0.5 }]) {
+    jetOrigin.set(nozzle.x, nozzle.y - groundDrop, nozzle.z)
+      .applyQuaternion(state.quaternion)
+      .add(state.position);
+    jetDir.set(dir.x, dir.y, dir.z).normalize().applyQuaternion(state.quaternion);
+    effects.spawnFlame(jetOrigin, jetDir, {
+      count: Math.round(2 + lit * 4),
+      speed: 11 * (0.6 + lit * 0.4),
+      scale: flame.scale ?? 1,
+    });
+  }
 }

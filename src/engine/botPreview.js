@@ -33,6 +33,7 @@
 import * as THREE from "three";
 import { loadBotModel } from "../assets/models.js";
 import { syncBotVisual, updateWeaponSub } from "./botAnimation.js";
+import { createEffects, spawnBotFlame } from "./effects.js";
 import { createPreviewWeapon } from "./previewWeapon.js";
 import { createWeaponInputShaper, describeWeaponControls } from "../game/weaponControls.js";
 
@@ -153,11 +154,22 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     deco.add(floor);
     scene.add(deco);
 
+    // Particle FX for this bay only. One effects instance PER BAY, each rooted
+    // in its own group: the two bots share a scene, and a jet spawned at the
+    // player's plinth would otherwise hang in the rival's window too (showOnly
+    // can hide a group, not a subset of one shared particle pool). It also
+    // gives each bay its own billboard camera, which is the whole point of a
+    // scissored two-viewport render.
+    const fxRoot = new THREE.Group();
+    scene.add(fxRoot);
+
     const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 120);
     return {
       slot,
       x,
       deco,
+      fxRoot,
+      fx: createEffects(fxRoot),
       ringMaterial,
       camera,
       visual: null,
@@ -368,6 +380,12 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     bay.weapon.update(dt, shaped);
     bay.state.weaponAngle = bay.weapon.state.weaponAngle;
     bay.state.weaponSubAngle = bay.weapon.state.weaponSubAngle;
+    // Flamethrower (Free Shipping): the sim reports the burn as weaponSubAngle
+    // and main.js draws the jet from it. previewWeapon keeps the same ramp but
+    // only publishes it through subRatio(), so mirror it into the render state
+    // the viewer draws from — then the jet is spawned by the SAME code the
+    // match uses, from the same catalog nozzles.
+    if (bay.spec.weapon?.flame) bay.state.weaponSubAngle = bay.weapon.subRatio();
     // weaponRatio is not optional: botAnimation draws a spinner's rotation from
     // the RATIO and ignores weaponAngle entirely for bar/drum, so leaving it off
     // this copy left every rotor in the viewer dead however long RT was held.
@@ -451,6 +469,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     for (const bay of bays) {
       const mine = bay === active;
       bay.deco.visible = mine && Boolean(bay.visual);
+      bay.fxRoot.visible = mine;
       if (bay.visual) bay.visual.group.visible = mine;
     }
   }
@@ -459,6 +478,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   function restoreBays() {
     for (const bay of bays) {
       bay.deco.visible = Boolean(bay.visual);
+      bay.fxRoot.visible = true;
       if (bay.visual) bay.visual.group.visible = true;
     }
   }
@@ -503,6 +523,12 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       if (!bay.visual) continue;
       updateWeaponAnim(bay, dt);
       syncBotVisual(bay.visual, bay.spec, bay.state);
+      // A lit flamethrower is drawn here, from the same helper and the same
+      // catalog nozzles the match uses. The billboard is this bay's own camera
+      // (one frame stale, which is invisible on a facing quad).
+      bay.fx.faceCamera(bay.camera);
+      spawnBotFlame(bay.fx, bay.spec, bay.state, bay.state.weaponSubAngle ?? 0);
+      bay.fx.update(dt);
     }
 
     renderer.setScissorTest(false);
@@ -551,6 +577,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   }
 
   function removeVisual(bay) {
+    bay.fx.clear(); // a jet the player left burning must not outlive its bot
     if (!bay.visual) return;
     scene.remove(bay.visual.group);
     disposeObject(bay.visual.group);
@@ -561,6 +588,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   function resetBayState(bay) {
     bay.weapon?.reset();
     shaper.reset(bay.slot); // a fresh bot arrives with its rotor off
+    bay.fx.clear();
     bay.state.weaponAngle = 0;
     bay.state.weaponSubAngle = 0;
     bay.raw.primaryHeld = false;
@@ -584,10 +612,19 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       if (meterEl?.parentElement) meterEl.parentElement.hidden = !channel;
       if (!channel) return;
       const labelEl = el.querySelector("[data-control-label]") || el;
-      labelEl.textContent = channel.label;
+      // Name the CHANNEL as well as the mechanism. "LIFT" and "FLAME" say what
+      // the two buttons do but not which trigger is which, and a bot whose
+      // second channel is the interesting one (Free Shipping's flamethrower)
+      // gets reported as broken when the player holds RT and nothing burns.
+      const chan = el === bay.buttons.secondary ? "RB" : "RT";
+      labelEl.textContent = `${chan} ${channel.label}`;
       // Toggle vs hold is the single most useful thing to tell the player here.
       el.dataset.mode = channel.toggle ? "toggle" : "hold";
-      el.setAttribute("aria-label", `${channel.label} — ${channel.toggle ? "toggles on and off" : "hold"}`);
+      el.setAttribute(
+        "aria-label",
+        `${channel.label} — ${chan} / ${el === bay.buttons.secondary ? "R" : "Space"}, `
+        + `${channel.toggle ? "toggles on and off" : "hold"}`,
+      );
       if (meterEl) meterEl.style.transform = "scaleX(0)";
     };
     dress(bay.buttons.primary, bay.meters.primary, controls.primary);
