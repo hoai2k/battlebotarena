@@ -1179,42 +1179,57 @@ export const CATALOG = {
       // symmetric about the model origin. normalizeScene centres the model on
       // the BODY bounding box, which the wide front bodywork dominates, so the
       // chassis proper ends up offset — its side walls measure +0.843 and
-      // -1.166, and its wheels reach +1.277 and -1.598. A single mirrored x
+      // -1.166, and its tyres reach +1.127 and -1.451. A single mirrored x
       // therefore cannot be right on both sides, and the old symmetric +-1.38
       // was wrong in two different ways at once: on the +x side the bar hung
       // outboard of everything in open air, on the -x side it ran straight
       // through the middle of both tyres.
+      // Those tyre numbers came in by 0.147 a side when
+      // tools/repairs/duck-rear-tyres.json narrowed the rear pair. The scan
+      // built the rear tyres twice as wide as the front pair and 0.147 further
+      // out, and since the lifter swings back over the rear wheels the bars
+      // had to stand clear of THAT — which left them a fifth of a foot outboard
+      // of the wheels they actually run beside, on brackets that had to reach
+      // that far to hold them. One tyre line for all four wheels is what lets
+      // the bars sit against the wheel.
       arms: [
         // The MOUNTING BOXES. Each is flush against the chassis flank on its
         // inboard face — MEASURED in the hub band over z 0.05..0.66 at +0.8431
         // and -1.1655, and the box is set 0.003 INTO that so the two surfaces
         // are never coplanar (a scan wall and a flat box face landing on the
         // same plane z-fight) — and reaches 0.146ft past that side's outermost
-        // tyre (+x 1.277 -> 1.423, -x -1.598 -> -1.744), a little more than the
+        // tyre (+x 1.127 -> 1.273, -x -1.451 -> -1.597), a little more than the
         // 0.10ft diameter of the bar it carries, so the bar has somewhere to
-        // sit outboard of the wheel. Both come out ~0.58 wide, which is the
+        // sit outboard of the wheel. Both come out ~0.43 wide, which is the
         // check that the two sides really are the same bracket: the machine is
         // symmetric about its own chassis, only not about the model origin.
         // z 0.66..0.06 threads the gap between the front tyres (z max -0.023)
         // and the rear (z min 0.692). attach: "body" — part of the frame, it
         // stays put while the arm swings.
-        { x: -1.4532, shape: "box", width: 0.5814, height: 0.2, attach: "body",
+        { x: -1.3798, shape: "box", width: 0.4345, height: 0.2, attach: "body",
           from: { y: 0.233, z: 0.66 }, to: { y: 0.233, z: 0.06 }, color: "#c3c7cc" },
-        { x: 1.1316, shape: "box", width: 0.5830, height: 0.2, attach: "body",
+        { x: 1.0566, shape: "box", width: 0.4329, height: 0.2, attach: "body",
           from: { y: 0.233, z: 0.66 }, to: { y: 0.233, z: 0.06 }, color: "#c3c7cc" },
         // The CARRIER BARS, at the outboard END of their own box: the bar's
         // outer face lands 0.006 short of the end of the bracket (flush, but
         // NOT coplanar — the bar's rear 0.3ft lives inside the box, and two
         // faces on the same plane put a z-fighting disc on the outside of the
-        // bracket) and its inner face stands 0.04ft clear of the tyre — and,
-        // on the +x side, 0.005 clear of the widest bodywork it sweeps over at
-        // full lift. Forward they run to the plow's rear surface MEASURED at that
-        // bar's own x in the bar's own height band (-1.086 on the -x side,
-        // -1.088 on the +x): the end of the cylinder lands ON the panel, not
-        // short of it and not buried through it. Aft they stop 0.02 behind the
-        // hinge, so the cap turns on the spot inside the bracket.
-        { x: -1.688, radius: 0.05, from: { y: 0.233, z: 0.36 }, to: { y: 0.233, z: -1.086 }, color: "#b9bdc4" },
-        { x: 1.367, radius: 0.05, from: { y: 0.233, z: 0.36 }, to: { y: 0.233, z: -1.088 }, color: "#b9bdc4" },
+        // bracket) and its inner face stands 0.04ft clear of the tyre — 0.040
+        // off the -x pair at -1.451 and 0.041 off the +x pair at 1.127, which
+        // is the same bar-to-wheel gap front and rear now that all four tyres
+        // share one outer face. Nothing else is out here: counted with
+        // glb-carve over the shipped GLB, the body has no triangle outboard of
+        // x 1.16 in the bar's height band and none at all above it, so the bar
+        // rises through clear air, and the -x side has nothing outboard of
+        // -1.487 to begin with. Forward they run to the plow's rear surface
+        // MEASURED at that bar's own x in the bar's own height band (a wall at
+        // -1.083 on the -x side, -1.089 on the +x, found by counting plow
+        // triangles aft of a plane in the bar's own 0.1ft column): the bars
+        // stop 0.003 INTO it, so the end of the cylinder lands ON the panel,
+        // not short of it and not buried through it. Aft they stop 0.02 behind
+        // the hinge, so the cap turns on the spot inside the bracket.
+        { x: -1.541, radius: 0.05, from: { y: 0.233, z: 0.36 }, to: { y: 0.233, z: -1.086 }, color: "#b9bdc4" },
+        { x: 1.217, radius: 0.05, from: { y: 0.233, z: 0.36 }, to: { y: 0.233, z: -1.092 }, color: "#b9bdc4" },
       ],
       axis: { x: 1, y: 0, z: 0 },
       // MEASURED: the scoop is baked DOWN and 1.1 stands it up over the nose.
@@ -1232,8 +1247,8 @@ export const CATALOG = {
       // side of the body instead of only reaching forward. The arms sit
       // outboard of the TYRES (see the per-side numbers above) so they have
       // somewhere to go. An earlier note here blamed a lopsided scan for the
-      // asymmetry; that was wrong. The chassis is symmetric — both wheel sets
-      // stand exactly 0.433ft proud of their own frame rail — and what is
+      // asymmetry; that was wrong. The chassis is symmetric — every tyre
+      // stands 0.285ft proud of its own frame rail — and what is
       // off-centre is the model ORIGIN, because normalizeScene centres on the
       // body bounding box and Duck's wide front bodywork dominates it, putting
       // the chassis 0.161ft to -x of zero. That is why one mirrored x cannot
