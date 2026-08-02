@@ -391,7 +391,12 @@ shell (Beta, Deep Six, Hydra) — the suspension still runs off `wheelAnchors`.
 
 `modelRoll` is applied on the wrapper, i.e. about the game-space forward axis
 AFTER `modelYaw`, so `Math.PI` means "Tripo built this one upside down"
-whichever way it was facing. Copperhead and Duck both were — nothing in the
+whichever way it was facing. Duck's wheels stand proud of its deck and it is
+NOT one of these. Copperhead carried `Math.PI` for a long time and it was
+WRONG: the scan is the right way up, but scan whiskers under the belly reached
+lower than the wheels, so at roll 0 it grounded on a filament with the tyres
+floating 1.5ft up, and rolling it landed the wheels by accident with the deck
+underneath. Carve the junk BEFORE judging orientation — nothing in the
 segmentation pass looks at which way is up, so it is not caught upstream and
 shows as wheels resting on the roof.
 
@@ -470,6 +475,7 @@ driven by a checked-in spec so the edit is reviewable and repeatable:
 | `glb-carve.mjs` | `tools/repairs/tantrum-reflection.json` | Tantrum's reference photo was taken on a polished floor and the scan modelled the REFLECTION as solid geometry, a mirrored ghost bot hanging under the real one |
 | `glb-add-panels.mjs` | `tools/repairs/blip-flipper-pan.json` | openings the scan never closed — down both long edges of Blip's flipper there was a strip of nothing between the plate and the frame, and you looked straight through into the machine |
 | `glb-carve.mjs` | `tools/repairs/duck-plow-tabs.json` | geometry that held the machine off the floor — two stray prongs under the back of Duck's plow reached lower than the plow's own lip, so grounding stood the whole bot 0.18ft up on invisible stilts |
+| `glb-carve.mjs` | `tools/repairs/freeshipping-lifter.json` | a part built at the wrong SIZE and PLACE for the rest of the machine — Free Shipping's fork carriage was narrower than the middle one of its own three front wedges, so at rest the whole lifter was buried inside that wedge instead of dropping its tines down the channels either side of it (`transform` mode: node scale + offset, no vertices touched) |
 
 Blip is worth knowing about before reaching for a re-segmentation: the raw
 Tripo output carries exactly the same 21 parts as the shipped GLB, with
@@ -529,6 +535,27 @@ the previewer drops its models (GPU memory); every path back into botSelect
 calls `refreshSelect`, which re-emits the selection and repopulates the bays
 from the GLB cache.
 
+**Camera framing is a function of bot SIZE, measured off the loaded model.**
+The chase and director distances were authored around a ~2.3ft-radius machine
+and cropped anything bigger — playing Mammoth you could not see your own bot.
+`setSubjectRadius()` on both cameras scales the follow distance and height
+together (so the look-down angle holds rather than the shot just going flat),
+and main.js feeds it the bounding sphere of the LOADED group, not `bodyDims`:
+the catalog dims describe the shell, and a bot's silhouette is mostly weapon —
+Mammoth's disc rides a truss well outside its chassis. Mammoth pulls the chase
+camera from 6.4ft to 13.5ft. The bot-select pods solve the same problem per
+frame instead of once, because a pod's aspect changes with the layout: they
+store the model's fit RADIUS and derive the distance from whichever of the
+vertical or horizontal FOV demands more room.
+
+**Spinner rotation is drawn from `weaponRatio`, not `weaponAngle`.**
+`botAnimation` ignores `weaponAngle` entirely for bar/drum and integrates the
+ratio against `SPIN_VISUAL_MAX_OMEGA` (see the aliasing note there). Anything
+synthesizing a render state has to report the ratio or the rotor is drawn
+stone dead: the practice viewer once computed it correctly, reported only the
+angle, and every spinner in the bot-select screen sat motionless no matter how
+long RT was held.
+
 **The pods are a PRACTICE viewer, not a showreel.** The owner orbits with the
 right stick, leans in with LT, and works the weapon on RT/RB — the same two
 channels as a fight. Raw presses go through `game/weaponControls.js`, the ONE
@@ -550,6 +577,17 @@ damage). Two details that are load-bearing:
   race whenever a frame runs long.
 - Weapons advance for every staged bot, outside the render-culling loop, so a
   press is never dropped and a latched rotor keeps spinning while you scroll.
+- A mechanism whose only output is an EFFECT has to be drawn here too. Free
+  Shipping's flamethrower latched, lit its meter and produced no fire at all,
+  because the jet lived in `main.js`'s match loop and nothing else ever called
+  it. `effects.js` now owns `spawnBotFlame(effects, spec, state, lit, drop)` and
+  both loops call it, so one set of catalog nozzles feeds both. Each bay carries
+  its OWN `createEffects` instance rooted in its own group: the two bots share a
+  scene, and `showOnly` can hide a group but not part of a shared particle pool.
+
+`weaponSubAngle` is the channel a second mechanism reports through — the sim's
+`getSubAngle()`. `previewWeapon` publishes the flame ramp through `subRatio()`
+instead, so the viewer copies it across into the render state it draws from.
 
 **Layout and scrolling.** The pods start COMPACT so the whole roster fits in
 one view (verified 1280x720 through 1920x1080); once both bays are filled the

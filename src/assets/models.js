@@ -337,7 +337,11 @@ function drawnBox(object, target = new THREE.Box3()) {
 //
 // modelRoll is applied on the WRAPPER, i.e. about the game-space forward axis
 // AFTER the yaw, so `Math.PI` means "this model came out of Tripo upside down"
-// no matter which way it was facing. Copperhead and Duck both did; nothing in
+// no matter which way it was facing. Beware the false positive: Copperhead read
+// as upside down for a long time and was not — scan whiskers under its belly
+// reached below the wheels, so it grounded on a filament with the tyres in the
+// air, and a roll landed them by accident with the deck underneath. Carve stray
+// geometry BEFORE judging orientation; nothing in
 // the segmentation pass looks at which way is up.
 function normalizeScene(scene, spec) {
   if (!scene) return null;

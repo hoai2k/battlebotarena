@@ -305,6 +305,9 @@
    to the viewers (ui.js scrolls back to the top at that moment). */
 .select-stage {
   --stage-h: clamp(178px, 25vh, 244px);
+  /* One bot picked: there is a live bot to look at but still a roster to read,
+     so the bay grows as far as it can while leaving the last grid row peeking
+     above the fold. Both picked -> .is-ready below, which takes the lot. */
   flex: 0 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -314,8 +317,16 @@
   min-height: var(--stage-h);
 }
 
+.screen-select.is-picking .select-stage {
+  /* Nearly the whole screen: with a bot staged there is something worth looking
+     at, and the roster only has to stay reachable, not fully visible. Sized so
+     the last grid row is pushed mostly under the fold with a sliver showing —
+     enough to say "there is more down here" without wasting the bay. */
+  --stage-h: clamp(300px, 56vh, 600px);
+}
+
 .screen-select.is-ready .select-stage {
-  --stage-h: clamp(300px, 56vh, 620px);
+  --stage-h: clamp(300px, 58vh, 640px);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -478,6 +489,16 @@
   outline: 1px dashed rgba(255, 210, 61, 0.4);
   outline-offset: -7px;
   animation: armedPulse 1.6s ease-in-out infinite;
+}
+
+/* A FILLED pod gets the same dashed treatment on both sides, in its own bot's
+   accent. Previously only the armed pod was dashed, so once you had picked,
+   your bay went solid while the rival's stayed dashed and the two sides read
+   as different kinds of thing rather than as the same thing twice. */
+.preview-pod.is-filled:not(.is-armed) .pod-view {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  outline: 1px dashed color-mix(in srgb, var(--accent) 75%, transparent);
+  outline-offset: -7px;
 }
 
 @keyframes armedPulse {

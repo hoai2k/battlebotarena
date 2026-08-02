@@ -1017,7 +1017,13 @@ export const CATALOG = {
     referenceImage: "./public/reference/copperhead.png",
     modelPath: "./public/models/copperhead.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X
-    modelRoll: Math.PI, // MEASURED: Tripo built it upside down (wheels on top)
+    // NO modelRoll. This one carried `Math.PI` for a long time and it was
+    // wrong: the scan is the right way up, hex deck on top exactly as in the
+    // reference. What made it look upside down was scan junk under the belly —
+    // five whiskers and four drips reaching a foot below the pan — which
+    // grounding rested on, so the machine hung in the air and rolling it put
+    // the wheels back on the floor by accident. With the junk carved
+    // (tools/repairs/copperhead-strays.json) roll 0 grounds on the fork tips.
     modelScale: 3.2498,
     canDriveInverted: true, // symmetrical drum bot; it fights either way up
     // --- the real machine ---------------------------------------------
@@ -1028,21 +1034,31 @@ export const CATALOG = {
       weightLbs: 250,
       topSpeedMph: null,
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
-      size: { widthFt: 3.25, lengthFt: 3.22, heightFt: 2.05, source: "class-estimate" },
+      // lengthFt/heightFt were read off the model BEFORE the repair: 3.22 was
+      // the mirrored rear forks and 2.05 was a scan whisker. Re-measured
+      // through the loader the machine is 2.44 long and 1.23 tall.
+      size: { widthFt: 3.25, lengthFt: 2.44, heightFt: 1.23, source: "class-estimate" },
       weapon: { name: "Eggbeater drum spinner", weightLbs: 50, tipSpeedMph: 180, rpm: null },
       drive: "2x Maytech MTO6365", power: "5Ah 6S LiPo",
     },
 
     weightLbs: 250,
     weaponWeightLbs: 50,
-    // MEASURED shell. The two whiskers reaching 2.08 are its antennae, not
-    // structure, so the height here is the deck, not the bounding box.
-    bodyDims: { x: 3.1218, y: 1.428, z: 3.2203 },
+    // MEASURED shell through the loader after the stray-geometry carve. The
+    // old numbers were the pre-repair bbox: 1.428 tall was a whisker and
+    // 3.2203 long was the mirrored rear fork pair.
+    bodyDims: { x: 3.1188, y: 1.1141, z: 2.4177 },
+    // MEASURED. Copperhead is 2WD: the tyres are a single pair at z=+0.37 and
+    // the front of the machine rides on its fork skids, so the probes go where
+    // the machine actually touches down rather than on a symmetric rectangle
+    // (same shape as Tombstone's front-skid/rear-tyre set). y stays 0.2395 —
+    // it is a probe origin against the fixed 0.45ft ray travel, not a length
+    // that scales with the model.
     wheelAnchors: [
-      { x: -1.2802, y: 0.2395, z: -0.8863 },
-      { x: 1.2802, y: 0.2395, z: -0.8863 },
-      { x: -1.2802, y: 0.2395, z: 0.8863 },
-      { x: 1.2802, y: 0.2395, z: 0.8863 },
+      { x: -1.1002, y: 0.2395, z: -0.9497 }, // front fork skids
+      { x: 1.1002, y: 0.2395, z: -0.9497 },
+      { x: -1.27, y: 0.2395, z: 0.3657 }, // rear tyres
+      { x: 1.27, y: 0.2395, z: 0.3657 },
     ],
     maxSpeedFps: 14.0,
     accel: 8.0,
@@ -1057,23 +1073,26 @@ export const CATALOG = {
       // the scan ragged, so the good half is mirrored across the axle — the
       // real drum is symmetric. See tools/repairs/copperhead-drum-mirror.json.
       pivotFromCatalog: true,
-      pivot: { x: 0.04, y: 0.713, z: -0.81 },
+      // MEASURED with rig-inspect --axle after the strays carve. Both the sign
+      // of x (the roll used to mirror it) and z (removing the rear forks moved
+      // the model's own centre back 0.40ft) moved with the repair.
+      pivot: { x: -0.04, y: 0.514, z: -0.408 },
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 1.6,
       inertia: 1.25,
       maxOmega: 560,
       budgetCap: 340,
       radius: 0.423, // MEASURED swept radius of the drum alone
-      dims: { x: 0.8863, y: 0.5367, z: 0.5367 },
+      dims: { x: 0.891, y: 0.5367, z: 0.5367 }, // half the MEASURED 1.782ft drum length
       tuning: { efficiency: 0.58, impulseScale: 10.5, liftScale: 30.0, liftVelocity: 4.5, gyroScale: 1.0 },
     },
-    // NOTHING in front of z=-0.36, which is where the drum's sweep ends. The
-    // model does carry a deck lip out to z=-1.6, but it sits at y 1.02-1.23 —
-    // level with the top of the drum — so a collider there would be a pure
-    // stand-off: opponents would stop on the lip with the drum still a foot
-    // short of them. Same call as Deep Six, for the same reason.
+    // NOTHING in front of z=-0.70, and the drum's sweep reaches z=-0.831, so
+    // the blade stands 0.13ft proud of the chassis. The forks ahead of that
+    // carry no collider at all: they sit at the drum's own height, so a solid
+    // there would be a pure stand-off and opponents would stop on the fork
+    // tips with the drum still short of them. Same call as Deep Six.
     colliders: [
-      { shape: "box", halfExtents: { x: 1.5264, y: 0.6106, z: 0.9651 }, offset: { x: 0, y: 0.6401, z: 0.6106 } },
+      { shape: "box", halfExtents: { x: 1.5264, y: 0.505, z: 0.925 }, offset: { x: 0, y: 0.605, z: 0.225 } },
     ],
   },
 
@@ -1289,28 +1308,37 @@ export const CATALOG = {
       type: "lifter",
       pivot: { x: 0, y: 0.7781, z: 0.7534 }, // MEASURED mast hinge, game space
       axis: { x: 1, y: 0, z: 0 },
-      // MEASURED: the GLB bakes the mast RAISED, so rest is -0.43 (fork tips
-      // on the floor at y 0.00) and 0.30 hoists them to about 1.7ft — a
-      // forklift, not a flipper.
-      restAngle: -0.43,
-      fireAngle: 0.3,
+      // MEASURED: the GLB bakes the mast RAISED, so rest is -0.455 (fork tips
+      // on the floor at y 0.00) and 0.36 hoists them to 1.72ft — a forklift,
+      // not a flipper. Both moved with tools/repairs/freeshipping-lifter.json:
+      // widening the carriage and setting it back put the tines 0.19ft nearer
+      // the hinge, which is 0.025rad of rest angle and 0.06rad of lift.
+      restAngle: -0.455,
+      fireAngle: 0.36,
       liftImpulse: 165,
       liftRecoil: 0.5,
       lowerSeconds: 0.7,
-      dims: { x: 0.3211, y: 0.1482, z: 1.4821 },
+      dims: { x: 1.1039, y: 0.1482, z: 1.4821 }, // MEASURED fork carriage, post-repair
       selfRight: true,
       // The flamethrowers. Static geometry on the model, so they are a damage
       // cone on the alt channel rather than a rigged part: no shove, no
       // knockdown, just a steady burn on whatever is held in front.
       // Two nozzles on the front of the deck — the ones the yellow feed lines
-      // run to. Body-local feet; the jet leaves them forward and slightly up.
+      // run to (parts 6/16, whose forward ends stop at z=-0.18, x=+-0.64).
+      // Body-local feet. MEASURED: the deck top over the nozzle column is
+      // y=0.691, so the old y=0.78 hung the jet a tenth of a foot above the
+      // bodywork and it lit up out of thin air; 0.66 starts it just inside the
+      // deck so it comes out of the metal. `dir` is nearly flat — 4 degrees up,
+      // where 10 threw the jet over the head of anything it was aimed at (the
+      // puffs get their rise from buoyancy in effects.js, not from the aim).
       flame: {
         damagePerSecond: 9,
         reach: 3.9523,
         scale: 1.15,
+        dir: { x: 0, y: 0.07, z: -1 },
         nozzles: [
-          { x: -0.62, y: 0.78, z: -0.5 },
-          { x: 0.62, y: 0.78, z: -0.5 },
+          { x: -0.62, y: 0.66, z: -0.5 },
+          { x: 0.62, y: 0.66, z: -0.5 },
         ],
       },
       tuning: { strokeSeconds: 0.5, reach: 2.2232 },

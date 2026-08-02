@@ -5,7 +5,7 @@ import { createEventBus, EV } from "./shared/events.js";
 import { settings } from "./shared/settings.js";
 import { createRenderer } from "./engine/renderer.js";
 import { createCameraDirector, createChaseCamera } from "./engine/cameras.js";
-import { createEffects } from "./engine/effects.js";
+import { createEffects, spawnBotFlame } from "./engine/effects.js";
 import { createArenaVisuals } from "./engine/arena.js";
 import { createBotPreview } from "./engine/botPreview.js";
 import { syncBotVisual, updateWeaponSub } from "./engine/botAnimation.js";
@@ -56,8 +56,6 @@ let session = null; // { sim, match, botVisuals: [{group, parts, spec}], raf }
 let paused = false;
 const pauseOverlay = document.querySelector("#pause-overlay");
 const clock = new THREE.Clock();
-const flameOrigin = new THREE.Vector3();
-const flameDir = new THREE.Vector3();
 
 function setPaused(value) {
   paused = Boolean(value);
@@ -203,6 +201,18 @@ async function startMatch({ playerBotId, rivalBotId, difficulty }) {
   });
   sim.reset();
   session = { sim, match, botVisuals, specs, difficulty, audio };
+  // Frame the cameras around the bots that are actually in this match. The
+  // radius comes off the LOADED model, not the catalog: bodyDims describe the
+  // shell, and a bot's silhouette is mostly weapon — Mammoth's disc rides a
+  // truss well outside its chassis, and at the fixed follow distance you could
+  // not see your own machine.
+  const radii = botVisuals.map((visual) => {
+    const sphere = new THREE.Box3().setFromObject(visual.group).getBoundingSphere(new THREE.Sphere());
+    return sphere.radius || 0;
+  });
+  chaseCameraA.setSubjectRadius(radii[0]);
+  chaseCameraB.setSubjectRadius(radii[1]);
+  cameraDirector.setSubjectRadius(Math.max(...radii));
   cameraDirector.snapTo(sim.getRenderState());
   chaseCameraA.snapTo(sim.getRenderState()[0]);
   chaseCameraB.snapTo(sim.getRenderState()[1]);
@@ -301,22 +311,15 @@ function frame() {
     // from the input, and it keeps burning through the frames where the input
     // has already been consumed.
     effects.faceCamera(stage.camera);
-    renderState.forEach((state, i) => {
-      const spec = session.specs[i];
-      const flame = spec.weapon?.flame;
-      const lit = flame ? (state.weaponSubAngle ?? 0) : 0;
-      if (!flame || lit < 0.05 || paused) return;
-      const visual = session.botVisuals[i];
-      for (const nozzle of flame.nozzles || [{ x: 0, y: 0.7, z: -0.6 }]) {
-        flameOrigin.set(nozzle.x, nozzle.y, nozzle.z).applyQuaternion(state.quaternion).add(state.position);
-        flameDir.set(0, 0.18, -1).normalize().applyQuaternion(state.quaternion);
-        effects.spawnFlame(flameOrigin, flameDir, {
-          count: Math.round(2 + lit * 4),
-          speed: 11 * (0.6 + lit * 0.4),
-          scale: flame.scale ?? 1,
-        });
-      }
-    });
+    if (!paused) {
+      renderState.forEach((state, i) => {
+        // __groundDrop is the shift startMatch() put into the model's CONTENTS
+        // to stand it on the floor; the nozzles are body-local like every other
+        // catalog point, so without it the jet leaves from that far above the
+        // muzzle it was measured against.
+        spawnBotFlame(effects, session.specs[i], state, state.weaponSubAngle ?? 0, session.botVisuals[i].__groundDrop ?? 0);
+      });
+    }
     arenaVisuals?.updateHazards(session.sim.getHazardState?.(), paused ? 0 : dt);
 
     // Split-screen when both players are human AND bot camera is selected;

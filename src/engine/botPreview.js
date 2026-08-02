@@ -33,6 +33,7 @@
 import * as THREE from "three";
 import { loadBotModel } from "../assets/models.js";
 import { syncBotVisual, updateWeaponSub } from "./botAnimation.js";
+import { createEffects, spawnBotFlame } from "./effects.js";
 import { createPreviewWeapon } from "./previewWeapon.js";
 import { createWeaponInputShaper, describeWeaponControls } from "../game/weaponControls.js";
 
@@ -153,11 +154,22 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     deco.add(floor);
     scene.add(deco);
 
+    // Particle FX for this bay only. One effects instance PER BAY, each rooted
+    // in its own group: the two bots share a scene, and a jet spawned at the
+    // player's plinth would otherwise hang in the rival's window too (showOnly
+    // can hide a group, not a subset of one shared particle pool). It also
+    // gives each bay its own billboard camera, which is the whole point of a
+    // scissored two-viewport render.
+    const fxRoot = new THREE.Group();
+    scene.add(fxRoot);
+
     const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 120);
     return {
       slot,
       x,
       deco,
+      fxRoot,
+      fx: createEffects(fxRoot),
       ringMaterial,
       camera,
       visual: null,
@@ -184,6 +196,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
         quaternion: new THREE.Quaternion(),
         weaponAngle: 0,
         weaponSubAngle: 0,
+        weaponRatio: 0,
       },
       // RAW (pre-latch) button state per channel, from pointer holds, click
       // pulses and the pad. The shaper turns these into shaped weapon input.
@@ -367,6 +380,16 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     bay.weapon.update(dt, shaped);
     bay.state.weaponAngle = bay.weapon.state.weaponAngle;
     bay.state.weaponSubAngle = bay.weapon.state.weaponSubAngle;
+    // Flamethrower (Free Shipping): the sim reports the burn as weaponSubAngle
+    // and main.js draws the jet from it. previewWeapon keeps the same ramp but
+    // only publishes it through subRatio(), so mirror it into the render state
+    // the viewer draws from — then the jet is spawned by the SAME code the
+    // match uses, from the same catalog nozzles.
+    if (bay.spec.weapon?.flame) bay.state.weaponSubAngle = bay.weapon.subRatio();
+    // weaponRatio is not optional: botAnimation draws a spinner's rotation from
+    // the RATIO and ignores weaponAngle entirely for bar/drum, so leaving it off
+    // this copy left every rotor in the viewer dead however long RT was held.
+    bay.state.weaponRatio = bay.weapon.state.weaponRatio ?? 0;
     // Sawblaze's saw / Whiplash's disc: the visual sub-spinner rides the same
     // sawActive channel it does in the match.
     updateWeaponSub(bay.visual, bay.spec, dt, Boolean(shaped.sawActive));
@@ -387,6 +410,17 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     const orbit = bay.orbit;
     orbit.idleFor += dt;
     if (orbit.idleFor > AUTO_SPIN_AFTER) orbit.yaw += AUTO_SPIN_SPEED * dt; // showcase drift
+    // Distance that fits the model's bounding sphere in BOTH axes. Vertical FOV
+    // is fixed; the horizontal one falls out of the aspect, and a wide bot in a
+    // wide-but-short window is limited by the vertical one — so take whichever
+    // demands more room.
+    const aspect = rect.width / Math.max(rect.height, 1);
+    if (orbit.fitRadius) {
+      const vFov = (bay.camera.fov * Math.PI) / 180;
+      const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
+      const fit = orbit.fitRadius / Math.sin(Math.min(vFov, hFov) / 2);
+      orbit.dist = clamp(fit * 1.08, 3.5, 40); // 8% margin so nothing kisses the edge
+    }
     const dist = orbit.dist * orbit.zoom * (1 - 0.42 * clamp(orbit.lean, 0, 1));
     const target = new THREE.Vector3(bay.x, orbit.targetY, 0);
     bay.camera.position.set(
@@ -395,7 +429,6 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       dist * Math.cos(orbit.pitch) * Math.cos(orbit.yaw),
     );
     bay.camera.lookAt(target);
-    const aspect = rect.width / Math.max(rect.height, 1);
     if (Math.abs(bay.camera.aspect - aspect) > 0.001) {
       bay.camera.aspect = aspect;
       bay.camera.updateProjectionMatrix();
@@ -412,7 +445,12 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     box.getCenter(center);
     const radius = size.length() / 2;
     bay.orbit.targetY = center.y + size.y * 0.06; // a touch high: weapons swing UP
-    bay.orbit.dist = clamp(radius * 2.2, 3.5, 26);
+    // Store the RADIUS, not a distance: the pod's aspect changes with layout
+    // (and the bay grows when a bot is picked), and a distance that fits a tall
+    // narrow window crops a wide one. updateCamera solves it per frame against
+    // the live aspect so the whole bot is always inside the frame.
+    bay.orbit.fitRadius = radius;
+    bay.orbit.dist = clamp(radius * 2.2, 3.5, 26); // seed until the first frame
     bay.orbit.zoom = 1;
   }
 
@@ -431,6 +469,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     for (const bay of bays) {
       const mine = bay === active;
       bay.deco.visible = mine && Boolean(bay.visual);
+      bay.fxRoot.visible = mine;
       if (bay.visual) bay.visual.group.visible = mine;
     }
   }
@@ -439,6 +478,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   function restoreBays() {
     for (const bay of bays) {
       bay.deco.visible = Boolean(bay.visual);
+      bay.fxRoot.visible = true;
       if (bay.visual) bay.visual.group.visible = true;
     }
   }
@@ -483,6 +523,12 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       if (!bay.visual) continue;
       updateWeaponAnim(bay, dt);
       syncBotVisual(bay.visual, bay.spec, bay.state);
+      // A lit flamethrower is drawn here, from the same helper and the same
+      // catalog nozzles the match uses. The billboard is this bay's own camera
+      // (one frame stale, which is invisible on a facing quad).
+      bay.fx.faceCamera(bay.camera);
+      spawnBotFlame(bay.fx, bay.spec, bay.state, bay.state.weaponSubAngle ?? 0);
+      bay.fx.update(dt);
     }
 
     renderer.setScissorTest(false);
@@ -531,6 +577,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   }
 
   function removeVisual(bay) {
+    bay.fx.clear(); // a jet the player left burning must not outlive its bot
     if (!bay.visual) return;
     scene.remove(bay.visual.group);
     disposeObject(bay.visual.group);
@@ -541,6 +588,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   function resetBayState(bay) {
     bay.weapon?.reset();
     shaper.reset(bay.slot); // a fresh bot arrives with its rotor off
+    bay.fx.clear();
     bay.state.weaponAngle = 0;
     bay.state.weaponSubAngle = 0;
     bay.raw.primaryHeld = false;
@@ -564,10 +612,20 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       if (meterEl?.parentElement) meterEl.parentElement.hidden = !channel;
       if (!channel) return;
       const labelEl = el.querySelector("[data-control-label]") || el;
-      labelEl.textContent = channel.label;
+      // Name the CHANNEL as well as the mechanism. "LIFT" and "FLAME" say what
+      // the two buttons do but not which trigger is which, and a bot whose
+      // second channel is the interesting one (Free Shipping's flamethrower)
+      // gets reported as broken when the player holds RT and nothing burns.
+      const chan = el === bay.buttons.secondary ? "RB" : "RT";
+      // Non-breaking space: "RT" and "LIFT" are one label, not two words.
+      labelEl.textContent = `${chan}\u00a0${channel.label}`;
       // Toggle vs hold is the single most useful thing to tell the player here.
       el.dataset.mode = channel.toggle ? "toggle" : "hold";
-      el.setAttribute("aria-label", `${channel.label} — ${channel.toggle ? "toggles on and off" : "hold"}`);
+      el.setAttribute(
+        "aria-label",
+        `${channel.label} — ${chan} / ${el === bay.buttons.secondary ? "R" : "Space"}, `
+        + `${channel.toggle ? "toggles on and off" : "hold"}`,
+      );
       if (meterEl) meterEl.style.transform = "scaleX(0)";
     };
     dress(bay.buttons.primary, bay.meters.primary, controls.primary);

@@ -4,6 +4,9 @@ import * as THREE from "three";
 import { settings } from "../shared/settings.js";
 
 const BATTLE_MIN_DIST = 12;
+// The bounding radius the camera framing was authored around — roughly a
+// 3.5ft-wide, 3ft-long machine. Bigger bots pull the camera back in proportion.
+const REFERENCE_BOT_RADIUS = 2.3;
 const BATTLE_HEIGHT = 7.5;
 const BATTLE_LERP = 3.2;
 
@@ -22,6 +25,10 @@ export function createCameraDirector(camera) {
     offset: new THREE.Vector3(),
   };
   const lastSide = new THREE.Vector3(0, 0, 1);
+  // Same idea as the chase camera's `framing`: the director's distances were
+  // authored around a reference-sized machine, so a pair including a big bot
+  // needs the whole shot pushed out or the bot fills the frame on its own.
+  let battleFraming = 1;
 
   function updateBattle(dt, bots) {
     const [a, b] = bots;
@@ -39,7 +46,7 @@ export function createCameraDirector(camera) {
     lastSide.copy(side);
     // Pull back with spread but never so far that fog/walls swallow the shot;
     // extra height covers what distance can't when the bots are far apart.
-    const dist = Math.max(BATTLE_MIN_DIST, Math.min(27, spread * 0.72 + 8));
+    const dist = Math.max(BATTLE_MIN_DIST * battleFraming, Math.min(27 * battleFraming, spread * 0.72 + 8 * battleFraming));
     scratch.desired.copy(scratch.mid).addScaledVector(side, dist).setY(BATTLE_HEIGHT + spread * 0.24);
     scratch.desired.x = THREE.MathUtils.clamp(scratch.desired.x, -30, 30);
     scratch.desired.z = THREE.MathUtils.clamp(scratch.desired.z, -30, 30);
@@ -119,6 +126,10 @@ export function createCameraDirector(camera) {
       lastShakeAddAt = now;
       shake = Math.min(0.9, Math.max(shake, strength));
     },
+    /** Largest bounding radius in the match, MEASURED off the loaded models. */
+    setSubjectRadius(radius) {
+      battleFraming = Math.min(1.9, Math.max(1, (radius || 0) / REFERENCE_BOT_RADIUS));
+    },
     snapTo(bots) {
       if (bots?.length) {
         updateBattle(1, bots);
@@ -152,21 +163,38 @@ export function createChaseCamera(camera) {
   const desiredPosition = new THREE.Vector3();
   const desiredTarget = new THREE.Vector3();
   let smoothedYaw = 0;
+  // How far back the camera sits is a function of HOW BIG THE BOT IS. A fixed
+  // 6.4ft was framed around a ~2ft-radius machine and cropped anything larger:
+  // Mammoth is more than twice that and you could not see your own bot. 1.0 is
+  // the reference machine; setSubjectRadius scales off it.
+  let framing = 1;
 
   function computeDesired(botState, dt) {
     smoothedYaw = dampAngle(smoothedYaw, yawOfQuaternion(botState.quaternion), 3.2, dt);
     // Behind the bot along the damped yaw (forward is -Z at yaw 0).
     const backX = Math.sin(smoothedYaw);
     const backZ = Math.cos(smoothedYaw);
-    desiredTarget.set(botState.position.x, botState.position.y + 0.42, botState.position.z);
+    const back = 6.4 * framing;
+    desiredTarget.set(botState.position.x, botState.position.y + 0.42 * framing, botState.position.z);
     desiredPosition.set(
-      desiredTarget.x + backX * 6.4,
-      desiredTarget.y + 2.8,
-      desiredTarget.z + backZ * 6.4,
+      desiredTarget.x + backX * back,
+      // Rising with distance keeps the same look-down angle, so a big bot is
+      // framed rather than just further away and flatter.
+      desiredTarget.y + 2.8 * framing,
+      desiredTarget.z + backZ * back,
     );
   }
 
   return {
+    /**
+     * @param {number} radius bounding radius of the bot, in feet, MEASURED off
+     * the loaded model rather than the catalog — the catalog's bodyDims are the
+     * shell, and a bot's silhouette is mostly weapon (Mammoth's disc sits on a
+     * truss well outside its chassis).
+     */
+    setSubjectRadius(radius) {
+      framing = Math.min(2.6, Math.max(1, (radius || 0) / REFERENCE_BOT_RADIUS));
+    },
     update(dt, botState) {
       if (!botState) return;
       computeDesired(botState, dt);

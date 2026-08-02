@@ -1,0 +1,74 @@
+[
+ {
+  "_comment": "Scan filaments. Five hair-thin whiskers hang off the underside of the chassis around game-space x -0.53..-0.15, z 0.32..1.24 — nothing on the real machine, which has a plain black frame there. They are the reason the model measured 2.052ft tall on a bot whose wheels are 1.012ft across: grounded the right way up, part_19 reached y=0.000 while the wheels floated at y=1.546, so the whole bot stood on a wire 1.04ft off the floor. Each op is that part's own bounding box in GLB space (game-space box + 0.05ft margin through rig-inspect's __toGlb), so it deletes exactly one whisker. tripo_part_19 game y[0.000,0.655].",
+  "part": 19,
+  "mode": "delete",
+  "region": { "type": "box", "min": [-0.2342, -0.3311, -0.1184], "max": [-0.162, -0.0988, -0.0746] }
+ },
+ {
+  "_comment": "Whisker 2 — tripo_part_22, game y[0.164,1.087], 0.923ft long and 0.079ft thick.",
+  "part": 22,
+  "mode": "delete",
+  "region": { "type": "box", "min": [-0.2839, -0.2806, -0.1632], "max": [-0.1249, 0.0343, -0.1081] }
+ },
+ {
+  "_comment": "Whisker 3 — tripo_part_21, game y[0.685,1.143].",
+  "part": 21,
+  "mode": "delete",
+  "region": { "type": "box", "min": [-0.2458, -0.1204, -0.1525], "max": [-0.14, 0.0515, -0.0998] }
+ },
+ {
+  "_comment": "Whisker 4 — tripo_part_23, game y[0.896,1.169], a curled filament under the rear deck.",
+  "part": 23,
+  "mode": "delete",
+  "region": { "type": "box", "min": [-0.3581, -0.0554, -0.176], "max": [-0.1785, 0.0595, -0.1294] }
+ },
+ {
+  "_comment": "Whisker 5 — tripo_part_17, game y[1.009,1.384], the longest of them, running back to z=1.241 under the rear fork.",
+  "part": 17,
+  "mode": "delete",
+  "region": { "type": "box", "min": [-0.3973, -0.0205, -0.1495], "max": [-0.0824, 0.1254, -0.028] }
+ },
+ {
+  "_comment": "REAR FORKS. Tripo mirrored Copperhead's front fork pair onto the back of the machine: tripo_part_6 (rear right, game x 0.60..1.46, z -0.09..1.61) and tripo_part_34 (rear left, game x -1.47..-0.62, z 0.19..1.61) are steel-tipped forks identical to the front pair. The real bot has forks ONLY at the front, either side of the drum — the reference shows a plain black frame and a pair of thin red wheelie prongs behind the wheels. Left in place they doubled the machine's footprint (z -1.61..1.61 on a 3.2ft bot) and read as a second weapon end. Regions are each part's own bounding box, so the chassis they bolt to is untouched.",
+  "part": 6,
+  "mode": "delete",
+  "region": { "type": "box", "min": [-0.5112, -0.0564, 0.171], "max": [0.0427, 0.1644, 0.4675] }
+ },
+ {
+  "_comment": "Rear fork, left side — tripo_part_34.",
+  "part": 34,
+  "mode": "delete",
+  "region": { "type": "box", "min": [-0.5106, -0.0564, -0.4647], "max": [-0.0427, 0.163, -0.1724] }
+ },
+ {
+  "_comment": "DRIPS UNDER THE BELLY. Four teardrops hang off the otherwise flat belly plate at game-space x +-0.85, z 0 and z 0.78 — pointed cones, the scan's version of the bolt ends it could not resolve against a black reflective floor. They reach game y 0.000/0.118/0.132/0.161 where the belly plate is 0.30 and the fork tips (the skids that are SUPPOSED to touch) are 0.210, so tripo_part_9 alone hung the whole machine 0.21ft in the air with its wheels 0.4ft clear of the floor. Deleting them entirely rather than shaving them leaves no open cut in the pan: each is its own closed blob and the belly plate is tripo_part_13.",
+  "part": 9,
+  "mode": "delete",
+  "region": { "type": "box", "min": [0.0499, -0.1361, 0.219], "max": [0.1617, -0.0117, 0.3262] }
+ },
+ {
+  "_comment": "Belly drip 2 — tripo_part_10, game y[0.118,0.302] at x 0.84, z 0.78.",
+  "part": 10,
+  "mode": "delete",
+  "region": { "type": "box", "min": [-0.1392, -0.0998, 0.2251], "max": [-0.0466, -0.0125, 0.3096] }
+ },
+ {
+  "_comment": "Belly drip 3 — tripo_part_26, game y[0.161,0.322] at x -0.89, z -0.01.",
+  "part": 26,
+  "mode": "delete",
+  "region": { "type": "box", "min": [0.0905, -0.0867, -0.3015], "max": [0.1724, -0.0064, -0.2197] }
+ },
+ {
+  "_comment": "Belly drip 4 — tripo_part_28, game y[0.132,0.309] at x -0.83, z 0.77.",
+  "part": 28,
+  "mode": "delete",
+  "region": { "type": "box", "min": [-0.1542, -0.0955, -0.321], "max": [-0.0504, -0.0104, -0.2064] }
+ },
+ {
+  "_comment": "One more spike, this one part of the chassis mesh itself: tripo_part_13 dips to game y=0.138 in a single cell at x -0.33, z 0.905, half a foot below the pan around it. Region is game x -0.48..-0.18, y below 0.20, z 0.78..1.03 — under the rear deck edge, clear of the fork tips at y=0.210.",
+  "part": 13,
+  "mode": "delete",
+  "region": { "type": "box", "min": [-0.1932, -0.2131, -0.1453], "max": [-0.1163, -0.0592, -0.053] }
+ }
+]

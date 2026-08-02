@@ -8,6 +8,10 @@
 //              hubs, which belong to the lifter)
 //   pivot    — rewrite a group node's extras.pivotLocal, i.e. the hinge the
 //              runtime loader turns that assembly about
+//   transform — scale and/or offset a whole part node, for a part the scan
+//              built at the wrong size or in the wrong place relative to the
+//              rest of the machine (Free Shipping's fork carriage, which was
+//              too narrow to pass either side of its own middle wedge)
 //   mirror   — replace the bad half of a SYMMETRIC part with a mirrored copy of
 //              the good half (writes new vertices)
 //   clone    — duplicate a part rotated half a turn about an axis, for a bar
@@ -254,6 +258,33 @@ for (const op of ops) {
     const node = json.nodes[nodeIndexByName(op.node)];
     node.extras = { ...(node.extras || {}), pivotLocal: op.pivotLocal };
     console.log(`${op.node} [pivot]: pivotLocal = [${op.pivotLocal.join(", ")}]`);
+    continue;
+  }
+  if (op.mode === "transform") {
+    // Scale/offset a whole part node. Written as a node TRS rather than as new
+    // vertices: the geometry is right, only its size and place are wrong, and
+    // a node transform survives a re-run of the earlier carves untouched.
+    // `centre` and `offset` are in the same MODEL space as a region (i.e. the
+    // node's translation is already applied), so a spec can quote the game-space
+    // number it came from and convert once with rig-inspect's --toglb.
+    //   p' = centre + scale * (p - centre) + offset,  p = vertex + translation
+    // => node.scale = scale, node.translation = scale*t + (1-scale)*centre + offset
+    // The node's UNTRANSFORMED TRS is stashed in extras the first time, and
+    // every later run solves from that rather than from the last result — so
+    // running the spec twice lands in the same place instead of scaling the
+    // part again. Every other mode here is naturally re-runnable over the
+    // shipped GLB; this one would not be.
+    const node = json.nodes[nodeIndexByName(op.node)];
+    const scale = op.scale || [1, 1, 1];
+    const centre = op.centre || op.center || [0, 0, 0];
+    const offset = op.offset || [0, 0, 0];
+    const base = node.extras?.transformBase
+      || { translation: node.translation || [0, 0, 0], scale: node.scale || [1, 1, 1] };
+    node.extras = { ...(node.extras || {}), transformBase: { translation: [...base.translation], scale: [...base.scale] } };
+    node.scale = [0, 1, 2].map((i) => base.scale[i] * scale[i]);
+    node.translation = [0, 1, 2].map((i) => scale[i] * base.translation[i] + (1 - scale[i]) * centre[i] + offset[i]);
+    console.log(`${op.node} [transform]: scale ${node.scale.map((n) => n.toFixed(4)).join(", ")}`
+      + `  translation ${base.translation.map((n) => n.toFixed(4)).join(", ")} -> ${node.translation.map((n) => n.toFixed(4)).join(", ")}`);
     continue;
   }
   if (op.mode === "paint") {
