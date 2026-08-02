@@ -314,7 +314,7 @@ function frame() {
     }
 
     const renderState = session.sim.getRenderState();
-    renderState.forEach((state, i) => syncBotVisual(session.botVisuals[i], session.specs[i], state));
+    renderState.forEach((state, i) => syncBotVisual(session.botVisuals[i], session.specs[i], state, dt));
     arenaVisuals?.updateHazards(session.sim.getHazardState?.(), paused ? 0 : dt);
 
     // Split-screen when both players are human AND bot camera is selected;

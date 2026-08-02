@@ -567,10 +567,39 @@ export async function loadBotModel(spec, { onProgress } = {}) {
     }
   }
 
+  // Swept-volume ghost for a spinner: a translucent disc the size of the
+  // blade's circle, hidden until the rotor is fast enough that a real one would
+  // be a smear. It stands in for motion blur, which would otherwise need a
+  // post-process pass to fake something the eye supplies for free.
+  let spinBlur = null;
+  if (weaponPivot && (spec.weapon.type === "bar" || spec.weapon.type === "drum")) {
+    const radius = spec.weapon.radius ?? Math.max(spec.weapon.dims?.y ?? 0.5, spec.weapon.dims?.z ?? 0.5);
+    const thickness = (spec.weapon.dims?.x ?? 0.2) * 2;
+    spinBlur = new THREE.Mesh(
+      new THREE.CylinderGeometry(radius, radius, thickness, 28, 1, true),
+      new THREE.MeshBasicMaterial({
+        color: spec.accent || "#9aa3b0",
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    spinBlur.name = "spinBlur";
+    // Lie the cylinder down on the spin axis.
+    const axis = new THREE.Vector3(spec.weapon.axis.x, spec.weapon.axis.y, spec.weapon.axis.z).normalize();
+    spinBlur.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), axis);
+    spinBlur.position.copy(weaponPivot.position);
+    spinBlur.visible = false;
+    spinBlur.castShadow = false;
+    group.add(spinBlur);
+  }
+
   markShadows(group);
+  if (spinBlur) spinBlur.castShadow = false;
   return {
     group,
-    parts: { body, weapon: weaponPivot, wheels, aux, weaponSub },
+    parts: { body, weapon: weaponPivot, wheels, aux, weaponSub, spinBlur },
     weaponIsPlaceholder: Boolean(spec.weapon) && !usedGlbWeapon,
   };
 }

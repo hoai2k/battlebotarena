@@ -1292,7 +1292,15 @@ export const CATALOG = {
     accentDark: "#1b1c20",
     weapon: {
       type: "bar",
-      pivot: { x: 0, y: 3.215, z: -0.9706 }, // MEASURED hub, game space
+      // The trunk disc was fused into the truss frame (part 23) and only a hub
+      // cluster spun, which is why the weapon read as a chip off the edge of a
+      // bar rather than a disc. tools/repairs/mammoth-rig.json cuts the disc
+      // out with a cylinder about the spin axis; the axle below is the smallest
+      // circle it sweeps. That file also hands parts 14 and 16 back to the
+      // chassis — they were mapped as wheels, so a gearbox was rotating with
+      // the tyres.
+      pivotFromCatalog: true,
+      pivot: { x: -0.02, y: 3.317, z: -0.912 },
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 2.4,
       inertia: 1.0,
@@ -1311,7 +1319,7 @@ export const CATALOG = {
       // Mammoth is a 250lb punching bag. The visual disc is smaller than the
       // hitbox, the same compromise Tantrum and Minotaur already ship.
       radius: 2.022,
-      dims: { x: 0.6066, y: 2.022, z: 2.022 },
+      dims: { x: 0.74, y: 2.022, z: 2.022 },
       // A displacement weapon: it throws opponents rather than cutting them, so
       // the lift is the largest in the game and the damage the smallest.
       tuning: { efficiency: 0.5, impulseScale: 9.0, liftScale: 46.0, liftVelocity: 7.0, gyroScale: 0.9, damageScale: 0.35 },

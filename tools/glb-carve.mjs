@@ -38,6 +38,10 @@
 // through a chassis needs several boxes, and one op per box would file each
 // slice as its own part — or {"type": "intersect", "regions": [...]}.
 //
+// {"type": "cylinder", "axis": 0|1|2, "center": [x,y,z], "radius": r,
+//  "halfLength": h} is the region a spinner wants: a box around a drum
+// swallows chassis at its corners, a cylinder about the spin axis does not.
+//
 // {"type": "colour", "rgb": [r,g,b], "tolerance": 60} matches on the BASE
 // COLOUR TEXEL under the triangle's UV centroid instead of on position. Some
 // mistakes are only describable by livery: when a carve out of a chassis takes
@@ -145,6 +149,20 @@ function inRegion(point, region, sample = null) {
   if (region.type === "sphere") {
     const [cx, cy, cz] = region.center;
     return Math.hypot(point[0] - cx, point[1] - cy, point[2] - cz) <= region.radius;
+  }
+  if (region.type === "cylinder") {
+    // A box around a drum inevitably swallows chassis at its corners; a
+    // cylinder about the spin axis does not.
+    const axis = region.axis ?? 0;
+    const [cx, cy, cz] = region.center;
+    const centre = [cx, cy, cz];
+    if (Math.abs(point[axis] - centre[axis]) > region.halfLength) return false;
+    let sum = 0;
+    for (let i = 0; i < 3; i += 1) {
+      if (i === axis) continue;
+      sum += (point[i] - centre[i]) ** 2;
+    }
+    return Math.sqrt(sum) <= region.radius;
   }
   if (region.type === "box") {
     return (

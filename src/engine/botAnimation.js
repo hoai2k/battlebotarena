@@ -9,12 +9,54 @@ import { weaponVisualAngle } from "../assets/models.js";
 
 const scratchAxis = new THREE.Vector3();
 
-export function syncBotVisual(visual, spec, state) {
+// --- spinner visuals ---------------------------------------------------------
+// A rotor's DISPLAYED speed is not its physical speed and must not be. At 600
+// rad/s a blade turns ~10 radians between frames, and what you see is not a
+// blur — it is the wagon-wheel effect: the blade lands near the same place each
+// frame and reads as stationary, slow, or backwards depending on where the beat
+// falls. The physics keeps its real omega (every impulse, every hit, the whole
+// energy budget); only the picture is redrawn.
+//
+// So the visual advances by a step chosen in FRAMES, not in seconds: at full
+// spin it turns SPIN_MAX_STEP radians per rendered frame whatever the frame
+// rate, which is the speed that looks fastest without ever reaching an alias.
+// 1.1 rad is a third of a 2-fold blade's period and a sixth of a 1-fold drum's,
+// so neither symmetry can strobe, and it reads at about ten revolutions a
+// second — as fast as an eye resolves before it gives up and sees a disc.
+const SPIN_MAX_STEP = 1.1;
+const SPIN_BLUR_FROM = 0.45; // ratio at which the swept disc starts to show
+
+function spinnerAngle(visual, state, dt) {
+  const spin = (visual.__spin ||= { angle: 0 });
+  const ratio = THREE.MathUtils.clamp(state.weaponRatio ?? 0, 0, 1);
+  // Below a quarter speed the real rate is slow enough to read honestly, and
+  // showing it matters: spin-up is information the driver acts on.
+  spin.angle += ratio * SPIN_MAX_STEP;
+  return spin.angle;
+}
+
+/** Fade in the swept-volume ghost that stands in for motion blur. */
+function updateSpinBlur(visual, state) {
+  const ghost = visual.parts.spinBlur;
+  if (!ghost) return;
+  const ratio = THREE.MathUtils.clamp(state.weaponRatio ?? 0, 0, 1);
+  const t = Math.max(0, (ratio - SPIN_BLUR_FROM) / (1 - SPIN_BLUR_FROM));
+  ghost.visible = t > 0.01;
+  ghost.material.opacity = t * 0.5;
+}
+
+export function syncBotVisual(visual, spec, state, dt = 1 / 60) {
   visual.group.position.copy(state.position);
   visual.group.quaternion.copy(state.quaternion);
   if (visual.parts.weapon && state.weaponAngle !== undefined) {
+    const type = spec.weapon?.type;
+    const spinning = type === "bar" || type === "drum";
     scratchAxis.set(spec.weapon.axis.x, spec.weapon.axis.y, spec.weapon.axis.z).normalize();
-    visual.parts.weapon.quaternion.setFromAxisAngle(scratchAxis, weaponVisualAngle(visual, spec, state));
+    visual.parts.weapon.quaternion.setFromAxisAngle(
+      scratchAxis,
+      spinning ? spinnerAngle(visual, state, dt) : weaponVisualAngle(visual, spec, state),
+    );
+    if (spinning) updateSpinBlur(visual, state);
   }
   // Negated: wheelSpin accumulates ground speed along forward (-Z), and a wheel
   // on the +X axle rolling the bot toward -Z turns NEGATIVE about +X. Without
