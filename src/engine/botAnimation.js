@@ -25,7 +25,6 @@ const scratchAxis = new THREE.Vector3();
 // anywhere near the frame rates this game runs at, and it is about as fast as
 // an eye resolves before it gives up and sees a disc.
 export const SPIN_VISUAL_MAX_OMEGA = 34;
-const SPIN_BLUR_FROM = 0.45; // ratio at which the swept disc starts to show
 
 function spinnerAngle(visual, state, dt) {
   const spin = (visual.__spin ||= { angle: 0 });
@@ -34,15 +33,6 @@ function spinnerAngle(visual, state, dt) {
   return spin.angle;
 }
 
-/** Fade in the swept-volume ghost that stands in for motion blur. */
-function updateSpinBlur(visual, state) {
-  const ghost = visual.parts.spinBlur;
-  if (!ghost) return;
-  const ratio = THREE.MathUtils.clamp(state.weaponRatio ?? 0, 0, 1);
-  const t = Math.max(0, (ratio - SPIN_BLUR_FROM) / (1 - SPIN_BLUR_FROM));
-  ghost.visible = t > 0.01;
-  ghost.material.opacity = t * 0.5;
-}
 
 export function syncBotVisual(visual, spec, state, dt = 1 / 60) {
   visual.group.position.copy(state.position);
@@ -55,7 +45,6 @@ export function syncBotVisual(visual, spec, state, dt = 1 / 60) {
       scratchAxis,
       spinning ? spinnerAngle(visual, state, dt) : weaponVisualAngle(visual, spec, state),
     );
-    if (spinning) updateSpinBlur(visual, state);
   }
   // Negated: wheelSpin accumulates ground speed along forward (-Z), and a wheel
   // on the +X axle rolling the bot toward -Z turns NEGATIVE about +X. Without
