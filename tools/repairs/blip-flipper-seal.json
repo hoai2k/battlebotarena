@@ -1,0 +1,29 @@
+{
+  "_comment": "Runs after blip-flipper-pan.json. Cropping the lid's serrated long edges back to a clean rectangle took the teeth AND the only thing roofing the two channels either side of the plate, so with the flipper shut you looked down a trench into the machine. A top-down height scan makes it plain: before the crop the roof over the bay is continuous, after it there are two columns at x -0.123 and x +0.110, one cell wide, where the topmost surface drops from ~0.11 to below 0. Those columns are precisely the strips the crop removed. The pan's floor helps but sits flat at y -0.05 under a plate that slopes from 0.19 down to -0.02, so at the rear it is still most of a foot down and reads as a trench rather than a shut machine. These two strips replace the roof instead: parented to modelWeapon so they travel with the lid and stay flush with it, and cut as sloping parallelograms following the plate's own top surface (fitted y = 0.0407 - 0.545z through the plate's FLAT top, sampled away from the bolt rows because a fit to the raw per-slab maximum rides the bolt heads and floats the strip proud of the surface it is continuing). Seeing in once the plate LIFTS is fine and wanted; seeing in while it is shut is not.",
+  "parent": "modelWeapon",
+  "material": {
+    "name": "BlipLidSeal",
+    "_comment": "Blip's blue as the bay floor uses it, and the same metalness/roughness models.js SURFACE gives every scanned part — repaintScanned only touches materials carrying a map, so an untextured panel has to state them itself or it reads as chalk beside the paint it continues.",
+    "baseColorFactor": [0.0030, 0.0931, 0.3419, 1],
+    "metallicFactor": 0.28,
+    "roughnessFactor": 0.42
+  },
+  "panels": [
+    {
+      "_comment": "Left channel. The plate's own edge measures x -0.117 and the body shell picks up again at -0.136, so this runs -0.140 to -0.108 and laps under both — a seam either side beats a seam plus a gap.",
+      "name": "panelLidSealL",
+      "type": "plate",
+      "axis": "x",
+      "range": [-0.140, -0.108],
+      "outline": [[0.188, -0.270], [-0.034, 0.138], [-0.134, 0.138], [0.088, -0.270]]
+    },
+    {
+      "_comment": "Right channel, wider, and the lap inboard is bigger for a reason: the plate's right edge WANDERS between x 0.095 and 0.109 depending on z. Starting at 0.104 left a slot a few millimetres wide open along the shallow stretches, which a height probe finds at x 0.0975-0.1025 dropping to -0.132. A height probe against the pre-crop model is the check: at 0.092 two cells at x 0.091, z -0.039 were still dropping 0.195 through to the interior. 0.084 clears it.",
+      "name": "panelLidSealR",
+      "type": "plate",
+      "axis": "x",
+      "range": [0.084, 0.140],
+      "outline": [[0.188, -0.270], [-0.034, 0.138], [-0.134, 0.138], [0.088, -0.270]]
+    }
+  ]
+}

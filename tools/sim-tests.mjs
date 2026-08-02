@@ -581,6 +581,43 @@ await test("catalog: every bot's colliders clear the floor at rest", async () =>
   }
 });
 
+await test("models: every authored panel is still in the GLB that needs it", async () => {
+  // Repairs are not all the same KIND of edit, and that is the trap. A carve
+  // rewrites the GLB from a saved input; a panel is APPENDED to whatever the
+  // GLB already was. So a later carve that starts from a pre-panel baseline
+  // silently drops the panel and nothing complains — the spec is still in the
+  // tree, the model still loads, and the hole comes back. It has happened
+  // twice: Claw Viper's interior box went in with the spec and was gone by the
+  // next commit that touched the model, and Blip's bay floor was authored but
+  // never applied at all. Both were only caught by someone looking at the bot.
+  // This is the cheap version of looking at the bot.
+  const fs = await import("node:fs");
+  const specDir = new URL("./repairs/", import.meta.url);
+  const modelDir = new URL("../public/models/", import.meta.url);
+  const nodeNames = (file) => {
+    const b = fs.readFileSync(new URL(file, modelDir));
+    const json = JSON.parse(b.toString("utf8", 20, 20 + b.readUInt32LE(12)).trim());
+    return new Set(json.nodes.filter((n) => n.name).map((n) => n.name));
+  };
+  const cache = new Map();
+  for (const file of fs.readdirSync(specDir).filter((f) => f.endsWith(".json"))) {
+    let spec;
+    try { spec = JSON.parse(fs.readFileSync(new URL(file, specDir), "utf8")); } catch { continue; }
+    if (!Array.isArray(spec?.panels)) continue;
+    // Specs are named <bot>-<what>.json and add panels to public/models/<bot>.glb.
+    const model = `${file.split("-")[0]}.glb`;
+    if (!fs.existsSync(new URL(model, modelDir))) {
+      check(false, `${file}: names a model that exists`, `no ${model}`);
+      continue;
+    }
+    if (!cache.has(model)) cache.set(model, nodeNames(model));
+    const names = cache.get(model);
+    const missing = spec.panels.map((p) => p.name).filter((n) => !names.has(n));
+    check(missing.length === 0, `${file}: its panels are in ${model}`,
+      `absent: ${missing.join(", ")} — re-run tools/glb-add-panels.mjs`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 
 const failed = results.filter((r) => !r.ok);
