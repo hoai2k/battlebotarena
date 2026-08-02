@@ -1236,7 +1236,17 @@ export const CATALOG = {
       // The flamethrowers. Static geometry on the model, so they are a damage
       // cone on the alt channel rather than a rigged part: no shove, no
       // knockdown, just a steady burn on whatever is held in front.
-      flame: { damagePerSecond: 9, reach: 3.9523 },
+      // Two nozzles on the front of the deck — the ones the yellow feed lines
+      // run to. Body-local feet; the jet leaves them forward and slightly up.
+      flame: {
+        damagePerSecond: 9,
+        reach: 3.9523,
+        scale: 1.15,
+        nozzles: [
+          { x: -0.62, y: 0.78, z: -0.5 },
+          { x: 0.62, y: 0.78, z: -0.5 },
+        ],
+      },
       tuning: { strokeSeconds: 0.5, reach: 2.2232 },
     },
     colliders: [
