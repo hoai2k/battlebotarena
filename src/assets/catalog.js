@@ -1750,14 +1750,24 @@ export const CATALOG = {
     accentDark: "#1a1024",
     weapon: {
       type: "drum", // vertical disc: same swept volume, same maths
-      pivot: { x: 0.0217, y: 0.6069, z: -0.3902 }, // MEASURED disc axle, game space
+      // The GLB carries no pivot for this disc, so the loader fell back to the
+      // weapon part's bbox centre — and the part was the disc PLUS the cowl
+      // fused behind it, which dragged that centre 0.29ft aft of the real axle
+      // and made the whole assembly orbit a point in the bodywork. MEASURED:
+      // the axle is the boss the white skull end cap sits in. That cap is BODY
+      // geometry (it shows up in a --solo body render), so it holds still while
+      // the disc turns, which is how you can tell it is the axle rather than
+      // something painted on the rotor. tools/repairs/witchdoctor-disc.json
+      // cuts the cowl back out of the weapon.
+      pivotFromCatalog: true,
+      pivot: { x: 0.0217, y: 0.647, z: -0.676 },
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 2.2,
       inertia: 1.1,
       maxOmega: 620,
       budgetCap: 260,
-      radius: 0.8367, // MEASURED swept radius (bbox guess was 0.6)
-      dims: { x: 0.1084, y: 0.8367, z: 0.8367 },
+      radius: 0.634, // MEASURED swept radius of the disc about its own axle
+      dims: { x: 0.1084, y: 0.634, z: 0.634 },
       tuning: {
         efficiency: 0.54, impulseScale: 11.0, liftScale: 30.0, liftVelocity: 4.5,
         gyroScale: 0.9, impactScale: 1.1, damageScale: 0.66,

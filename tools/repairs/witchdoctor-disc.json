@@ -1,0 +1,17 @@
+[
+ {
+  "_comment": "Witch Doctor's disc spun about the wrong point. Nothing in the GLB says where its axle is, so the loader fell back to the bbox centre of the weapon part — and the weapon part is not just the disc. Segmentation fused the black cowl BEHIND the disc into part 18, and that cowl reaches 1.04ft aft of the axle against 0.47ft forward, so the bbox centre landed 0.29ft behind the real axle and the whole assembly orbited a point in the bodywork. MEASURED in game space, the axle is the boss the white skull end cap sits in, at (0.022, 0.647, -0.676) — visible in a --solo body render, so it is body hardware and stays put while the disc turns, which is exactly how you can tell it IS the axle. Cutting part 18 to a cylinder of radius 0.62ft about that point keeps the disc and hands the cowl back to the chassis: without this the cowl stands a foot above the roof every half turn. Game -> GLB: yaw is +PI/2 and scale 0.2976 GLB units per foot, so game x maps to GLB z (hence axis 2) and 0.62ft is 0.1845.",
+  "mode": "extract",
+  "part": 18,
+  "invert": true,
+  "newPart": 903,
+  "parent": "modelBody",
+  "region": {
+   "type": "cylinder",
+   "axis": 2,
+   "center": [0.203, -0.003, 0.0065],
+   "radius": 0.1845,
+   "halfLength": 0.5
+  }
+ }
+]
