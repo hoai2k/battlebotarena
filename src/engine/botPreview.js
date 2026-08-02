@@ -617,7 +617,8 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       // second channel is the interesting one (Free Shipping's flamethrower)
       // gets reported as broken when the player holds RT and nothing burns.
       const chan = el === bay.buttons.secondary ? "RB" : "RT";
-      labelEl.textContent = `${chan} ${channel.label}`;
+      // Non-breaking space: "RT" and "LIFT" are one label, not two words.
+      labelEl.textContent = `${chan}\u00a0${channel.label}`;
       // Toggle vs hold is the single most useful thing to tell the player here.
       el.dataset.mode = channel.toggle ? "toggle" : "hold";
       el.setAttribute(

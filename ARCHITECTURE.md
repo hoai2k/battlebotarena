@@ -475,6 +475,7 @@ driven by a checked-in spec so the edit is reviewable and repeatable:
 | `glb-carve.mjs` | `tools/repairs/tantrum-reflection.json` | Tantrum's reference photo was taken on a polished floor and the scan modelled the REFLECTION as solid geometry, a mirrored ghost bot hanging under the real one |
 | `glb-add-panels.mjs` | `tools/repairs/blip-flipper-pan.json` | openings the scan never closed — down both long edges of Blip's flipper there was a strip of nothing between the plate and the frame, and you looked straight through into the machine |
 | `glb-carve.mjs` | `tools/repairs/duck-plow-tabs.json` | geometry that held the machine off the floor — two stray prongs under the back of Duck's plow reached lower than the plow's own lip, so grounding stood the whole bot 0.18ft up on invisible stilts |
+| `glb-carve.mjs` | `tools/repairs/freeshipping-lifter.json` | a part built at the wrong SIZE and PLACE for the rest of the machine — Free Shipping's fork carriage was narrower than the middle one of its own three front wedges, so at rest the whole lifter was buried inside that wedge instead of dropping its tines down the channels either side of it (`transform` mode: node scale + offset, no vertices touched) |
 
 Blip is worth knowing about before reaching for a re-segmentation: the raw
 Tripo output carries exactly the same 21 parts as the shipped GLB, with
@@ -576,6 +577,17 @@ damage). Two details that are load-bearing:
   race whenever a frame runs long.
 - Weapons advance for every staged bot, outside the render-culling loop, so a
   press is never dropped and a latched rotor keeps spinning while you scroll.
+- A mechanism whose only output is an EFFECT has to be drawn here too. Free
+  Shipping's flamethrower latched, lit its meter and produced no fire at all,
+  because the jet lived in `main.js`'s match loop and nothing else ever called
+  it. `effects.js` now owns `spawnBotFlame(effects, spec, state, lit, drop)` and
+  both loops call it, so one set of catalog nozzles feeds both. Each bay carries
+  its OWN `createEffects` instance rooted in its own group: the two bots share a
+  scene, and `showOnly` can hide a group but not part of a shared particle pool.
+
+`weaponSubAngle` is the channel a second mechanism reports through — the sim's
+`getSubAngle()`. `previewWeapon` publishes the flame ramp through `subRatio()`
+instead, so the viewer copies it across into the render state it draws from.
 
 **Layout and scrolling.** The pods start COMPACT so the whole roster fits in
 one view (verified 1280x720 through 1920x1080); once both bays are filled the

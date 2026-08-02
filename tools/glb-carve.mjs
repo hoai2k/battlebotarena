@@ -269,16 +269,22 @@ for (const op of ops) {
     // number it came from and convert once with rig-inspect's --toglb.
     //   p' = centre + scale * (p - centre) + offset,  p = vertex + translation
     // => node.scale = scale, node.translation = scale*t + (1-scale)*centre + offset
+    // The node's UNTRANSFORMED TRS is stashed in extras the first time, and
+    // every later run solves from that rather than from the last result — so
+    // running the spec twice lands in the same place instead of scaling the
+    // part again. Every other mode here is naturally re-runnable over the
+    // shipped GLB; this one would not be.
     const node = json.nodes[nodeIndexByName(op.node)];
     const scale = op.scale || [1, 1, 1];
     const centre = op.centre || op.center || [0, 0, 0];
     const offset = op.offset || [0, 0, 0];
-    const t = node.translation || [0, 0, 0];
-    const was = node.scale || [1, 1, 1];
-    node.scale = [0, 1, 2].map((i) => was[i] * scale[i]);
-    node.translation = [0, 1, 2].map((i) => scale[i] * t[i] + (1 - scale[i]) * centre[i] + offset[i]);
+    const base = node.extras?.transformBase
+      || { translation: node.translation || [0, 0, 0], scale: node.scale || [1, 1, 1] };
+    node.extras = { ...(node.extras || {}), transformBase: { translation: [...base.translation], scale: [...base.scale] } };
+    node.scale = [0, 1, 2].map((i) => base.scale[i] * scale[i]);
+    node.translation = [0, 1, 2].map((i) => scale[i] * base.translation[i] + (1 - scale[i]) * centre[i] + offset[i]);
     console.log(`${op.node} [transform]: scale ${node.scale.map((n) => n.toFixed(4)).join(", ")}`
-      + `  translation ${t.map((n) => n.toFixed(4)).join(", ")} -> ${node.translation.map((n) => n.toFixed(4)).join(", ")}`);
+      + `  translation ${base.translation.map((n) => n.toFixed(4)).join(", ")} -> ${node.translation.map((n) => n.toFixed(4)).join(", ")}`);
     continue;
   }
   if (op.mode === "paint") {
