@@ -48,6 +48,11 @@ export function describeWeaponControls(spec) {
   // Tantrum's fists are the one MOMENTARY secondary: latching them would leave
   // the arms parked at full extension.
   let secondary = null;
+  // A two-way arm spends its second channel on the OTHER DIRECTION rather than
+  // on a second mechanism: RT drives it one way, RB the other, and it holds
+  // wherever it is let go. That is the only way to park an arm with this much
+  // travel exactly where you want it.
+  if (w.twoWayArm) return { primary: { label: "RAISE", toggle: false }, secondary: { label: "LOWER", toggle: false } };
   if (w.fists) secondary = { label: "PUNCH", toggle: false };
   else if (w.disc) secondary = { label: "DISC", toggle: true };
   else if (w.flame) secondary = { label: "FLAME", toggle: true };
@@ -85,6 +90,9 @@ export function createWeaponInputShaper() {
     // Split controls: the trigger drives the arm, RB latches the second
     // mechanism. Free Shipping spends that channel on flame; Duck has nothing
     // on it and simply ignores it.
+    // Two-way arm: both channels are momentary directions, so neither latches.
+    // Checked before the toggle set because a plain lifter is in that set.
+    if (spec?.weapon?.twoWayArm) return { ...raw, sawActive: Boolean(raw.weaponAlt) };
     if (ALT_TOGGLE_TYPES.has(type)) {
       if (altEdge) sawLatch[slot] = !sawLatch[slot];
       return { ...raw, sawActive: sawLatch[slot] };

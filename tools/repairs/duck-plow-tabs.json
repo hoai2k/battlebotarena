@@ -1,0 +1,12 @@
+[
+ {
+  "_comment": "Two stray prongs hanging under the BACK edge of Duck's plow, where it meets the carrier bars. They reach y=0 in game space while the plow's own lip — the edge that is supposed to rest on the floor — sits 0.18ft higher, so grounding rested the whole machine on the prongs and stood Duck 0.18ft off the deck on invisible stilts. Nothing on the real bot is there: the reference shows a clean plow edge meeting the floor and the arms hinging on a plain aluminium block. Region is game-space x -2.0..1.7, y below 0.17, z -1.03..-0.80 — the full width of the plow's rear underside, which leaves the front lip untouched. Converted to GLB space with rig-inspect's --toglb (Duck's yaw is +PI/2, so game x maps to GLB z and game z to GLB -x).",
+  "part": 6,
+  "mode": "delete",
+  "region": {
+   "type": "box",
+   "min": [0.1566, -0.2520, -0.5176],
+   "max": [0.2223, -0.0606, 0.5396]
+  }
+ }
+]

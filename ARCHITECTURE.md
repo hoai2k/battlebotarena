@@ -203,6 +203,23 @@ the sim tests and the roster grid size themselves off it.
   side is a `modelAux-fists` group and the sim side is a punch stroke on
   `sawActive` reported through `getSubAngle()`. Momentary, not latched: a
   toggle would leave the arms parked at full extension.
+- `weapon.twoWayArm` (Duck) — an arm with enough travel that "held = up,
+  released = falls" stops being a control scheme. RT drives it one way, RB the
+  other, and it HOLDS wherever it is let go, so the plow can be parked anywhere
+  in its arc. Both channels go momentary (`weaponControls.js` checks the flag
+  before the latch set, since a plain lifter is in that set), the sim reads the
+  second channel as "down" instead of as a disc, and the AI has to actively
+  drive the arm down — "not lifting" no longer means "arm down", and without
+  that Duck raises the plow on its first approach and drives the rest of the
+  fight with it parked over its own back. Duck swings a full half turn
+  (restAngle -0.118 to fireAngle 3.024) at 3.9 rad/s, three times the travel
+  and three times the speed of the 0.6rad arc it had.
+- **Hooking** (`hookZone`, any lifter): bringing the arm DOWN across a foe
+  catches it, and the next lift carries it even though it is no longer in the
+  low fork zone. Without it a lifter can only ever scoop something already
+  lying in front of the forks — you could drop the plow onto a bot and it would
+  pass straight through. Measured on Duck vs Copperhead: scooping lifts the foe
+  to y=1.03, hooking then lifting reaches y=2.00.
 - `grappler` (Claw Viper) — forks on the weapon button, jaw on `sawActive`.
   It takes a grip when the jaw is shut, the forks are DOWN and the foe is in
   the front zone, then servos the victim onto a grip point that sweeps with the
@@ -452,6 +469,7 @@ driven by a checked-in spec so the edit is reviewable and repeatable:
 | `glb-carve.mjs` | `tools/repairs/endgame-stand.json` | geometry the SUBJECT never had — Tripo sculpted a pair of support legs under Endgame's rear and the model rested on them, forks half a foot off the floor |
 | `glb-carve.mjs` | `tools/repairs/tantrum-reflection.json` | Tantrum's reference photo was taken on a polished floor and the scan modelled the REFLECTION as solid geometry, a mirrored ghost bot hanging under the real one |
 | `glb-add-panels.mjs` | `tools/repairs/blip-flipper-pan.json` | openings the scan never closed — down both long edges of Blip's flipper there was a strip of nothing between the plate and the frame, and you looked straight through into the machine |
+| `glb-carve.mjs` | `tools/repairs/duck-plow-tabs.json` | geometry that held the machine off the floor — two stray prongs under the back of Duck's plow reached lower than the plow's own lip, so grounding stood the whole bot 0.18ft up on invisible stilts |
 
 Blip is worth knowing about before reaching for a re-segmentation: the raw
 Tripo output carries exactly the same 21 parts as the shipped GLB, with

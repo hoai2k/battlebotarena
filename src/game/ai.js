@@ -228,6 +228,8 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
   const strikeRange = AI_STRIKE_DISTANCE * level.range;
   let weapon = false;
   let throttleScale = 1;
+  // Two-way arms only (Duck): the secondary channel drives the arm DOWN.
+  let lowerArm = false;
 
   if (spinner) {
     // Spin up early; hang back a touch until the weapon carries real energy.
@@ -269,6 +271,11 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
     // hold the lift up to tip them over rather than pumping it.
     weapon = distance < strikeRange * 0.8;
     if (weapon && distance < 2.4) throttleScale = 0.65;
+    // A two-way arm HOLDS where it is let go, so "not lifting" is no longer the
+    // same as "arm down". Duck would otherwise raise the plow on its first
+    // approach and then drive around for the rest of the fight with it parked
+    // over its own back. Drive it down whenever we are not lifting.
+    if (spec.weapon.twoWayArm) lowerArm = !weapon;
   } else if (type === "lifterDisc") {
     // Get under them and hold the arm up — the lift is the point, the disc is
     // opportunistic. Hold the arm DOWN while closing so the forks can scoop.
@@ -292,7 +299,7 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
   // are short-range: burning or punching at nothing across the arena reads as
   // an AI that does not understand its own machine. The fists pulse so the arms
   // actually cycle instead of parking at full extension.
-  let sawActive = false;
+  let sawActive = lowerArm;
   if (type === "grappler") sawActive = ai.t < ai.latchedUntil && ai.latchedUntil - ai.t > 0.55;
   else if (spec?.weapon?.fists) sawActive = distance < strikeRange * 0.9 && Math.floor(ai.t * 2.6) % 2 === 0;
   else if (spec?.weapon?.flame) sawActive = distance < (spec.weapon.flame.reach ?? 3) + 1;

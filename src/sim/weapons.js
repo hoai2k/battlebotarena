@@ -857,6 +857,16 @@ function createLifterDisc({ vehicle, index, emit }) {
   let stroke = 0; // 0 forks down, 1 arm fully raised
   let omega = 0;
   let carrying = false;
+  // Hooked: the arm was brought DOWN onto a foe and has caught it, so the next
+  // lift carries that foe even though it is no longer in the low fork zone.
+  // Without this a two-way arm can only ever scoop something already lying in
+  // front of the forks — you could drop the plow onto a bot and it would pass
+  // straight through it. Duck's arm reaches over the top now, so coming down on
+  // someone is a real move and has to mean something.
+  let hooked = false;
+  // Reaches higher and a little further than the fork zone: the plow catches an
+  // opponent anywhere down its face, not only where it meets the floor.
+  const hookZone = w.hookZone ?? frontZone(spec, (tune.reach ?? 1.5) + 0.4, { minY: -0.9, maxY: 1.5 });
   let lastEmittedRatio = -1;
   const srimech = { lastSrimechAt: -Infinity };
   let lastDiscHitAt = -Infinity;
@@ -873,7 +883,13 @@ function createLifterDisc({ vehicle, index, emit }) {
     update(dt, fire, ctx) {
       const { foe, simTime } = ctx;
       const previous = stroke;
-      stroke = m.clamp(stroke + (fire ? dt / raiseSeconds : -dt / lowerSeconds), 0, 1);
+      // Two-way arm (Duck): `fire` drives it up, the secondary channel drives it
+      // down, and it HOLDS where it is left. Every other lifter keeps the old
+      // shape — held raises, released falls back — because their second channel
+      // is spoken for by a disc or a flamethrower.
+      const drop = w.twoWayArm ? Boolean(ctx.input?.sawActive) : !fire;
+      const dir = w.twoWayArm ? (fire ? 1 : 0) - (drop ? 1 : 0) : (fire ? 1 : -1);
+      stroke = m.clamp(stroke + (dir > 0 ? dt / raiseSeconds : dir < 0 ? -dt / lowerSeconds : 0), 0, 1);
       const rise = stroke - previous;
       // Upside down, raising the forks drives them into the floor instead —
       // which is how a lifter gets back onto its wheels.
@@ -883,7 +899,12 @@ function createLifterDisc({ vehicle, index, emit }) {
       // holding the arm halfway holds the opponent halfway up.
       const local = toLocal(vehicle, foe.body.translation());
       const inZone = localZoneContains(liftZone, local);
-      if (rise > 0 && inZone) {
+      // Bringing the arm DOWN across a foe hooks it; it stays hooked while it
+      // is still in front, and lets go the moment it is not.
+      const inHookZone = localZoneContains(hookZone, local);
+      if (rise < 0 && inHookZone) hooked = true;
+      if (!inHookZone) hooked = false;
+      if (rise > 0 && (inZone || hooked)) {
         if (!carrying) {
           carrying = true;
           emit(EV.WEAPON_FIRED, { botIndex: index, weaponType: w.type });
@@ -981,6 +1002,7 @@ function createLifterDisc({ vehicle, index, emit }) {
       stroke = 0;
       omega = 0;
       carrying = false;
+      hooked = false;
       lastEmittedRatio = -1;
       lastDiscHitAt = -Infinity;
       lastLiftTickAt = -Infinity;

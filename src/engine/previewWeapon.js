@@ -152,7 +152,10 @@ export function createPreviewWeapon(spec) {
   function updateLifter(dt, fire, alt) {
     const raiseSeconds = tune.strokeSeconds;
     const lowerSeconds = w.lowerSeconds ?? tune.strokeSeconds * 1.3;
-    stroke = clamp01(stroke + (fire ? dt / raiseSeconds : -dt / lowerSeconds));
+    // Two-way arm (Duck): RT up, RB down, holds when neither or both are held.
+    // Everything else keeps the old shape — held raises, released falls back.
+    const dir = w.twoWayArm ? (fire ? 1 : 0) - (alt ? 1 : 0) : (fire ? 1 : -1);
+    stroke = clamp01(stroke + (dir > 0 ? dt / raiseSeconds : dir < 0 ? -dt / lowerSeconds : 0));
     state.weaponAngle = stroke;
     if (disc) {
       const up = discMaxOmega / discSpinUp;

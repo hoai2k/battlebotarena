@@ -1123,23 +1123,57 @@ export const CATALOG = {
       // place instead of reaching. The bars themselves are built procedurally,
       // because photogrammetry resolved two thin tubes as nothing at all.
       pivotFromCatalog: true,
-      pivot: { x: 0, y: 0.32, z: 0.34 },
+      // MEASURED off the wheels: hubs sit at y=0.508 (front) and 0.521 (rear),
+      // and on the real machine the carrier bars run straight through that
+      // line into a block between them. The hinge was at 0.32, which hung the
+      // bars visibly below the axles and left the block with nothing to hold.
+      pivot: { x: 0, y: 0.51, z: 0.34 },
       arms: [
-        { x: -1.1, radius: 0.05, from: { y: 0.34, z: 0.34 }, to: { y: 0.3, z: -0.98 }, color: "#b9bdc4" },
-        { x: 1.1, radius: 0.05, from: { y: 0.34, z: 0.34 }, to: { y: 0.3, z: -0.98 }, color: "#b9bdc4" },
+        // Carrier bars at x=1.38, OUTBOARD of the deck (which reaches 1.34), so the
+        // arm clears the bodywork on its way over the top — it now travels a
+        // full half turn, see restAngle/fireAngle. The scan is lopsided (the
+        // -x wheels sit 0.38ft further out than the +x pair), so at part of the
+        // sweep the left bar grazes its wheel; no single x clears both the deck
+        // and that wheel, and moving the bars inboard to miss it would put them
+        // through the deck instead, which is far more visible.
+        { x: -1.38, radius: 0.05, from: { y: 0.51, z: 0.42 }, to: { y: 0.51, z: -0.98 }, color: "#b9bdc4" },
+        { x: 1.38, radius: 0.05, from: { y: 0.51, z: 0.42 }, to: { y: 0.51, z: -0.98 }, color: "#b9bdc4" },
+        // The machined block each bar hinges in, between the front and rear
+        // wheels (z -0.25 and 0.94), tucked against the deck edge so the bar
+        // runs out of something rather than out of thin air. attach: "body" —
+        // it is part of the frame and stays put while the arm swings.
+        { x: -1.29, shape: "box", width: 0.2, height: 0.2, attach: "body",
+          from: { y: 0.51, z: 0.66 }, to: { y: 0.51, z: 0.06 }, color: "#c3c7cc" },
+        { x: 1.29, shape: "box", width: 0.2, height: 0.2, attach: "body",
+          from: { y: 0.51, z: 0.66 }, to: { y: 0.51, z: 0.06 }, color: "#c3c7cc" },
       ],
       axis: { x: 1, y: 0, z: 0 },
       // MEASURED: the scoop is baked DOWN (0 rests its lip on the floor at
       // y 0.008) and 1.1 stands it up over the nose. That resting pose is why
       // the front collider below is a wedge.
-      restAngle: 0,
-      fireAngle: 0.6, // MEASURED on the new hinge: plow tip up at 1.5ft, still reaching forward
+      // MEASURED on the raised hinge with --arc: the plow's lip touches the
+      // floor at -0.118 and goes no lower. It used to rest at 0, which left
+      // the lip 0.16ft in the air once the stray tabs under the plow — the
+      // stilts the whole machine had been standing on — were carved away.
+      restAngle: -0.118,
+      // A full half turn from there, so the plow can be parked over the far
+      // side of the body instead of only reaching forward. The arms sit
+      // outboard of the deck so they have somewhere to go.
+      fireAngle: 3.024,
       liftImpulse: 190,
       liftRecoil: 0.5,
-      lowerSeconds: 0.6,
+      // Two-way arm: RT drives it up and back, RB drives it down and forward,
+      // and it HOLDS wherever it is left. See game/weaponControls.js — a plain
+      // lifter with this flag takes both channels as momentary directions
+      // instead of "held = up, released = falls".
+      twoWayArm: true,
+      // Notably quicker than it was: the old 0.45s covered 0.6rad (1.3 rad/s),
+      // this covers 3.14rad in 0.8s (3.9 rad/s). It has three times the travel
+      // AND three times the speed, which is what makes placing it feel live.
+      lowerSeconds: 0.7,
       dims: { x: 1.1666, y: 0.1, z: 0.4167 },
       selfRight: true,
-      tuning: { strokeSeconds: 0.45, reach: 1.4166 },
+      tuning: { strokeSeconds: 0.8, reach: 1.4166 },
     },
     colliders: [
       // The scoop at rest. MEASURED z -2.03..-1.03 climbing from the floor to

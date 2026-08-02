@@ -225,13 +225,22 @@ function buildWeaponArm(weaponPivot, bar, spec) {
   const from = new THREE.Vector3(bar.x, bar.from.y, bar.from.z);
   const to = new THREE.Vector3(bar.x, bar.to.y, bar.to.z);
   const span = new THREE.Vector3().subVectors(to, from);
+  // shape: "box" is the bracket a tubular arm hinges IN, rather than the arm
+  // itself — Duck's carrier bars land in a machined block between the wheels,
+  // and a bare tube ending in mid-air reads as unattached.
   const mesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(bar.radius ?? 0.06, bar.radius ?? 0.06, span.length(), 12),
+    bar.shape === "box"
+      ? new THREE.BoxGeometry(bar.width ?? 0.16, bar.height ?? 0.22, span.length())
+      : new THREE.CylinderGeometry(bar.radius ?? 0.06, bar.radius ?? 0.06, span.length(), 12),
     material,
   );
-  mesh.name = "weaponArm";
-  // CylinderGeometry runs along +Y; aim it down the span.
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), span.clone().normalize());
+  mesh.name = bar.shape === "box" ? "weaponMount" : "weaponArm";
+  // CylinderGeometry runs along +Y and BoxGeometry's length is on +Z; aim
+  // whichever axis is the long one down the span.
+  mesh.quaternion.setFromUnitVectors(
+    bar.shape === "box" ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0),
+    span.clone().normalize(),
+  );
   mesh.position.copy(from).addScaledVector(span, 0.5);
   weaponPivot.updateMatrixWorld(true);
   weaponPivot.attach(mesh);
