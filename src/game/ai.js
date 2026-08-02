@@ -295,18 +295,29 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
   // anywhere near the fight. Without this an AI Sawblaze never spun its saw.
   // For the grappler the same channel is the jaw: shut it near the foe, and
   // open it again at the top of the hoist so the throw actually releases.
-  // Free Shipping's flame and Tantrum's fists ride the same channel, but both
-  // are short-range: burning or punching at nothing across the arena reads as
-  // an AI that does not understand its own machine. The fists pulse so the arms
-  // actually cycle instead of parking at full extension.
+  // Free Shipping's flame is on the same channel but is short-range: burning at
+  // nothing across the arena reads as an AI that does not understand its own
+  // machine.
   let sawActive = lowerArm;
   if (type === "grappler") sawActive = ai.t < ai.latchedUntil && ai.latchedUntil - ai.t > 0.55;
-  else if (spec?.weapon?.fists) sawActive = distance < strikeRange * 0.9 && Math.floor(ai.t * 2.6) % 2 === 0;
-  else if (spec?.weapon?.flame) sawActive = distance < (spec.weapon.flame.reach ?? 3) + 1;
+  else if (spec?.weapon?.track) {
+    // Tantrum's drum carriage. The shot is the RELEASE, so the AI holds the
+    // channel down while it is still closing and lets go as it arrives — the
+    // drum is then travelling forward at the moment of contact, which is the
+    // whole point of the mechanic. Outside strike range it winds back up.
+    sawActive = distance > strikeRange * 0.75;
+  } else if (spec?.weapon?.flame) sawActive = distance < (spec.weapon.flame.reach ?? 3) + 1;
   else if (type === "hammerSaw" || type === "lifterDisc") sawActive = distance < engage + 3;
+
+  // Tantrum's punch arms are their own channel. They pulse so the arms cycle
+  // instead of parking upright, and only in close, where a lifted arm can
+  // actually land on something.
+  const auxActive = Boolean(spec?.weapon?.fists)
+    && distance < strikeRange * 0.9
+    && Math.floor(ai.t * 2.6) % 2 === 0;
 
   const throttle = steer.throttle * level.drive * throttleScale;
   const turn = clamp(steer.turn * level.turnGain, -1, 1);
   const { leftDrive, rightDrive } = tankFrom(throttle, turn);
-  return { leftDrive, rightDrive, weapon, brake: false, sawActive };
+  return { leftDrive, rightDrive, weapon, brake: false, sawActive, auxActive };
 }

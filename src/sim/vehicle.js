@@ -49,6 +49,9 @@ export function completeInput(input = {}) {
     // This used to be dropped here, so the only consumers were the renderer
     // and the audio layer — the sim never saw the toggle at all.
     sawActive: Boolean(input.sawActive),
+    // Aux weapon channel (LB): Tantrum's punch arms, which are a separate
+    // machine from its drum carriage and so cannot share the saw channel.
+    auxActive: Boolean(input.auxActive),
     brake: Boolean(input.brake),
   };
 }

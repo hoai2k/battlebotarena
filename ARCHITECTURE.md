@@ -87,8 +87,12 @@ export async function createSim({ bots, emit }) // bots: [BotSimSpec, BotSimSpec
 
 - Fixed timestep 1/120s accumulator inside `stepFrame`; render state is
   interpolated between the last two ticks. Cap 8 substeps per frame.
-- `DriveInput = { leftDrive: -1..1, rightDrive: -1..1, weapon: bool, sawActive: bool, brake: bool }`
-  — `sawActive` is the secondary (RB) channel: Sawblaze's saw motor, Whiplash's disc.
+- `DriveInput = { leftDrive: -1..1, rightDrive: -1..1, weapon: bool, sawActive: bool,
+  auxActive: bool, brake: bool }` — `sawActive` is the secondary (RB) channel:
+  Sawblaze's saw motor, Whiplash's disc, Tantrum's drum carriage. `auxActive` is
+  a THIRD channel (LB) for a bot with three separate mechanisms, which today is
+  only Tantrum's punch arms; LB is the brake for everyone else, and
+  `game/weaponControls.js` is the one place that knows which is which.
 - `BotSimSpec` comes from the catalog (below): masses, dims, wheel probe
   anchors, weapon type/params, collider spec.
 - Arena colliders (floor/walls/ceiling/deck slab/saw slots/screw shafts) are
@@ -198,11 +202,21 @@ the sim tests and the roster grid size themselves off it.
   nothing over. A lifter ticks a small amount of damage while it is actually
   hoisting someone: control is its job, but a bot that can never score cannot
   win a judged match, and Duck scored a flat zero over a full fight without it.
-- `weapon.fists` (Tantrum) — a SECOND, independent mechanism on a spinner. It
-  cannot be a `modelWeaponSub` (a sub inherits the drum's spin), so the model
-  side is a `modelAux-fists` group and the sim side is a punch stroke on
-  `sawActive` reported through `getSubAngle()`. Momentary, not latched: a
-  toggle would leave the arms parked at full extension.
+- `weapon.fists` (Tantrum) — an independent mechanism on a spinner. It cannot be
+  a `modelWeaponSub` (a sub inherits the drum's spin), so the model side is a
+  `modelAux-fists` group hinged on the axle its `pivotLocal` extras name, and
+  the sim side is a lift stroke on `auxActive` reported through `getSubAngle()`.
+  Momentary, not latched: a toggle would leave the arms standing up in the air.
+- `weapon.track` (Tantrum) — a rotor that TRANSLATES as well as spins. Its drum
+  rides a carriage on the rails down the bot's centre: holding `sawActive`
+  winches it back and up to the far stop and releasing fires it forward, and
+  because it is travelling when it arrives its hit is scaled by `track.hitBoost`
+  AFTER the budget cap, which is the rotor's stored energy and has nothing to do
+  with the carriage's momentum. The collider goes with it, so a wound-back drum
+  is a foot behind where it can reach anything — that is what the wind-up costs.
+  Not a weaponSub and not an aux anchor: it is the rotor itself that moves, so
+  the offset is written where the rest of the pose lives, in
+  `engine/botAnimation.js`, off a rest position cached on the visual.
 - `weapon.twoWayArm` (Duck) — an arm with enough travel that "held = up,
   released = falls" stops being a control scheme. RT drives it one way, RB the
   other, and it HOLDS wherever it is let go, so the plow can be parked anywhere
@@ -473,6 +487,7 @@ driven by a checked-in spec so the edit is reviewable and repeatable:
 | `glb-carve.mjs` | `tools/repairs/hypershock-weapon.json` | parts the segmenter mis-assigned — Hypershock's `modelWeapon` had swallowed the front scoop and a fin, which then counter-rotated with the drum |
 | `glb-carve.mjs` | `tools/repairs/endgame-stand.json` | geometry the SUBJECT never had — Tripo sculpted a pair of support legs under Endgame's rear and the model rested on them, forks half a foot off the floor |
 | `glb-carve.mjs` | `tools/repairs/tantrum-reflection.json` | Tantrum's reference photo was taken on a polished floor and the scan modelled the REFLECTION as solid geometry, a mirrored ghost bot hanging under the real one |
+| `glb-carve.mjs` | `tools/repairs/tantrum-drum.json` | the wrong assembly called the weapon — `modelWeapon` held the bar across the back, which is the axle the punch arms hinge on, while the drum in the middle of the machine sat in `modelBody`. Also moves both authored pivots: the rotor's onto the drum's own axle, and the arms' off the fist end and onto the boss at their base |
 | `glb-add-panels.mjs` | `tools/repairs/blip-flipper-pan.json` | openings the scan never closed — down both long edges of Blip's flipper there was a strip of nothing between the plate and the frame, and you looked straight through into the machine |
 | `glb-carve.mjs` | `tools/repairs/duck-plow-tabs.json` | geometry that held the machine off the floor — two stray prongs under the back of Duck's plow reached lower than the plow's own lip, so grounding stood the whole bot 0.18ft up on invisible stilts |
 | `glb-carve.mjs` | `tools/repairs/freeshipping-lifter.json` | a part built at the wrong SIZE and PLACE for the rest of the machine — Free Shipping's fork carriage was narrower than the middle one of its own three front wedges, so at rest the whole lifter was buried inside that wedge instead of dropping its tines down the channels either side of it (`transform` mode: node scale + offset, no vertices touched) |
@@ -557,7 +572,7 @@ angle, and every spinner in the bot-select screen sat motionless no matter how
 long RT was held.
 
 **The pods are a PRACTICE viewer, not a showreel.** The owner orbits with the
-right stick, leans in with LT, and works the weapon on RT/RB — the same two
+right stick, leans in with LT, and works the weapon on RT/RB/LB — the same
 channels as a fight. Raw presses go through `game/weaponControls.js`, the ONE
 definition of which button does what, shared with main.js's match loop; the
 motion comes from `engine/previewWeapon.js`, which mirrors the phase machines
@@ -566,8 +581,9 @@ through the match animation path (`engine/botAnimation.js`). So HUGE's bar
 LATCHES on one press and takes its real five seconds to wind up, Bronco makes
 you wait out the reload, Sawblaze's arm holds out while the trigger is down,
 and every bot with a second mechanism (Sawblaze's saw, Whiplash's disc, Free
-Shipping's flame, Claw Viper's jaw, Tantrum's fists) gets a second button with
-the right latch/momentary behaviour. Each channel carries a readiness meter,
+Shipping's flame, Claw Viper's jaw, Tantrum's drum carriage) gets a second
+button with the right latch/momentary behaviour, and a bot with a THIRD
+mechanism (Tantrum's punch arms) gets a third. Each channel carries a meter,
 because a latched rotor winding up is invisible from the button alone.
 Deliberately not modelled: anything needing an opponent (impulses, grabs,
 damage). Two details that are load-bearing:

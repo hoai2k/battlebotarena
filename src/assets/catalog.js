@@ -1655,7 +1655,12 @@ export const CATALOG = {
     tagline: "Drum up front, fists on top.",
     referenceImage: "./public/reference/tantrum.png",
     modelPath: "./public/models/tantrum.glb",
-    modelYaw: Math.PI, // MEASURED: model faces +Z
+    // MEASURED: the model already faces -Z. The half turn that used to be here
+    // drove the bot backwards, tail first — the drum and the two fork teeth are
+    // at GLB -z and the arms' axle at GLB +z, so a yaw of PI put the forks
+    // behind and the axle out in front, which is also how the axle came to be
+    // mistaken for the weapon.
+    modelYaw: 0,
     // Tripo read this bot off a photo taken on a shiny floor and modelled the
     // REFLECTION as geometry; it is carved out in
     // tools/repairs/tantrum-reflection.json. The slant on the side panels is
@@ -1691,33 +1696,57 @@ export const CATALOG = {
     accentDark: "#141a1c",
     weapon: {
       type: "drum",
-      pivot: { x: 0.0214, y: 0.7917, z: -1.5086 }, // MEASURED axle, game space
+      // The weapon is the drum in the CENTRE of the machine (parts 24 and its
+      // hub 23, moved onto modelWeapon by tools/repairs/tantrum-drum.json), not
+      // the bar across the back that segmentation filed as modelWeapon — that
+      // bar is the axle the punch arms hinge on.
+      // MEASURED with rig-inspect --axle over the drum alone.
+      pivot: { x: 0.0041, y: 0.7398, z: -0.6082 },
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 1.3, // second-quickest, just inside v1's band (see Endgame)
       inertia: 1.0,
       maxOmega: 600,
       budgetCap: 300,
-      // Tripo built the drum as a SLIM BAR: swept radius measures 0.145, which
-      // is a third of the real machine's drum and would leave it unable to
-      // touch anything with 0.6ft of air under the axle. 0.30 is the radius the
-      // reference photo's drum actually has. Same call as Minotaur's unmodelled
-      // notches — the collider follows the robot, not the segmentation.
-      radius: 0.321,
-      dims: { x: 0.5456, y: 0.321, z: 0.321 },
-      // The fists punch on the alt channel, independent of the drum.
+      radius: 0.375, // MEASURED swept radius of the drum alone
+      dims: { x: 0.2287, y: 0.375, z: 0.375 }, // half the MEASURED 0.457ft barrel
+      // The drum rides a carriage on the rails down the bot's centre, and the
+      // rails climb: the centreline's top runs 0.696 at z=-0.2 to 0.932 at
+      // z=+0.6, a slope of about 0.3. `offset` is where the carriage parks
+      // relative to the resting pivot, so the drum ends up at (0.004, 1.040,
+      // +0.392) — a foot back, sat on top of the track between the arms, which
+      // is as far as it can go before the arms' own axle. Holding the button
+      // winches it there; releasing fires it forward, and hitBoost is what the
+      // stroke is worth: the carriage covers 1.044ft in 0.16s, i.e. 6.5ft/s of
+      // closing speed on top of the rotor, which is not far off half the bot's
+      // own top speed.
+      track: {
+        offset: { x: 0, y: 0.30, z: 1.0 },
+        retractSeconds: 0.55,
+        flingSeconds: 0.16,
+        hitBoost: 1.5,
+      },
+      // The fist arms lift on the aux channel, independent of the drum. They
+      // hinge on the axle across the back (see the aux pivot in
+      // tools/repairs/tantrum-drum.json), and the GLB has them baked 14.6deg
+      // nose-up: openAngle takes that out so they lie flat along the deck at
+      // rest, and punchAngle is a clean quarter turn up from there.
       fists: {
-        openAngle: 0, punchAngle: -0.85, punchSeconds: 0.18,
+        openAngle: -0.255, punchAngle: 1.3158, punchSeconds: 0.18,
         impulse: 90, damagePerHit: 2.5, reach: 1.1769,
         axis: { x: 1, y: 0, z: 0 },
       },
       tuning: { efficiency: 0.55, impulseScale: 10.0, liftScale: 28.0, liftVelocity: 4.5, gyroScale: 1.0 },
     },
-    // Nothing forward of z=-1.20: the drum sweeps down to y 0.44 and out to
-    // z -1.71, and the model's nose shroud sits at y 0.50-1.00, right across
-    // the sweep. Leaving it out is what lets the drum reach.
+    // NOTHING in front of z=-0.813. Everything from there to the nose is the
+    // two fork teeth, MEASURED thin (|x| 0.55 to 0.86) and low (y 0.23 to 0.44),
+    // and they run either side of the drum rather than in front of it. A solid
+    // on them would be a pure stand-off — opponents would stop on the tips with
+    // the drum, whose sweep reaches z=-0.983, still short of them. Same call as
+    // Copperhead and Deep Six. The tail box is the arms' axle and the deck it
+    // is bolted through, MEASURED y 0.544 to 0.990 over z 1.284 to 1.714.
     colliders: [
-      { shape: "box", halfExtents: { x: 1.4979, y: 0.535, z: 1.0485 }, offset: { x: 0, y: 0.535, z: -0.2354 } },
-      { shape: "box", halfExtents: { x: 0.7275, y: 0.2247, z: 0.4494 }, offset: { x: 0, y: 0.3317, z: 1.2625 } },
+      { shape: "box", halfExtents: { x: 1.4979, y: 0.535, z: 1.0485 }, offset: { x: 0, y: 0.535, z: 0.2354 } },
+      { shape: "box", halfExtents: { x: 1.0980, y: 0.2230, z: 0.2150 }, offset: { x: 0, y: 0.7670, z: 1.4990 } },
     ],
   },
 

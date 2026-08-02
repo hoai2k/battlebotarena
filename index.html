@@ -119,8 +119,12 @@
                   <span class="pod-meter"><i id="pod-primary-meter-player"></i></span>
                 </span>
                 <span class="pod-control">
-                  <button id="pod-secondary-player" class="pod-test pod-test-alt" type="button" hidden data-nav-right="#btn-fight"><span data-control-label>ALT</span></button>
+                  <button id="pod-secondary-player" class="pod-test pod-test-alt" type="button" hidden data-nav-right="#pod-aux-player,#btn-fight"><span data-control-label>ALT</span></button>
                   <span class="pod-meter"><i id="pod-secondary-meter-player"></i></span>
+                </span>
+                <span class="pod-control">
+                  <button id="pod-aux-player" class="pod-test pod-test-aux" type="button" hidden data-nav-right="#btn-fight"><span data-control-label>AUX</span></button>
+                  <span class="pod-meter"><i id="pod-aux-meter-player"></i></span>
                 </span>
               </span>
             </div>
@@ -131,7 +135,7 @@
                     data-nav-left="#slot-player" data-nav-right="#slot-rival"><span>FIGHT</span></button>
             <div class="pod-controls-hint">
               R-STICK ORBIT &middot; LT ZOOM<br />
-              RT WEAPON &middot; RB SECONDARY<br />
+              RT WEAPON &middot; RB SECONDARY &middot; LB AUX<br />
               MOUSE DRAG &middot; WHEEL ZOOM
             </div>
           </div>
@@ -153,8 +157,12 @@
                   <span class="pod-meter"><i id="pod-primary-meter-rival"></i></span>
                 </span>
                 <span class="pod-control">
-                  <button id="pod-secondary-rival" class="pod-test pod-test-alt" type="button" hidden data-nav-left="#btn-fight"><span data-control-label>ALT</span></button>
+                  <button id="pod-secondary-rival" class="pod-test pod-test-alt" type="button" hidden data-nav-left="#pod-aux-rival,#btn-fight"><span data-control-label>ALT</span></button>
                   <span class="pod-meter"><i id="pod-secondary-meter-rival"></i></span>
+                </span>
+                <span class="pod-control">
+                  <button id="pod-aux-rival" class="pod-test pod-test-aux" type="button" hidden data-nav-left="#btn-fight"><span data-control-label>AUX</span></button>
+                  <span class="pod-meter"><i id="pod-aux-meter-rival"></i></span>
                 </span>
               </span>
             </div>

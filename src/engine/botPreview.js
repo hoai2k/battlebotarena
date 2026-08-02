@@ -176,26 +176,30 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       spec: null,
       token: 0,
       viewEl: pods[slot]?.view || null,
-      // Two channels, matching the pad: primary is RT, secondary is RB.
+      // Three channels, matching the pad: primary is RT, secondary is RB and
+      // aux is LB. Only a bot with three separate mechanisms shows the third.
       buttons: {
         primary: pods[slot]?.primary || null,
         secondary: pods[slot]?.secondary || null,
+        aux: pods[slot]?.aux || null,
       },
       meters: {
         primary: pods[slot]?.primaryMeter || null,
         secondary: pods[slot]?.secondaryMeter || null,
+        aux: pods[slot]?.auxMeter || null,
       },
       loadingEl: pods[slot]?.view?.querySelector?.(".pod-loading") || null,
       // Orbit state: yaw mirrored so both bots open on a facing 3/4 view.
       orbit: { yaw: slot === 0 ? 0.7 : -0.7, pitch: 0.4, zoom: 1, dist: 9, targetY: 1.1, lean: 0, idleFor: 99 },
       /** Mirrors the sim's weapon stroke machine for this bot. */
       weapon: null,
-      controls: { primary: null, secondary: null },
+      controls: { primary: null, secondary: null, aux: null },
       state: {
         position: new THREE.Vector3(x, PLINTH_HEIGHT, 0),
         quaternion: new THREE.Quaternion(),
         weaponAngle: 0,
         weaponSubAngle: 0,
+        weaponTrack: 0,
         weaponRatio: 0,
       },
       // RAW (pre-latch) button state per channel, from pointer holds, click
@@ -203,10 +207,13 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       raw: {
         primaryHeld: false,
         secondaryHeld: false,
+        auxHeld: false,
         primaryFrames: 0, // frames this press must still be reported for
         secondaryFrames: 0,
+        auxFrames: 0,
         primaryPad: false,
         secondaryPad: false,
+        auxPad: false,
       },
       cleanups: /** @type {Function[]} */ ([]),
     };
@@ -306,6 +313,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     };
     wireButton(bay.buttons.primary, "primaryHeld", "primaryFrames");
     wireButton(bay.buttons.secondary, "secondaryHeld", "secondaryFrames");
+    wireButton(bay.buttons.aux, "auxHeld", "auxFrames");
   });
 
   // ------------------------------------------------------------- gamepads
@@ -321,6 +329,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     bays.forEach((bay) => {
       bay.raw.primaryPad = false;
       bay.raw.secondaryPad = false;
+      bay.raw.auxPad = false;
       bay.orbit.lean = 0;
     });
     const feed = (bay, pad) => {
@@ -337,11 +346,14 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       }
       const lt = pad.buttons?.[6]?.value ?? (pad.buttons?.[6]?.pressed ? 1 : 0);
       bay.orbit.lean = Math.max(bay.orbit.lean, lt);
-      // Same buttons as game/input.js: RT (7) weapon, RB (5) secondary.
+      // Same buttons as game/input.js: RT (7) weapon, RB (5) secondary,
+      // LB (4) aux.
       const rt = (pad.buttons?.[7]?.value ?? 0) > 0.2 || Boolean(pad.buttons?.[7]?.pressed);
       const rb = Boolean(pad.buttons?.[5]?.pressed) || (pad.buttons?.[5]?.value ?? 0) > 0.5;
+      const lb = Boolean(pad.buttons?.[4]?.pressed) || (pad.buttons?.[4]?.value ?? 0) > 0.5;
       bay.raw.primaryPad = bay.raw.primaryPad || rt;
       bay.raw.secondaryPad = bay.raw.secondaryPad || rb;
+      bay.raw.auxPad = bay.raw.auxPad || lb;
     };
     if (control.duo) {
       // Pad slot i owns pod i — same dense order as game/input.js.
@@ -364,10 +376,12 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       brake: false,
       weapon: raw.primaryHeld || raw.primaryPad || raw.primaryFrames > 0,
       weaponAlt: raw.secondaryHeld || raw.secondaryPad || raw.secondaryFrames > 0,
+      weaponAux: raw.auxHeld || raw.auxPad || raw.auxFrames > 0,
     };
     // Consumed only once this frame has actually reported it.
     raw.primaryFrames = Math.max(0, raw.primaryFrames - 1);
     raw.secondaryFrames = Math.max(0, raw.secondaryFrames - 1);
+    raw.auxFrames = Math.max(0, raw.auxFrames - 1);
     return press;
   }
 
@@ -380,6 +394,10 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     bay.weapon.update(dt, shaped);
     bay.state.weaponAngle = bay.weapon.state.weaponAngle;
     bay.state.weaponSubAngle = bay.weapon.state.weaponSubAngle;
+    // A weapon that slides along a track (Tantrum's drum carriage) reports how
+    // far along it is, and botAnimation moves the pivot from that — the same
+    // field the sim publishes, so the plinth and the arena slide identically.
+    bay.state.weaponTrack = bay.weapon.state.weaponTrack ?? 0;
     // Flamethrower (Free Shipping): the sim reports the burn as weaponSubAngle
     // and main.js draws the jet from it. previewWeapon keeps the same ramp but
     // only publishes it through subRatio(), so mirror it into the render state
@@ -401,8 +419,10 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     const secondaryLive = Boolean(shaped.sawActive);
     bay.buttons.primary?.classList.toggle("is-live", primaryLive);
     bay.buttons.secondary?.classList.toggle("is-live", secondaryLive);
+    bay.buttons.aux?.classList.toggle("is-live", Boolean(shaped.auxActive));
     if (bay.meters.primary) bay.meters.primary.style.transform = `scaleX(${bay.weapon.ratio().toFixed(3)})`;
     if (bay.meters.secondary) bay.meters.secondary.style.transform = `scaleX(${bay.weapon.subRatio().toFixed(3)})`;
+    if (bay.meters.aux) bay.meters.aux.style.transform = `scaleX(${(bay.weapon.auxRatio?.() ?? 0).toFixed(3)})`;
   }
 
   // --------------------------------------------------------------- camera
@@ -591,15 +611,19 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     bay.fx.clear();
     bay.state.weaponAngle = 0;
     bay.state.weaponSubAngle = 0;
+    bay.state.weaponTrack = 0;
     bay.raw.primaryHeld = false;
     bay.raw.secondaryHeld = false;
+    bay.raw.auxHeld = false;
     bay.raw.primaryFrames = 0;
     bay.raw.secondaryFrames = 0;
+    bay.raw.auxFrames = 0;
     bay.orbit.yaw = bay.slot === 0 ? 0.7 : -0.7;
     bay.orbit.pitch = 0.4;
     bay.orbit.idleFor = 99; // start on the slow showcase drift
     bay.buttons.primary?.classList.remove("is-live");
     bay.buttons.secondary?.classList.remove("is-live");
+    bay.buttons.aux?.classList.remove("is-live");
   }
 
   /** Label the two channel buttons for this bot and hide the one it lacks. */
@@ -616,20 +640,22 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       // the two buttons do but not which trigger is which, and a bot whose
       // second channel is the interesting one (Free Shipping's flamethrower)
       // gets reported as broken when the player holds RT and nothing burns.
-      const chan = el === bay.buttons.secondary ? "RB" : "RT";
+      const chan = el === bay.buttons.aux ? "LB" : el === bay.buttons.secondary ? "RB" : "RT";
+      const key = el === bay.buttons.aux ? "F" : el === bay.buttons.secondary ? "R" : "Space";
       // Non-breaking space: "RT" and "LIFT" are one label, not two words.
       labelEl.textContent = `${chan}\u00a0${channel.label}`;
       // Toggle vs hold is the single most useful thing to tell the player here.
       el.dataset.mode = channel.toggle ? "toggle" : "hold";
       el.setAttribute(
         "aria-label",
-        `${channel.label} — ${chan} / ${el === bay.buttons.secondary ? "R" : "Space"}, `
+        `${channel.label} — ${chan} / ${key}, `
         + `${channel.toggle ? "toggles on and off" : "hold"}`,
       );
       if (meterEl) meterEl.style.transform = "scaleX(0)";
     };
     dress(bay.buttons.primary, bay.meters.primary, controls.primary);
     dress(bay.buttons.secondary, bay.meters.secondary, controls.secondary);
+    dress(bay.buttons.aux, bay.meters.aux, controls.aux);
   }
 
   /** Load spec's model into the slot's bay (no-op if it is already showing). */

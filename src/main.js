@@ -44,8 +44,10 @@ const podEls = (side) => ({
   view: document.querySelector(`#pod-view-${side}`),
   primary: document.querySelector(`#pod-primary-${side}`),
   secondary: document.querySelector(`#pod-secondary-${side}`),
+  aux: document.querySelector(`#pod-aux-${side}`),
   primaryMeter: document.querySelector(`#pod-primary-meter-${side}`),
   secondaryMeter: document.querySelector(`#pod-secondary-meter-${side}`),
+  auxMeter: document.querySelector(`#pod-aux-meter-${side}`),
 });
 const botPreview = createBotPreview({
   canvas: document.querySelector("#preview-canvas"),

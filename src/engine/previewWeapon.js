@@ -36,9 +36,10 @@ export function createPreviewWeapon(spec) {
     return {
       update: () => {},
       reset: () => {},
-      state: { weaponAngle: 0, weaponSubAngle: 0 },
+      state: { weaponAngle: 0, weaponSubAngle: 0, weaponTrack: 0 },
       ratio: () => 0,
       subRatio: () => 0,
+      auxRatio: () => 0,
     };
   }
   const tune = resolveWeaponTuning(spec);
@@ -50,13 +51,14 @@ export function createPreviewWeapon(spec) {
   // DRAWN rotation from the ratio (see SPIN_VISUAL_MAX_OMEGA there) and ignores
   // weaponAngle entirely for bar/drum, so a preview that only reported the
   // angle left every rotor in the viewer stone dead however long you held RT.
-  const state = { weaponAngle: 0, weaponSubAngle: 0, weaponRatio: 0 };
+  const state = { weaponAngle: 0, weaponSubAngle: 0, weaponTrack: 0, weaponRatio: 0 };
 
   // --- per-type state ------------------------------------------------------
   let omega = 0; // spinner rotor
   let visualAngle = 0; // drawn spinner angle
   let stroke = 0; // 0..1 arm position (crusher/lifter/grappler)
-  let sub = 0; // 0..1 secondary stroke (fists punch / grappler jaw)
+  let sub = 0; // 0..1 secondary stroke (fists lift / grappler jaw)
+  let carriage = 0; // 0..1 along a sliding weapon's track (Tantrum's drum)
   let subOmega = 0; // whiplash disc / free shipping flame ramp
   let phase = "idle"; // flipper / hammer / hammerSaw phase machine
   let t = 0;
@@ -69,19 +71,28 @@ export function createPreviewWeapon(spec) {
   const disc = w.disc || null;
   const discMaxOmega = disc?.maxOmega ?? 380;
   const discSpinUp = Math.max(0.05, disc?.spinUpSeconds ?? 1.4);
+  const track = w.track || null;
 
-  function updateSpinner(dt, fire, alt) {
+  function updateSpinner(dt, fire, alt, aux) {
     omega = fire
       ? Math.min(maxOmega, omega + spinUpRate * dt)
       : Math.max(0, omega - spinDownRate * dt);
     visualAngle += (omega / maxOmega) * VISUAL_OMEGA_CAP * dt;
     state.weaponAngle = visualAngle;
     state.weaponRatio = omega / maxOmega;
-    // Tantrum's fists: momentary punch on the secondary channel, same rates as
-    // the sim's updateFists.
+    // Tantrum's drum carriage: held it winches back up the track, released it
+    // fires forward, at the same two rates the sim's updateTrack runs. The
+    // plinth cannot show the extra damage the forward stroke does, but it can
+    // and must show that the shot is the RELEASE.
+    if (track) {
+      carriage = clamp01(carriage + (alt ? dt / track.retractSeconds : -dt / track.flingSeconds));
+      state.weaponTrack = carriage;
+    }
+    // Tantrum's fists: momentary lift on the aux channel, same rates as the
+    // sim's updateFists.
     if (w.fists) {
       const seconds = Math.max(0.05, w.fists.punchSeconds ?? 0.18);
-      sub = clamp01(sub + (alt ? dt / seconds : -dt / (seconds * 2.2)));
+      sub = clamp01(sub + (aux ? dt / seconds : -dt / (seconds * 2.2)));
       state.weaponSubAngle = sub;
     }
   }
@@ -187,7 +198,8 @@ export function createPreviewWeapon(spec) {
   function update(dt, input = {}) {
     const fire = Boolean(input.weapon);
     const alt = Boolean(input.sawActive);
-    if (SPINNER_TYPES.has(type)) updateSpinner(dt, fire, alt);
+    const aux = Boolean(input.auxActive);
+    if (SPINNER_TYPES.has(type)) updateSpinner(dt, fire, alt, aux);
     else if (type === "flipper") updateOneShot(dt, fire, tune.strokeSeconds, tune.returnSeconds);
     else if (type === "hammer") updateOneShot(dt, fire, tune.strokeSeconds, tune.returnSeconds);
     else if (type === "hammerSaw") updateHammerSaw(dt, fire, alt);
@@ -201,11 +213,13 @@ export function createPreviewWeapon(spec) {
     visualAngle = 0;
     stroke = 0;
     sub = 0;
+    carriage = 0;
     subOmega = 0;
     phase = "idle";
     t = 0;
     state.weaponAngle = 0;
     state.weaponSubAngle = 0;
+    state.weaponTrack = 0;
     state.weaponRatio = 0;
   }
 
@@ -227,10 +241,15 @@ export function createPreviewWeapon(spec) {
       }
       return state.weaponAngle;
     },
-    /** 0..1 secondary readiness — disc speed, saw motor, flame ramp, jaw, punch. */
+    /** 0..1 secondary readiness — disc speed, saw motor, flame ramp, jaw, carriage. */
     subRatio() {
       if (disc) return subOmega / discMaxOmega;
       if (w.flame || type === "hammerSaw") return subOmega;
+      if (track) return carriage; // how far back the drum is wound, i.e. how big the shot is
+      return sub;
+    },
+    /** 0..1 aux readiness — the punch arms' lift. */
+    auxRatio() {
       return sub;
     },
   };

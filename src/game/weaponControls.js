@@ -11,9 +11,15 @@
 // Pure JS — no DOM, no three, no rapier. `ui` may import it for the control
 // labels (ui -> game is the allowed direction; see ARCHITECTURE.md).
 //
-// The two channels, in v1/pad terms:
+// The three channels, in v1/pad terms:
 //   primary   RT / Space  — the weapon proper
 //   secondary RB / R      — the second mechanism, where a bot has one
+//   aux       LB / F      — a THIRD mechanism, which only Tantrum has: its
+//                           drum carriage and its punch arms are two separate
+//                           machines and both are momentary, so neither can
+//                           share a button with the other. LB is the brake on
+//                           every other bot, and it is folded back into the
+//                           brake here for them so the v1 mapping is untouched.
 
 /** Rotors: the primary button LATCHES them on and off. */
 export const SPINNER_TYPES = new Set(["bar", "drum"]);
@@ -31,34 +37,49 @@ const PRIMARY_LABELS = {
   grappler: "FORKS",
 };
 
+/** Does this bot spend the aux channel, i.e. is LB something other than brake? */
+export function usesAuxChannel(spec) {
+  return Boolean(spec?.weapon?.fists);
+}
+
 /**
- * What this bot's two channels are called and whether each latches. Drives the
+ * What this bot's channels are called and whether each latches. Drives the
  * practice viewer's buttons and any control legend.
  * @param {{ weapon?: object }} spec
  * @returns {{ primary: {label:string, toggle:boolean}|null,
- *             secondary: {label:string, toggle:boolean}|null }}
+ *             secondary: {label:string, toggle:boolean}|null,
+ *             aux: {label:string, toggle:boolean}|null }}
  */
 export function describeWeaponControls(spec) {
   const w = spec?.weapon;
-  if (!w) return { primary: null, secondary: null };
+  if (!w) return { primary: null, secondary: null, aux: null };
   const primary = SPINNER_TYPES.has(w.type)
     ? { label: "SPIN UP", toggle: true }
     : { label: PRIMARY_LABELS[w.type] || "WEAPON", toggle: false };
 
-  // Tantrum's fists are the one MOMENTARY secondary: latching them would leave
-  // the arms parked at full extension.
   let secondary = null;
   // A two-way arm spends its second channel on the OTHER DIRECTION rather than
   // on a second mechanism: RT drives it one way, RB the other, and it holds
   // wherever it is let go. That is the only way to park an arm with this much
   // travel exactly where you want it.
-  if (w.twoWayArm) return { primary: { label: "RAISE", toggle: false }, secondary: { label: "LOWER", toggle: false } };
-  if (w.fists) secondary = { label: "PUNCH", toggle: false };
+  if (w.twoWayArm) {
+    return {
+      primary: { label: "RAISE", toggle: false },
+      secondary: { label: "LOWER", toggle: false },
+      aux: null,
+    };
+  }
+  // Tantrum's carriage is MOMENTARY on purpose: the button is the wind-up, and
+  // the shot is letting go of it. Latching would mean pressing twice to fire.
+  if (w.track) secondary = { label: "PULL BACK", toggle: false };
   else if (w.disc) secondary = { label: "DISC", toggle: true };
   else if (w.flame) secondary = { label: "FLAME", toggle: true };
   else if (w.claw) secondary = { label: "JAW", toggle: true };
   else if (w.type === "hammerSaw") secondary = { label: "SAW", toggle: true };
-  return { primary, secondary };
+  // The punch arms are their own machine, on their own button, and momentary:
+  // latching them would leave the arms standing up in the air.
+  const aux = w.fists ? { label: "FISTS", toggle: false } : null;
+  return { primary, secondary, aux };
 }
 
 /**
@@ -66,8 +87,8 @@ export function describeWeaponControls(spec) {
  * consumer (the match loop keeps its own; the viewer keeps another) so the two
  * never fight over the same latches.
  *
- * `raw` is a DriveInput plus `weaponAlt`; the result is what the sim consumes:
- * `{ ...raw, weapon, sawActive }`.
+ * `raw` is a DriveInput plus `weaponAlt` and `weaponAux`; the result is what
+ * the sim consumes: `{ ...raw, weapon, sawActive, auxActive, brake }`.
  */
 export function createWeaponInputShaper() {
   const weaponLatch = [false, false];
@@ -81,23 +102,33 @@ export function createWeaponInputShaper() {
     const altEdge = raw.weaponAlt && !prevAltDown[slot];
     prevWeaponDown[slot] = Boolean(raw.weapon);
     prevAltDown[slot] = Boolean(raw.weaponAlt);
+    // LB carries the aux mechanism on a bot that has one and the brake on every
+    // bot that does not. Resolving it here rather than in the input layer is
+    // what keeps the input layer from having to know the catalog.
+    const aux = Boolean(raw.weaponAux);
+    const brake = Boolean(raw.brake) || (aux && !usesAuxChannel(spec));
     if (SPINNER_TYPES.has(type)) {
       if (weaponEdge) weaponLatch[slot] = !weaponLatch[slot];
-      // Tantrum's drum latches like any spinner, but the punch is momentary.
-      if (spec.weapon.fists) return { ...raw, weapon: weaponLatch[slot], sawActive: raw.weaponAlt };
-      return { ...raw, weapon: weaponLatch[slot] };
+      // Tantrum's drum latches like any spinner. Its carriage and its arms are
+      // both momentary, and on separate buttons, because the carriage's whole
+      // point is that RELEASING it is the shot.
+      if (spec.weapon.fists || spec.weapon.track) {
+        return { ...raw, weapon: weaponLatch[slot], sawActive: Boolean(raw.weaponAlt), auxActive: aux, brake };
+      }
+      return { ...raw, weapon: weaponLatch[slot], brake };
     }
     // Split controls: the trigger drives the arm, RB latches the second
     // mechanism. Free Shipping spends that channel on flame; Duck has nothing
     // on it and simply ignores it.
     // Two-way arm: both channels are momentary directions, so neither latches.
     // Checked before the toggle set because a plain lifter is in that set.
-    if (spec?.weapon?.twoWayArm) return { ...raw, sawActive: Boolean(raw.weaponAlt) };
+    if (spec?.weapon?.twoWayArm) return { ...raw, sawActive: Boolean(raw.weaponAlt), brake };
     if (ALT_TOGGLE_TYPES.has(type)) {
       if (altEdge) sawLatch[slot] = !sawLatch[slot];
-      return { ...raw, sawActive: sawLatch[slot] };
+      return { ...raw, sawActive: sawLatch[slot], brake };
     }
-    return raw; // flipper fires on press, crusher bites while held, hammer swings while held
+    // flipper fires on press, crusher bites while held, hammer swings while held
+    return { ...raw, brake };
   }
 
   function reset(slot = null) {

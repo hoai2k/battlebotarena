@@ -46,6 +46,24 @@ export function syncBotVisual(visual, spec, state, dt = 1 / 60) {
       spinning ? spinnerAngle(visual, state, dt) : weaponVisualAngle(visual, spec, state),
     );
   }
+  // Tantrum's drum TRANSLATES as well as spins: the carriage it is mounted on
+  // slides back and up the rails down the middle of the bot, taking the pivot
+  // with it, and lets go forward again. This is not a weaponSub — a sub would
+  // inherit the drum's spin — and not an aux anchor either, because it is the
+  // rotor itself that moves. The rest position is cached on the visual the
+  // first time through and every frame writes an ABSOLUTE position from it, so
+  // calling this twice in a frame lands in the same place instead of walking
+  // the drum out of the bot.
+  const track = spec.weapon?.track;
+  if (track && visual.parts.weapon) {
+    const home = (visual.__weaponHome ||= visual.parts.weapon.position.clone());
+    const along = THREE.MathUtils.clamp(state.weaponTrack ?? 0, 0, 1);
+    visual.parts.weapon.position.set(
+      home.x + (track.offset.x ?? 0) * along,
+      home.y + track.offset.y * along,
+      home.z + track.offset.z * along,
+    );
+  }
   // Negated: wheelSpin accumulates ground speed along forward (-Z), and a wheel
   // on the +X axle rolling the bot toward -Z turns NEGATIVE about +X. Without
   // the sign the tyres spin backwards — invisible on small dark wheels, glaring
@@ -73,9 +91,10 @@ export function syncBotVisual(visual, spec, state, dt = 1 / 60) {
     const stroke = THREE.MathUtils.clamp(state.weaponAngle ?? 0, 0, 1);
     ram.scale.y = 0.35 + 0.65 * stroke;
   }
-  // Tantrum's fists: a SECOND independent mechanism, so it cannot be a
-  // weaponSub (a sub inherits the drum's spin). It hinges off its own aux
-  // anchor from the sim's punch stroke.
+  // Tantrum's fists: an independent mechanism, so it cannot be a weaponSub (a
+  // sub inherits the drum's spin). It hinges off its own aux anchor — which is
+  // the axle across the back of the bot, not the arms' bounding box — from the
+  // sim's lift stroke.
   const punch = visual.parts.aux?.fists;
   if (punch && spec.weapon?.fists) {
     const f = spec.weapon.fists;

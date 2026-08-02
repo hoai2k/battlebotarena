@@ -592,11 +592,27 @@ export async function loadBotModel(spec, { onProgress } = {}) {
     });
     for (const node of auxNodes) {
       const name = node.name.slice("modelAux-".length);
+      // An aux group that HINGES turns about a real axle, not about the bottom
+      // of its own bounding box: Tantrum's punch arms pivot on the boss at
+      // their base, three feet behind and half a foot above where the bbox
+      // anchor put them, and anchoring them wrong swung the whole arm through
+      // the deck. Same authored extras the weapon path reads, transformed
+      // through the normalization while the node is still under it.
+      const pivotLocal = node.userData?.pivotLocal;
+      const anchorAt = new THREE.Vector3();
+      let haveAnchor = false;
+      if (Array.isArray(pivotLocal) && node.parent) {
+        node.parent.updateWorldMatrix(true, false);
+        anchorAt.fromArray(pivotLocal).applyMatrix4(node.parent.matrixWorld);
+        haveAnchor = true;
+      }
       detach(node);
       const bbox = new THREE.Box3().setFromObject(node);
       const anchor = new THREE.Group();
       anchor.name = `auxAnchor-${name}`;
-      if (!bbox.isEmpty()) {
+      if (haveAnchor) {
+        anchor.position.copy(anchorAt);
+      } else if (!bbox.isEmpty()) {
         const center = new THREE.Vector3();
         bbox.getCenter(center);
         anchor.position.set(center.x, bbox.min.y, center.z);

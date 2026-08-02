@@ -1,0 +1,32 @@
+[
+ {
+  "_comment": "modelWeapon held part 0 only, and part 0 is not the spinner: measured in game space it is a bar 1.096 wide in x, 0.272 tall and 0.182 deep, best-fit axle (0.021, 0.794, -1.500) radius 0.145, sitting at the extreme end of the chassis. That is the AXLE the two punch arms hinge on, not a weapon — the reference photo has the drum in the CENTRE of the machine between the side pods. The drum is part 24: measured x[-0.233,0.224] y[0.456,1.077] z[0.239,0.958], i.e. 0.46 wide across x and 0.62 tall, a cylinder on the x axis dead on the centreline. Part 23 is its hub, x[0.192,0.434] y[0.590,0.973] z[0.382,0.742], centred within 0.04 of the drum's own y and z. Both turn with the rotor; the bracket beside them (part 21, 0.79 wide and offset 0.16 in z from the drum axis) is the fixed bearing block and stays with the chassis.",
+  "mode": "reparent",
+  "part": 24,
+  "parent": "modelWeapon"
+ },
+ {
+  "_comment": "The drum's hub.",
+  "mode": "reparent",
+  "part": 23,
+  "parent": "modelWeapon"
+ },
+ {
+  "_comment": "The arms' axle goes back to the chassis. It is structure: a cylinder turning about its own centreline draws the same picture either way, and leaving it on the rotor is what made the whole bot read as a rear bar spinner.",
+  "mode": "reparent",
+  "part": 0,
+  "parent": "modelBody"
+ },
+ {
+  "_comment": "The drum's spin axle, from rig-inspect --axle over part 24 alone once it was on modelWeapon: game (0.004, 0.740, -0.608), swept radius 0.375, put through --toglb. The hub fits the same axle to within 0.04, and it is left out of the fit because its cone hangs off one side and drags the centre with it.",
+  "mode": "pivot",
+  "node": "modelWeapon",
+  "pivotLocal": [-0.0394, 0.0454, -0.1961]
+ },
+ {
+  "_comment": "The arms hinge on the round silver boss at their base, which the axle above runs through, and the partitioner wrote pivotLocal at the FIST end instead ([0, 0.1, -0.05], the far end of a part that spans z -0.070..0.402). This is the axle's best-fit centre (0.021, 0.794, -1.500) in game space put through rig-inspect --toglb.",
+  "mode": "pivot",
+  "node": "modelAux-fists",
+  "pivotLocal": [-0.0463, 0.0603, 0.3835]
+ }
+]

@@ -611,7 +611,8 @@
   width: 26px;
 }
 
-/* Two weapon channels, matching the pad: primary is RT, secondary is RB.
+/* Up to three weapon channels, matching the pad: primary is RT, secondary is
+   RB, aux is LB (Tantrum's punch arms, which are a third machine).
    Each gets a readiness meter — with a LATCHING weapon (every spinner) the
    button alone cannot show that the rotor is still winding up, and the
    spin-up is the thing the practice viewer exists to teach. */
@@ -671,7 +672,8 @@
   touch-action: none;
 }
 
-.pod-test-alt {
+.pod-test-alt,
+.pod-test-aux {
   font-size: 0.72rem;
   padding: 8px 12px 7px;
   opacity: 0.9;

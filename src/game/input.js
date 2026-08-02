@@ -7,8 +7,10 @@
 // - Keyboard: W/S drive both sides, A/D split (tank turn), Q/E extra turn
 //   (+-0.7), Space weapon, Shift brake.
 // - Gamepad: left stick Y = left side, right stick Y = right side (tank),
-//   RT (button 7) weapon, LB (button 4) brake. Deadzone 0.12. Stick input
-//   wins over keyboard when non-zero; weapon/brake are OR'd.
+//   RT (button 7) weapon, RB (5) secondary, LB (4) aux, LT (6) brake. Deadzone
+//   0.12. Stick input wins over keyboard when non-zero; weapon/brake are OR'd.
+//   LB reads as v1's brake for all but one bot — see game/weaponControls.js,
+//   which owns which button means what to which machine.
 //
 // Haptics (v1 triggerGamepadHaptic pattern): subscribe EV.IMPACT and
 // EV.WEAPON_HIT for the player's bot and pulse the pad's dual-rumble actuator
@@ -186,6 +188,10 @@ export function createInput({ on, playerIndex = 0, gamepadIndex = 0 } = {}) {
       weapon: keys.has("Space"),
       // Secondary weapon channel (sawblaze saw toggle): R on keyboard, RB on pad.
       weaponAlt: keys.has("KeyR"),
+      // Aux weapon channel (Tantrum's punch arms): F on keyboard, LB on pad.
+      // game/weaponControls.js folds it back into the brake for every bot that
+      // has no third mechanism, so LB still brakes for the rest of the roster.
+      weaponAux: keys.has("KeyF"),
       brake: keys.has("ShiftLeft") || keys.has("ShiftRight"),
       pauseDown: keys.has("Escape"),
     };
@@ -205,7 +211,11 @@ export function createInput({ on, playerIndex = 0, gamepadIndex = 0 } = {}) {
         rightDrive: stickDrive ? clamp(rightStick, -1, 1) : keyboard.rightDrive,
         weapon: (pad.buttons[7]?.value || 0) > TRIGGER_THRESHOLD || Boolean(pad.buttons[7]?.pressed) || keyboard.weapon,
         weaponAlt: Boolean(pad.buttons[5]?.pressed) || keyboard.weaponAlt,
-        brake: (pad.buttons[4]?.value || 0) > TRIGGER_THRESHOLD || Boolean(pad.buttons[4]?.pressed) || keyboard.brake,
+        weaponAux: (pad.buttons[4]?.value || 0) > TRIGGER_THRESHOLD || Boolean(pad.buttons[4]?.pressed) || keyboard.weaponAux,
+        // LT joins the brake so a bot that spends LB on a third mechanism still
+        // has a brake button on the pad; LB itself reaches the brake through
+        // weaponControls, which is the one place that knows which bots those are.
+        brake: (pad.buttons[6]?.value || 0) > TRIGGER_THRESHOLD || Boolean(pad.buttons[6]?.pressed) || keyboard.brake,
         pauseDown: Boolean(pad.buttons[9]?.pressed) || keyboard.pauseDown,
       };
     })();

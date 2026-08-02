@@ -169,22 +169,65 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
 
   const coastSeconds = w.spinDownSeconds ?? TU.spinDownSeconds;
 
+  // Tantrum's drum is not bolted to the frame: it rides a carriage on the rails
+  // down the middle of the bot. Holding the saw channel winches it back and up
+  // the track to the far stop; letting go fires it forward again, and the whole
+  // point of the mechanic is that the drum is TRAVELLING when it arrives.
+  //
+  // The collider is dragged along with it, which is the cost of the wind-up:
+  // while the drum is parked at the back it is a foot behind where it can reach
+  // anything. Moving a collider relative to its parent is not a teleport of a
+  // dynamic body — the chassis body is untouched — so the no-setTranslation
+  // rule is not in play here.
+  const track = w.track ?? null;
+  let carriage = 0; // 0 at the front stop where the drum rests, 1 parked at the back top
+  let carriageRate = 0; // stroke per second, negative on the forward stroke
+
+  function updateTrack(dt, ctx) {
+    const pulling = Boolean(ctx.input?.sawActive);
+    const rate = pulling
+      ? 1 / Math.max(0.05, track.retractSeconds)
+      : -1 / Math.max(0.05, track.flingSeconds);
+    const next = m.clamp(carriage + rate * dt, 0, 1);
+    carriageRate = (next - carriage) / dt;
+    if (next === carriage) return;
+    carriage = next;
+    collider.setTranslationWrtParent({
+      x: w.pivot.x + (track.offset.x ?? 0) * carriage,
+      y: w.pivot.y + track.offset.y * carriage,
+      z: w.pivot.z + track.offset.z * carriage,
+    });
+  }
+
+  // How much harder the drum lands mid-fling. It is applied to the finished
+  // impulses rather than fed into the spinner model's approach-speed term
+  // because that term is inside the budget cap, and the cap is the ROTOR's
+  // stored energy — the carriage's momentum is not part of it and should not be
+  // swallowed by it. The multiplier is flat across the stroke since the
+  // carriage runs at a constant rate.
+  function flingScale() {
+    if (!track || carriageRate >= 0) return 1;
+    const moving = m.clamp(-carriageRate * track.flingSeconds, 0, 1);
+    return 1 + (track.hitBoost - 1) * moving;
+  }
+
   let omega = 0;
   let angle = 0;
   let lastEmittedRatio = -1;
   let lastEmittedPowered = false;
   const lastHitAt = new Map(); // "foe" | "arena" -> simTime
 
-  // Tantrum's fist arms: a second, independent mechanism on the alt channel.
-  // They punch straight out over the drum, so their zone is short and high —
-  // they hit what is already pressed against the front, which is exactly the
-  // moment the drum has stalled against an opponent and needs help.
+  // Tantrum's fist arms: a third, independent mechanism on the aux channel.
+  // They hinge on the axle across the back of the bot and swing up through a
+  // quarter turn, so their zone is short and high — they hit what is already
+  // pressed against the front, which is exactly the moment the drum has stalled
+  // against an opponent and needs help.
   const fists = w.fists ?? null;
   const fistZone = fists ? frontZone(spec, fists.reach ?? 1.0, { pad: -0.1, minY: -0.2, maxY: 1.6 }) : null;
-  let fistStroke = 0; // 0 arms back, 1 arms punched out
+  let fistStroke = 0; // 0 arms down at rest, 1 arms up at full lift
   let fistOut = false; // debounces one hit per punch
   function updateFists(dt, ctx) {
-    const punching = Boolean(ctx.input?.sawActive);
+    const punching = Boolean(ctx.input?.auxActive);
     const seconds = Math.max(0.05, fists.punchSeconds ?? 0.18);
     fistStroke = m.clamp(fistStroke + (punching ? dt / seconds : -dt / (seconds * 2.2)), 0, 1);
     if (fistStroke < 0.85) { if (fistStroke < 0.4) fistOut = false; return; }
@@ -237,10 +280,15 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
       approachSpeed: Math.max(0, -m.dot(rel, h)),
     });
     if (hit.push < 1) return;
+    // A drum on a carriage that is mid-fling arrives with the machine's own
+    // closing speed added to it, and that is the whole reason to pull it back.
+    const fling = flingScale();
+    const push = hit.push * fling;
+    const lift = hit.lift * fling;
 
     // Target: horizontal push + lift at the real contact point.
     foe.body.applyImpulseAtPoint(
-      m.add(m.scale(h, hit.push), m.scale(UP, hit.lift)),
+      m.add(m.scale(h, push), m.scale(UP, lift)),
       contact.point,
       true,
     );
@@ -282,10 +330,10 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
       // Damage runs off v1's pre-impulseScale hit strength, not the applied
       // impulse: that split is why Minotaur hurts without shoving and Tombstone
       // throws you across the box without doing proportionate damage.
-      impulse: hit.damageImpulse,
-      appliedImpulse: hit.push, // what the body actually got, for effects/haptics
+      impulse: hit.damageImpulse * fling,
+      appliedImpulse: push, // what the body actually got, for effects/haptics
       energyBefore,
-      heavy: hit.push / foe.mass >= 12, // "heavy" = it launched them (ft/s), not "it capped"
+      heavy: push / foe.mass >= 12, // "heavy" = it launched them (ft/s), not "it capped"
     });
     lastHitAt.set("foe", simTime);
   }
@@ -399,11 +447,15 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
       });
       if (gyro) vehicle.body.applyTorqueImpulse(gyro, true);
 
+      // Before the contact check, so a hit landing this step sees where the
+      // carriage has actually got to and how fast it is travelling.
+      if (track) updateTrack(dt, ctx);
       if (ratio > TU.minHitRatio) checkContacts(ctx);
       if (fists) updateFists(dt, ctx);
     },
     getAngle: () => angle,
     getSubAngle: () => fistStroke,
+    getTrack: () => carriage,
     getRatio: () => omega / w.maxOmega,
     setOmega(value) {
       omega = m.clamp(value, 0, w.maxOmega);
@@ -415,6 +467,11 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
       lastHitAt.clear();
       fistStroke = 0;
       fistOut = false;
+      if (track) {
+        carriage = 0;
+        carriageRate = 0;
+        collider.setTranslationWrtParent({ x: w.pivot.x, y: w.pivot.y, z: w.pivot.z });
+      }
     },
   };
 }

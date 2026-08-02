@@ -49,6 +49,8 @@ export async function createSim({ bots, emit }) {
       quaternion: m.qClone(body.rotation()),
       weaponAngle: weapons[i].getAngle(),
       weaponSubAngle: weapons[i].getSubAngle?.() ?? 0,
+      // 0..1 along a sliding weapon's track (Tantrum's drum carriage).
+      weaponTrack: weapons[i].getTrack?.() ?? 0,
       weaponRatio: weapons[i].getRatio(),
       wheelSpin: vehicles[i].getWheelSpin(),
       probeCompression: vehicles[i].probeCompression(),
@@ -114,6 +116,7 @@ export async function createSim({ bots, emit }) {
         quaternion: m.qNlerp(prev[i].quaternion, curr[i].quaternion, t),
         weaponAngle: m.lerp(prev[i].weaponAngle, curr[i].weaponAngle, t),
         weaponSubAngle: m.lerp(prev[i].weaponSubAngle, curr[i].weaponSubAngle, t),
+        weaponTrack: m.lerp(prev[i].weaponTrack, curr[i].weaponTrack, t),
         weaponRatio: m.lerp(prev[i].weaponRatio, curr[i].weaponRatio, t),
         wheelSpin: curr[i].wheelSpin.map((s, w) => m.lerp(prev[i].wheelSpin[w], s, t)),
         probeCompression: curr[i].probeCompression.slice(),

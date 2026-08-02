@@ -368,6 +368,31 @@ window.__strokeAt = async (stroke, zMax = null) => {
   return { stroke, ...measureBite(zMax) };
 };
 
+// The general form of the above: pose from ANY render state and report where
+// the moving assemblies ended up. __strokeAt only ever varies weaponAngle, so
+// it cannot see a mechanism driven by another channel — Tantrum's drum rides
+// weaponTrack and its arms ride weaponSubAngle, and both were invisible to
+// every measurement tool in here until this existed.
+window.__poseAt = async (partial = {}) => {
+  const { syncBotVisual } = await import("/src/engine/botAnimation.js");
+  current.__poseVisual ||= {
+    parts: current.parts, group: current.group, weaponIsPlaceholder: current.weaponIsPlaceholder,
+  };
+  syncBotVisual(current.__poseVisual, current.spec, {
+    position: new THREE.Vector3(0, 0, 0),
+    quaternion: new THREE.Quaternion(),
+    weaponAngle: 0,
+    weaponSubAngle: 0,
+    weaponTrack: 0,
+    wheelSpin: [],
+    ...partial,
+  });
+  current.group.updateMatrixWorld(true);
+  const aux = {};
+  for (const [name, node] of Object.entries(current.parts.aux || {})) aux[name] = vbox(node);
+  return { state: partial, weapon: vbox(current.parts.weapon), aux };
+};
+
 // Draw the catalog colliders as wireframes so a screenshot shows fit directly.
 window.__colliders = (show) => {
   overlays.clear();
