@@ -8,8 +8,6 @@ import * as THREE from "three";
 import { weaponVisualAngle } from "../assets/models.js";
 
 const scratchAxis = new THREE.Vector3();
-const UP = new THREE.Vector3(0, 1, 0);
-const scratchReach = new THREE.Vector3();
 
 // --- spinner visuals ---------------------------------------------------------
 // A rotor's DISPLAYED speed is not its physical speed and must not be. A real
@@ -86,40 +84,6 @@ export function syncBotVisual(visual, spec, state, dt = 1 / 60) {
     const stroke = THREE.MathUtils.clamp(state.weaponAngle ?? 0, 0, 1);
     ram.scale.y = 0.35 + 0.65 * stroke;
   }
-  // ---- REMOVABLE: jaw slide rig (spec.weapon.jawSlide) --------------------
-  // Quantum's jaw cannot reach its own pallet by rotating (see catalog.js), so
-  // the whole assembly travels forward and down as it closes, carrying the
-  // grey hinge beam with it and extending a ram behind it. Delete this block
-  // and the one in models.js to revert to a purely rotating jaw.
-  const slide = spec.weapon?.jawSlide;
-  if (slide && visual.parts.weapon) {
-    const stroke = THREE.MathUtils.clamp(state.weaponAngle ?? 0, 0, 1);
-    // Rest positions are captured once, so this stays correct across rematches.
-    const rest = (visual.__jawSlideRest ||= {
-      weapon: visual.parts.weapon.position.clone(),
-      axle: visual.parts.aux?.jawAxle?.position.clone() || null,
-    });
-    const dz = -slide.forward * stroke;
-    const dy = -slide.down * stroke;
-    visual.parts.weapon.position.set(rest.weapon.x, rest.weapon.y + dy, rest.weapon.z + dz);
-    const axle = visual.parts.aux?.jawAxle;
-    if (axle && rest.axle) axle.position.set(rest.axle.x, rest.axle.y + dy, rest.axle.z + dz);
-    // The ram spans its fixed mount and the beam's moving base: extend it to
-    // the new distance and aim it along that line.
-    const ramMount = visual.parts.aux?.jawRam;
-    if (ramMount && rest.axle) {
-      const restLength = ramMount.userData.restLength || 1;
-      scratchReach.set(
-        rest.axle.x - ramMount.position.x,
-        rest.axle.y + dy - ramMount.position.y,
-        rest.axle.z + dz - ramMount.position.z,
-      );
-      const length = Math.max(0.05, scratchReach.length());
-      ramMount.scale.set(1, length / restLength, 1);
-      ramMount.quaternion.setFromUnitVectors(UP, scratchReach.normalize());
-    }
-  }
-
   // Tantrum's fists: a SECOND independent mechanism, so it cannot be a
   // weaponSub (a sub inherits the drum's spin). It hinges off its own aux
   // anchor from the sim's punch stroke.

@@ -1,0 +1,34 @@
+{
+  "_comment": "Blip's flipper sits in a pocket the scan never closed: down both long edges of the plate, and across the strip in front of it, there is nothing between the flipper and the frame and you look straight through into the machine. The geometry is genuinely absent — the raw Tripo segmentation carries exactly the same 21 parts as the shipped GLB with identical vertex counts, so nothing was lost in partitioning and there is nothing to recover by re-segmenting. Closed with a floor UNDER the pocket rather than by widening the plate, because the flipper MOVES: anything bolted to it only covers the hole while it is down, and Blip's whole trick is throwing it up. Three strips in a U around the flipper rather than one full pan — a pan spanning the whole pocket reads as a lid sitting in the bay the moment the flipper lifts. Bounds are the measured open region (see the panel comments for the game-space numbers); coordinates here are modelBody space, game -> GLB being x*-0.2743, y*0.2743-0.2096, z*-0.2743.",
+  "parent": "modelBody",
+  "material": {
+    "name": "BlipBayFloor",
+    "_comment": "Blip's own blue, sampled from the baked body texture (tripo_part_8 and _15 both land on sRGB ~11,84,155) and converted to the LINEAR factor glTF wants. Metalness/roughness match models.js SURFACE, which is what the loader applies to every scanned part — repaintScanned only touches materials carrying a map, so an untextured panel has to be given those values itself or it reads as chalk next to the paint it is filling in for.",
+    "baseColorFactor": [0.0030, 0.0931, 0.3419, 1],
+    "metallicFactor": 0.28,
+    "roughnessFactor": 0.42
+  },
+  "panels": [
+    {
+      "_comment": "Left gap. Measured open region x -0.72..-0.40, z -0.72..0.72 (game space); sized to it, tucking 0.02 under the plate's edge at x=-0.40. Top at y=0.58 sits just under the plate's underside at 0.616, so the seam reads as a shut panel line rather than a trench. Stops at z=0.74, well clear of the hinge at z=0.97 which dips lower than the plate, and at z=-0.58 in front.",
+      "name": "panelBayFloorL",
+      "type": "box",
+      "min": [0.1042, -0.0615, -0.2030],
+      "max": [0.1975, -0.0505, 0.1591]
+    },
+    {
+      "_comment": "Right gap. Measured open region x 0.44..0.76, z -0.72..0.68.",
+      "name": "panelBayFloorR",
+      "type": "box",
+      "min": [-0.2085, -0.0615, -0.1920],
+      "max": [-0.1152, -0.0505, 0.1591]
+    },
+    {
+      "_comment": "Front lip. Measured open region x -0.36..0.40, z -0.72..-0.56 — the strip ahead of the plate's front edge at z=-0.48, which the flipper never covers at any angle. Front edge clamped to z=-0.58, where the shell's mid-line actually ends: the raw open-cell measurement ran to z=-0.72 because 'no body geometry here' is equally true of the pocket and of the thin air past the nose, and a strip sized to that stuck out of the front of the machine as a visible bar. Only the side rails reach further forward (z=-0.79).",
+      "name": "panelBayFloorF",
+      "type": "box",
+      "min": [-0.1152, -0.0615, 0.1262],
+      "max": [0.1042, -0.0505, 0.1591]
+    }
+  ]
+}

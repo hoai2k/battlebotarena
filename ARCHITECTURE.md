@@ -398,46 +398,44 @@ flipper plate) with per-bot accent colors — the game must be fully playable
 with placeholders. Weapon pivot/axis from catalog; when a GLB weapon part
 exists, its bbox center may override pivot.
 
-### Quantum's jaw must close onto its own pallet (regression-prone)
+### Quantum's jaw must clamp onto its own front slope (regression-prone)
 
-This has been "fixed" by winding `fireAngle` down before, and that can never
-work — write it down rather than re-deriving it:
+This has been got wrong twice, so the number lives here as well as in the
+catalog. Quantum's bite has to close far enough that the tooth reaches the
+sloping front of his own bodywork — a crusher that shuts on air reads as
+broken. `fireAngle: -1.17` lands it; the old `-0.95` stopped a quarter of a
+foot short.
 
-**Rotation alone cannot reach the pallet.** The hinge sits too far back and too
-high, so the tooth's arc passes OVER the forks and comes down behind them. Past
-about -0.85 the jaw has no geometry left forward of the pallet at all, and the
-closest any pure angle gets is **0.132ft short, at -0.70**. A bigger negative
-angle looks more closed while actually holding the teeth further back and
-higher — which is exactly the trap.
-
-So Quantum carries `weapon.jawSlide`: the whole arm also travels forward (and a
-little down) as it closes. Most of the closing comes from the forward push,
-because the pallet slopes down toward the front. Shipped numbers land the tooth
-on the forks at z=-1.21 with a gap of 0.00 at full stroke.
-
-Check it in one command — `gap` must reach ~0, and the run must not go far
-negative (that is the tooth through the forks):
+Check it in one command. `gap` is the arm's closest approach to the bodywork
+under it, and it must cross zero at full stroke without running far negative
+(that would be the jaw buried in the shell):
 
 ```
-node tools/rig-inspect.mjs quantum --arc "-1.0,-0.5,0.05" --bite --bitez -1.05
+node tools/rig-inspect.mjs quantum --arc "-1.3,-0.9,0.05" --bite --bitez -0.7
 ```
 
-`--bite` reports the arm's closest approach to the bodywork under it, windowed
-by `--bitez` to the business end. The window matters: without it the minimum is
-always the hinge sitting alongside the bodywork it is bolted to, and the
-whole-arm bbox that `--arc` prints on its own is useless here because the tail
-swings up and back while the tooth comes down — `armYmin` stays low while the
-jaw closes on nothing. `window.__strokeAt(stroke)` poses through the game's own
-`syncBotVisual`, which is the only honest check for a rig that does more than
-rotate about its pivot.
+**Re-measure after any change to Quantum's pivot or part map.** The angle is
+only reachable because the hinge sits forward at `z=-0.5`. With the pivot back
+at `z=+0.54` the tooth's arc passed over the front and came down behind it, no
+angle could reach at all (closest 0.132 short), and that dead end sent one
+attempt off into translating the whole jaw assembly. Check the number before
+concluding rotation is not enough.
 
-`jawSlide.carryAxle` (default **false**) is the unfinished half: carrying the
-grey hinge assembly along with the arm and extending a ram behind it. It works
-numerically but does not look right — Tripo did not segment the hinge cleanly,
-so the two body pieces that make it up drag surrounding bodywork with them and
-poke past the shell at full stroke. The travel is what fixes the bite; this only
-dresses it. Deleting the whole `jawSlide` block reverts to a purely rotating jaw
-(models.js and botAnimation.js both no-op without it).
+Two traps in the measurement itself, which is why `--bite` exists rather than
+reading `--arc`'s box:
+
+- The whole-arm bbox is useless here. The arm's tail swings up and back while
+  the tooth comes down, so `armYmin` stays low while the jaw closes on nothing.
+- `--bitez` windows the test to the business end. Without it the minimum is
+  always the hinge, which sits alongside the bodywork it is bolted to and
+  reports a large overlap at every angle including fully open.
+
+`window.__strokeAt(stroke)` poses through the game's own `syncBotVisual`, which
+is what to use for any rig that does more than rotate about its pivot. Note
+that `syncBotVisual` caches per-model state on the `visual` object it is handed
+(spinner angle, and rest poses for anything that translates), so callers must
+pass a long-lived object — `main.js` and `botPreview` do; a fresh literal per
+call silently compounds.
 
 ### Model repair tools (v2/tools/)
 
@@ -453,6 +451,17 @@ driven by a checked-in spec so the edit is reviewable and repeatable:
 | `glb-carve.mjs` | `tools/repairs/hypershock-weapon.json` | parts the segmenter mis-assigned — Hypershock's `modelWeapon` had swallowed the front scoop and a fin, which then counter-rotated with the drum |
 | `glb-carve.mjs` | `tools/repairs/endgame-stand.json` | geometry the SUBJECT never had — Tripo sculpted a pair of support legs under Endgame's rear and the model rested on them, forks half a foot off the floor |
 | `glb-carve.mjs` | `tools/repairs/tantrum-reflection.json` | Tantrum's reference photo was taken on a polished floor and the scan modelled the REFLECTION as solid geometry, a mirrored ghost bot hanging under the real one |
+| `glb-add-panels.mjs` | `tools/repairs/blip-flipper-pan.json` | openings the scan never closed — down both long edges of Blip's flipper there was a strip of nothing between the plate and the frame, and you looked straight through into the machine |
+
+Blip is worth knowing about before reaching for a re-segmentation: the raw
+Tripo output carries exactly the same 21 parts as the shipped GLB, with
+identical vertex counts, so the flipper gap is absent from the scan itself and
+there is nothing to recover by re-partitioning. It is also why the fix is a
+floor UNDER the pocket rather than a wider plate — the flipper moves, so
+anything bolted to it only covers the hole while it is down, and Blip's whole
+trick is throwing it up. Two narrow strips, not one pan: a full-width pan reads
+as a grey lid sitting in the bay the moment the flipper lifts, and its front
+edge showed through the nose.
 
 `glb-carve` ops take `"allowEmpty": true` for the case those two are: one
 region swept across every part whose bounding box dips into it, where a box
