@@ -206,6 +206,10 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   // point, so they grow and push the grid below the fold.
   function syncStageSize() {
     const bothPicked = Boolean(sel.playerBotId && sel.rivalBotId);
+    // Three sizes, not two: with ONE bot picked there is something live to look
+    // at, so the bay grows well past its browsing size even though the roster
+    // is still in use. Both picked and it takes everything.
+    selectScreen?.classList.toggle("is-picking", !bothPicked && Boolean(sel.playerBotId || sel.rivalBotId));
     selectScreen?.classList.toggle("is-ready", bothPicked);
     return bothPicked;
   }

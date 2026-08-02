@@ -529,6 +529,27 @@ the previewer drops its models (GPU memory); every path back into botSelect
 calls `refreshSelect`, which re-emits the selection and repopulates the bays
 from the GLB cache.
 
+**Camera framing is a function of bot SIZE, measured off the loaded model.**
+The chase and director distances were authored around a ~2.3ft-radius machine
+and cropped anything bigger — playing Mammoth you could not see your own bot.
+`setSubjectRadius()` on both cameras scales the follow distance and height
+together (so the look-down angle holds rather than the shot just going flat),
+and main.js feeds it the bounding sphere of the LOADED group, not `bodyDims`:
+the catalog dims describe the shell, and a bot's silhouette is mostly weapon —
+Mammoth's disc rides a truss well outside its chassis. Mammoth pulls the chase
+camera from 6.4ft to 13.5ft. The bot-select pods solve the same problem per
+frame instead of once, because a pod's aspect changes with the layout: they
+store the model's fit RADIUS and derive the distance from whichever of the
+vertical or horizontal FOV demands more room.
+
+**Spinner rotation is drawn from `weaponRatio`, not `weaponAngle`.**
+`botAnimation` ignores `weaponAngle` entirely for bar/drum and integrates the
+ratio against `SPIN_VISUAL_MAX_OMEGA` (see the aliasing note there). Anything
+synthesizing a render state has to report the ratio or the rotor is drawn
+stone dead: the practice viewer once computed it correctly, reported only the
+angle, and every spinner in the bot-select screen sat motionless no matter how
+long RT was held.
+
 **The pods are a PRACTICE viewer, not a showreel.** The owner orbits with the
 right stick, leans in with LT, and works the weapon on RT/RB — the same two
 channels as a fight. Raw presses go through `game/weaponControls.js`, the ONE

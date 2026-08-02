@@ -203,6 +203,18 @@ async function startMatch({ playerBotId, rivalBotId, difficulty }) {
   });
   sim.reset();
   session = { sim, match, botVisuals, specs, difficulty, audio };
+  // Frame the cameras around the bots that are actually in this match. The
+  // radius comes off the LOADED model, not the catalog: bodyDims describe the
+  // shell, and a bot's silhouette is mostly weapon — Mammoth's disc rides a
+  // truss well outside its chassis, and at the fixed follow distance you could
+  // not see your own machine.
+  const radii = botVisuals.map((visual) => {
+    const sphere = new THREE.Box3().setFromObject(visual.group).getBoundingSphere(new THREE.Sphere());
+    return sphere.radius || 0;
+  });
+  chaseCameraA.setSubjectRadius(radii[0]);
+  chaseCameraB.setSubjectRadius(radii[1]);
+  cameraDirector.setSubjectRadius(Math.max(...radii));
   cameraDirector.snapTo(sim.getRenderState());
   chaseCameraA.snapTo(sim.getRenderState()[0]);
   chaseCameraB.snapTo(sim.getRenderState()[1]);

@@ -184,6 +184,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
         quaternion: new THREE.Quaternion(),
         weaponAngle: 0,
         weaponSubAngle: 0,
+        weaponRatio: 0,
       },
       // RAW (pre-latch) button state per channel, from pointer holds, click
       // pulses and the pad. The shaper turns these into shaped weapon input.
@@ -367,6 +368,10 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     bay.weapon.update(dt, shaped);
     bay.state.weaponAngle = bay.weapon.state.weaponAngle;
     bay.state.weaponSubAngle = bay.weapon.state.weaponSubAngle;
+    // weaponRatio is not optional: botAnimation draws a spinner's rotation from
+    // the RATIO and ignores weaponAngle entirely for bar/drum, so leaving it off
+    // this copy left every rotor in the viewer dead however long RT was held.
+    bay.state.weaponRatio = bay.weapon.state.weaponRatio ?? 0;
     // Sawblaze's saw / Whiplash's disc: the visual sub-spinner rides the same
     // sawActive channel it does in the match.
     updateWeaponSub(bay.visual, bay.spec, dt, Boolean(shaped.sawActive));
@@ -387,6 +392,17 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     const orbit = bay.orbit;
     orbit.idleFor += dt;
     if (orbit.idleFor > AUTO_SPIN_AFTER) orbit.yaw += AUTO_SPIN_SPEED * dt; // showcase drift
+    // Distance that fits the model's bounding sphere in BOTH axes. Vertical FOV
+    // is fixed; the horizontal one falls out of the aspect, and a wide bot in a
+    // wide-but-short window is limited by the vertical one — so take whichever
+    // demands more room.
+    const aspect = rect.width / Math.max(rect.height, 1);
+    if (orbit.fitRadius) {
+      const vFov = (bay.camera.fov * Math.PI) / 180;
+      const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
+      const fit = orbit.fitRadius / Math.sin(Math.min(vFov, hFov) / 2);
+      orbit.dist = clamp(fit * 1.08, 3.5, 40); // 8% margin so nothing kisses the edge
+    }
     const dist = orbit.dist * orbit.zoom * (1 - 0.42 * clamp(orbit.lean, 0, 1));
     const target = new THREE.Vector3(bay.x, orbit.targetY, 0);
     bay.camera.position.set(
@@ -395,7 +411,6 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       dist * Math.cos(orbit.pitch) * Math.cos(orbit.yaw),
     );
     bay.camera.lookAt(target);
-    const aspect = rect.width / Math.max(rect.height, 1);
     if (Math.abs(bay.camera.aspect - aspect) > 0.001) {
       bay.camera.aspect = aspect;
       bay.camera.updateProjectionMatrix();
@@ -412,7 +427,12 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     box.getCenter(center);
     const radius = size.length() / 2;
     bay.orbit.targetY = center.y + size.y * 0.06; // a touch high: weapons swing UP
-    bay.orbit.dist = clamp(radius * 2.2, 3.5, 26);
+    // Store the RADIUS, not a distance: the pod's aspect changes with layout
+    // (and the bay grows when a bot is picked), and a distance that fits a tall
+    // narrow window crops a wide one. updateCamera solves it per frame against
+    // the live aspect so the whole bot is always inside the frame.
+    bay.orbit.fitRadius = radius;
+    bay.orbit.dist = clamp(radius * 2.2, 3.5, 26); // seed until the first frame
     bay.orbit.zoom = 1;
   }
 

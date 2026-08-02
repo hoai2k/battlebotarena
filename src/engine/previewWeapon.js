@@ -46,7 +46,11 @@ export function createPreviewWeapon(spec) {
 
   // Shared output, read by botAnimation's syncBotVisual exactly as the sim's
   // render state would be.
-  const state = { weaponAngle: 0, weaponSubAngle: 0 };
+  // weaponRatio matters as much as weaponAngle: botAnimation drives a spinner's
+  // DRAWN rotation from the ratio (see SPIN_VISUAL_MAX_OMEGA there) and ignores
+  // weaponAngle entirely for bar/drum, so a preview that only reported the
+  // angle left every rotor in the viewer stone dead however long you held RT.
+  const state = { weaponAngle: 0, weaponSubAngle: 0, weaponRatio: 0 };
 
   // --- per-type state ------------------------------------------------------
   let omega = 0; // spinner rotor
@@ -72,6 +76,7 @@ export function createPreviewWeapon(spec) {
       : Math.max(0, omega - spinDownRate * dt);
     visualAngle += (omega / maxOmega) * VISUAL_OMEGA_CAP * dt;
     state.weaponAngle = visualAngle;
+    state.weaponRatio = omega / maxOmega;
     // Tantrum's fists: momentary punch on the secondary channel, same rates as
     // the sim's updateFists.
     if (w.fists) {
@@ -201,6 +206,7 @@ export function createPreviewWeapon(spec) {
     t = 0;
     state.weaponAngle = 0;
     state.weaponSubAngle = 0;
+    state.weaponRatio = 0;
   }
 
   return {
