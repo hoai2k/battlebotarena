@@ -1,0 +1,9 @@
+[
+  { "mode": "reparent", "part": 12, "parent": "modelBody" },
+  { "mode": "reparent", "part": 16, "parent": "modelBody" },
+  { "mode": "reparent", "part": 18, "parent": "modelBody" },
+  { "mode": "reparent", "part": 24, "parent": "modelBody" },
+  { "mode": "reparent", "part": 32, "parent": "modelBody" },
+  { "mode": "mirror", "part": 901, "axis": 2, "plane": -0.010, "keep": "+" },
+  { "mode": "mirror", "part": 14, "axis": 2, "plane": -0.010, "keep": "+" }
+]

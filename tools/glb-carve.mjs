@@ -8,6 +8,10 @@
 //              hubs, which belong to the lifter)
 //   pivot    — rewrite a group node's extras.pivotLocal, i.e. the hinge the
 //              runtime loader turns that assembly about
+//   mirror   — replace the bad half of a SYMMETRIC part with a mirrored copy of
+//              the good half (writes new vertices)
+//   clone    — duplicate a part rotated half a turn about an axis, for a bar
+//              spinner whose second end the scan never resolved
 //   islands  — MOVE every connected component below `minTris` into a new part.
 //              A region carved out of a scan shell drags loose specks of the
 //              donor along its cut line; they are not describable by position
@@ -183,6 +187,36 @@ function appendIndexBuffer(indices) {
   return accessorIndex;
 }
 
+
+function readVec(accessorIndex, vertexIndex, size) {
+  const accessor = json.accessors[accessorIndex];
+  const view = json.bufferViews[accessor.bufferView];
+  const stride = view.byteStride || size * 4;
+  const offset = (view.byteOffset || 0) + (accessor.byteOffset || 0) + vertexIndex * stride;
+  const out = [];
+  for (let i = 0; i < size; i += 1) out.push(bin.readFloatLE(offset + i * 4));
+  return out;
+}
+
+/** Append a float accessor (VEC2/VEC3) and return its index. */
+function appendFloatAccessor(rows, size) {
+  const bytes = Buffer.alloc(align4(rows.length * size * 4));
+  rows.forEach((row, r) => row.forEach((v, c) => bytes.writeFloatLE(v, (r * size + c) * 4)));
+  const viewIndex = json.bufferViews.length;
+  json.bufferViews.push({ buffer: 0, byteOffset: appendOffset, byteLength: rows.length * size * 4, target: 34962 });
+  appendChunks.push(bytes);
+  appendOffset += bytes.length;
+  const min = new Array(size).fill(Infinity);
+  const max = new Array(size).fill(-Infinity);
+  for (const row of rows) row.forEach((v, c) => { min[c] = Math.min(min[c], v); max[c] = Math.max(max[c], v); });
+  const accessorIndex = json.accessors.length;
+  json.accessors.push({
+    bufferView: viewIndex, componentType: 5126, count: rows.length,
+    type: size === 3 ? "VEC3" : "VEC2", min, max,
+  });
+  return accessorIndex;
+}
+
 function nodeIndexByName(name) {
   const i = json.nodes.findIndex((n) => n.name === name);
   if (i < 0) throw new Error(`node ${name} not found`);
@@ -194,6 +228,131 @@ for (const op of ops) {
     const node = json.nodes[nodeIndexByName(op.node)];
     node.extras = { ...(node.extras || {}), pivotLocal: op.pivotLocal };
     console.log(`${op.node} [pivot]: pivotLocal = [${op.pivotLocal.join(", ")}]`);
+    continue;
+  }
+  if (op.mode === "clone") {
+    // Duplicate a part, rotated half a turn about an axis. A bar spinner has
+    // TWO ends and they are the same casting a half-turn apart; when the scan
+    // resolves only one of them, a mirror is the wrong symmetry (it gives a
+    // reflected end, not the opposite one) and this is the right one. Rotation
+    // preserves handedness, so unlike `mirror` the winding is left alone.
+    const node = json.nodes[nodeIndexByName(`tripo_part_${op.part}`)];
+    const primitive = json.meshes[node.mesh].primitives[0];
+    const posAccessor = primitive.attributes.POSITION;
+    const normalAccessor = primitive.attributes.NORMAL;
+    const uvAccessor = primitive.attributes.TEXCOORD_0;
+    const indices = readIndices(primitive.indices);
+    const axis = op.axis ?? 0;                       // the axis turned about
+    const translation = node.translation || [0, 0, 0];
+    // Half a turn about `axis` negates the OTHER two components about centre.
+    const other = [0, 1, 2].filter((i) => i !== axis);
+    const centre = op.center;
+    if (!Array.isArray(centre)) throw new Error(`part ${op.part}: clone needs "center"`);
+
+    const remap = new Map();
+    const position = [];
+    const normal = [];
+    const uv = [];
+    for (const vi of indices) {
+      if (remap.has(vi)) continue;
+      remap.set(vi, position.length);
+      const p = readPosition(posAccessor, vi);
+      for (const i of other) p[i] = 2 * (centre[i] - translation[i]) - p[i];
+      position.push(p);
+      if (normalAccessor !== undefined) {
+        const n = readVec(normalAccessor, vi, 3);
+        for (const i of other) n[i] = -n[i];
+        normal.push(n);
+      }
+      if (uvAccessor !== undefined) uv.push(readUV(uvAccessor, vi));
+    }
+    const cloned = [];
+    for (const vi of indices) cloned.push(remap.get(vi));
+
+    const attributes = { POSITION: appendFloatAccessor(position, 3) };
+    if (normal.length) attributes.NORMAL = appendFloatAccessor(normal, 3);
+    if (uv.length) attributes.TEXCOORD_0 = appendFloatAccessor(uv, 2);
+    const meshIndex = json.meshes.length;
+    json.meshes.push({
+      name: `tripo_mesh_part_${op.part}_clone`,
+      primitives: [{ attributes, indices: appendIndexBuffer(cloned), material: primitive.material }],
+    });
+    const newNodeIndex = json.nodes.length;
+    json.nodes.push({ name: `tripo_part_${op.part}`, mesh: meshIndex, translation: [...translation] });
+    const holder = json.nodes.find((n) => (n.children || []).includes(nodeIndexByName(`tripo_part_${op.part}`)));
+    if (holder) { holder.children.push(newNodeIndex); }
+    else json.scenes[0].nodes.push(newNodeIndex);
+    console.log(`part ${op.part} [clone]: ${cloned.length / 3} tris turned 180 about axis ${axis}`);
+    continue;
+  }
+  if (op.mode === "mirror") {
+    // Replace the bad half of a SYMMETRIC part with a mirrored copy of the good
+    // half. Photogrammetry lights one side better than the other and routinely
+    // resolves the far end of a drum as ragged shell while the near end is
+    // clean; the robot is symmetric, so the good half is the whole answer.
+    // Unlike every other op this writes NEW vertices — a mirrored triangle
+    // cannot be expressed by re-indexing the ones already there.
+    const node = json.nodes[nodeIndexByName(`tripo_part_${op.part}`)];
+    const primitive = json.meshes[node.mesh].primitives[0];
+    const posAccessor = primitive.attributes.POSITION;
+    const indices = readIndices(primitive.indices);
+    const axis = op.axis ?? 0;
+    const plane = op.plane ?? 0;
+    const keepPositive = (op.keep ?? "+") === "+";
+    const translation = node.translation || [0, 0, 0];
+
+    const kept = [];
+    for (let t = 0; t < indices.length; t += 3) {
+      let mid = 0;
+      for (let k = 0; k < 3; k += 1) mid += (readPosition(posAccessor, indices[t + k])[axis] + translation[axis]) / 3;
+      if ((mid > plane) === keepPositive) kept.push(indices[t], indices[t + 1], indices[t + 2]);
+    }
+    if (!kept.length) throw new Error(`part ${op.part}: mirror kept 0 triangles — check plane/keep`);
+
+    // Compact the kept side into its own vertex set, then emit its reflection.
+    const remap = new Map();
+    const position = [];
+    const normal = [];
+    const uv = [];
+    const normalAccessor = primitive.attributes.NORMAL;
+    const uvAccessor = primitive.attributes.TEXCOORD_0;
+    for (const vi of kept) {
+      if (remap.has(vi)) continue;
+      remap.set(vi, position.length);
+      const p = readPosition(posAccessor, vi);
+      p[axis] = 2 * (plane - translation[axis]) - p[axis]; // reflect in the node's own frame
+      position.push(p);
+      if (normalAccessor !== undefined) {
+        const n = readVec(normalAccessor, vi, 3);
+        n[axis] = -n[axis];
+        normal.push(n);
+      }
+      if (uvAccessor !== undefined) uv.push(readUV(uvAccessor, vi));
+    }
+    // Reflection flips handedness, so the winding has to flip back or every
+    // mirrored face is inside-out and disappears under backface culling.
+    const mirrored = [];
+    for (let t = 0; t < kept.length; t += 3) {
+      mirrored.push(remap.get(kept[t]), remap.get(kept[t + 2]), remap.get(kept[t + 1]));
+    }
+
+    primitive.indices = appendIndexBuffer(kept);
+    const attributes = { POSITION: appendFloatAccessor(position, 3) };
+    if (normal.length) attributes.NORMAL = appendFloatAccessor(normal, 3);
+    if (uv.length) attributes.TEXCOORD_0 = appendFloatAccessor(uv, 2);
+    const meshIndex = json.meshes.length;
+    json.meshes.push({
+      name: `tripo_mesh_part_${op.part}_mirror`,
+      primitives: [{ attributes, indices: appendIndexBuffer(mirrored), material: primitive.material }],
+    });
+    const newNodeIndex = json.nodes.length;
+    json.nodes.push({ name: `tripo_part_${op.part}`, mesh: meshIndex, translation: [...translation] });
+    const parentName = op.parent || Object.entries(json.nodes).find(([, n]) =>
+      (n.children || []).includes(nodeIndexByName(`tripo_part_${op.part}`)))?.[1]?.name;
+    const parent = parentName ? json.nodes.find((n) => n.name === parentName) : null;
+    if (parent) { parent.children = parent.children || []; parent.children.push(newNodeIndex); }
+    else json.scenes[0].nodes.push(newNodeIndex);
+    console.log(`part ${op.part} [mirror]: kept ${kept.length / 3} tris on the ${keepPositive ? "+" : "-"} side, mirrored to ${mirrored.length / 3}`);
     continue;
   }
   if (op.mode === "reparent") {

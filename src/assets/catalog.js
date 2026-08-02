@@ -96,6 +96,10 @@ export const CATALOG = {
     referenceImage: "./public/reference/biteforce.png",
     modelPath: "./public/models/biteforce.glb",
     modelYaw: Math.PI / 2, // GLB authoring facing -> game -Z forward
+    // Bite Force's drive is inboard of its frame rails and segmentation never
+    // saw a wheel, so the procedural fallback was bolting four blue drums to
+    // the outside of a bot that does not have any.
+    hideWheels: true,
     // --- the real machine ---------------------------------------------
     realWorld: {
       team: "Aptyx Designs", from: "Mountain View, CA",
@@ -1008,13 +1012,19 @@ export const CATALOG = {
     accentDark: "#16181c",
     weapon: {
       type: "drum",
-      pivot: { x: 0.0394, y: 0.6992, z: -0.9454 }, // MEASURED drum axle, game space
+      // The drum is parts 14 + 901 and nothing else: segmentation had five
+      // bearing blocks and a pulley spinning with it, which is what made the
+      // weapon read as a lump rather than a drum. Its far end also came out of
+      // the scan ragged, so the good half is mirrored across the axle — the
+      // real drum is symmetric. See tools/repairs/copperhead-drum-mirror.json.
+      pivotFromCatalog: true,
+      pivot: { x: 0.04, y: 0.713, z: -0.81 },
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 1.6,
       inertia: 1.25,
       maxOmega: 560,
       budgetCap: 340,
-      radius: 0.5367, // MEASURED swept radius about the axle
+      radius: 0.423, // MEASURED swept radius of the drum alone
       dims: { x: 0.8863, y: 0.5367, z: 0.5367 },
       tuning: { efficiency: 0.58, impulseScale: 10.5, liftScale: 30.0, liftVelocity: 4.5, gyroScale: 1.0 },
     },
