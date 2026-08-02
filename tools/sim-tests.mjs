@@ -561,6 +561,26 @@ await test("catalog: nothing but a wedge sits in front of a spinner", async () =
   }
 });
 
+await test("catalog: every bot's colliders clear the floor at rest", async () => {
+  // The suspension parks a bot's ORIGIN at (probeTravel - restCompression) minus
+  // its lowest wheel anchor. Colliders are authored in that origin's frame from
+  // y=0 up, so an anchor set too high buries the chassis in the floor: it takes
+  // the load off the wheels and the bot cannot drive. Copperhead sat 0.24ft
+  // under and did not move at all; Overhaul at 0.19ft could turn on the spot but
+  // not go anywhere, which reads as a drive bug rather than a geometry one.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const { VEHICLE_TUNING } = await import("../src/sim/vehicle.js");
+  for (const spec of Object.values(CATALOG)) {
+    const minAnchorY = Math.min(...spec.wheelAnchors.map((a) => a.y));
+    const originY = (VEHICLE_TUNING.probeTravel - VEHICLE_TUNING.restCompression) - minAnchorY;
+    const lowest = Math.min(...spec.colliders.map((c) => (c.offset?.y ?? 0)
+      - (c.shape === "cylinder" ? c.radius : (c.halfExtents?.y ?? 0))));
+    const clearance = originY + lowest;
+    check(clearance > -0.02 && clearance < 0.12, `${spec.id}: rests on its wheels`,
+      `lowest collider sits ${clearance.toFixed(3)}ft from the floor`);
+  }
+});
+
 // ---------------------------------------------------------------------------
 
 const failed = results.filter((r) => !r.ok);

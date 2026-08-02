@@ -14,6 +14,8 @@
 //   --colliders        draw spec.colliders as green wireframes
 //   --sweep            draw the weapon's swept circle at its pivot
 //   --solo <part>      show only weapon | body | wheels | aux
+//   --part <name>      highlight one tripo_part_N red and grey everything else
+//   --axle [name]      best-fit spin axle + swept radius for the weapon (or one part)
 //   --arm <angle>      pose the arm at one angle before shooting
 //   --arc <from,to,step>  sweep the arm and print a table (no screenshots)
 //   --toglb <x,y,z>    convert a game-space point into the GLB's own space,
@@ -119,6 +121,21 @@ for (const id of ids) {
     continue;
   }
 
+  const partList = await page.evaluate(() => window.__parts());
+  const owners = {};
+  for (const m of partList) (owners[m.owner] ||= []).push(m.name);
+  for (const [owner, names] of Object.entries(owners)) {
+    console.log(`  ${owner.padEnd(10)} ${names.join(" ")}`);
+  }
+
+  const axleOf = opt("--axle");
+  if (axleOf !== null) {
+    const a = await page.evaluate((n) => window.__axle(n || null), axleOf === "" ? null : axleOf);
+    if (a) console.log(`  best-fit axle ${a.axle.map(f).join(", ")}  radius ${f(a.radius)}`);
+  }
+
+  const part = opt("--part");
+  if (part) await page.evaluate((n) => window.__part(n, "highlight"), part);
   if (has("--colliders")) await page.evaluate(() => window.__colliders(true));
   if (has("--sweep")) await page.evaluate(() => window.__sweep(true));
   if (has("--tint")) await page.evaluate(() => window.__tint(true));

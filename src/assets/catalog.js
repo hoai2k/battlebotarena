@@ -111,10 +111,10 @@ export const CATALOG = {
     weaponWeightLbs: 40,
     bodyDims: { x: 3.1248, y: 1.519, z: 2.5932 }, // scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -1.2803, y: 0.3, z: -0.8137 },
-      { x: 1.2803, y: 0.3, z: -0.8137 },
-      { x: -1.2803, y: 0.3, z: 0.8137 },
-      { x: 1.2803, y: 0.3, z: 0.8137 },
+      { x: -1.2803, y: 0.21, z: -0.8137 },
+      { x: 1.2803, y: 0.21, z: -0.8137 },
+      { x: -1.2803, y: 0.21, z: 0.8137 },
+      { x: 1.2803, y: 0.21, z: 0.8137 },
     ],
     maxSpeedFps: mph(8.182), // 12.00
     accel: 8.2,
@@ -174,10 +174,10 @@ export const CATALOG = {
     weaponWeightLbs: 80,
     bodyDims: { x: 4.2191, y: 2.1095, z: 4.2191 }, // scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -1.1874, y: 0.29, z: -0.7453 },
-      { x: 1.1874, y: 0.29, z: -0.7453 },
-      { x: -1.1874, y: 0.29, z: 1.2758 },
-      { x: 1.1874, y: 0.29, z: 1.2758 },
+      { x: -1.1874, y: 0.21, z: -0.7453 },
+      { x: 1.1874, y: 0.21, z: -0.7453 },
+      { x: -1.1874, y: 0.21, z: 1.2758 },
+      { x: 1.1874, y: 0.21, z: 1.2758 },
     ],
     maxSpeedFps: mph(7.5), // 11.00
     accel: 6.7,
@@ -230,10 +230,10 @@ export const CATALOG = {
     bodyDims: { x: 5.0208, y: 2.8323, z: 3.7334 }, // scaled to realWorld.size.widthFt
     // Two real wheels; probes doubled front/rear inside each wheel footprint.
     wheelAnchors: [
-      { x: -1.7627, y: 0.5, z: -0.8913 },
-      { x: 1.7627, y: 0.5, z: -0.8913 },
-      { x: -1.7627, y: 0.5, z: 0.8913 },
-      { x: 1.7627, y: 0.5, z: 0.8913 },
+      { x: -1.7627, y: 0.21, z: -0.8913 },
+      { x: 1.7627, y: 0.21, z: -0.8913 },
+      { x: -1.7627, y: 0.21, z: 0.8913 },
+      { x: 1.7627, y: 0.21, z: 0.8913 },
     ],
     maxSpeedFps: mph(3.682), // 5.40
     accel: 8.4,
@@ -290,10 +290,10 @@ export const CATALOG = {
     weaponWeightLbs: 250, // v1 value: jaw assembly modeled as massive
     bodyDims: { x: 3.2646, y: 1.7955, z: 2.9381 }, // scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -0.9032, y: 0.42, z: -0.5332 },
-      { x: 0.9032, y: 0.42, z: -0.5332 },
-      { x: -0.9032, y: 0.42, z: 0.9141 },
-      { x: 0.9032, y: 0.42, z: 0.9141 },
+      { x: -0.9032, y: 0.3069, z: -0.5332 },
+      { x: 0.9032, y: 0.3069, z: -0.5332 },
+      { x: -0.9032, y: 0.3069, z: 0.9141 },
+      { x: 0.9032, y: 0.3069, z: 0.9141 },
     ],
     maxSpeedFps: mph(7.5), // 11.00
     accel: 6.2,
@@ -360,10 +360,10 @@ export const CATALOG = {
     // and left the rear springs statically under-compressed, adding a pitch
     // bias on top of the roll.
     wheelAnchors: [
-      { x: -1.024, y: 0.17, z: -0.64 },
-      { x: 1.024, y: 0.17, z: -0.64 },
-      { x: -1.024, y: 0.17, z: 1.28 },
-      { x: 1.024, y: 0.17, z: 1.28 },
+      { x: -1.024, y: 0.21, z: -0.64 },
+      { x: 1.024, y: 0.21, z: -0.64 },
+      { x: -1.024, y: 0.21, z: 1.28 },
+      { x: 1.024, y: 0.21, z: 1.28 },
     ],
     maxSpeedFps: mph(13.636), // 20.00
     accel: 8.6,
@@ -416,10 +416,10 @@ export const CATALOG = {
     weaponWeightLbs: 70,
     bodyDims: { x: 3.3999, y: 1.3114, z: 2.7847 }, // scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -0.9714, y: 0.26, z: -0.4857 },
-      { x: 0.9714, y: 0.26, z: -0.4857 },
-      { x: -0.9714, y: 0.26, z: 0.9714 },
-      { x: 0.9714, y: 0.26, z: 0.9714 },
+      { x: -0.9714, y: 0.21, z: -0.4857 },
+      { x: 0.9714, y: 0.21, z: -0.4857 },
+      { x: -0.9714, y: 0.21, z: 0.9714 },
+      { x: 0.9714, y: 0.21, z: 0.9714 },
     ],
     maxSpeedFps: mph(10.909), // 16.00
     accel: 7.9,
@@ -471,10 +471,10 @@ export const CATALOG = {
     weaponWeightLbs: 30,
     bodyDims: { x: 3.1218, y: 2.1613, z: 2.4014 }, // scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -0.6604, y: 0.2, z: -0.9005 }, // front skids under the pan
-      { x: 0.6604, y: 0.2, z: -0.9005 },
-      { x: -1.1407, y: 0.32, z: 0.8765 }, // rear drive wheels
-      { x: 1.1407, y: 0.32, z: 0.8765 },
+      { x: -0.6604, y: 0.21, z: -0.9005 }, // front skids under the pan
+      { x: 0.6604, y: 0.21, z: -0.9005 },
+      { x: -1.1407, y: 0.33, z: 0.8765 }, // rear drive wheels
+      { x: 1.1407, y: 0.33, z: 0.8765 },
     ],
     maxSpeedFps: mph(7.773), // 11.40
     accel: 7.5,
@@ -532,10 +532,10 @@ export const CATALOG = {
     weaponWeightLbs: 80,
     bodyDims: { x: 3.8769, y: 1.4177, z: 2.9511 }, // scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -0.7233, y: 0.25, z: -0.7956 }, // front blade-support skids
-      { x: 0.7233, y: 0.25, z: -0.7956 },
-      { x: -1.5189, y: 0.39, z: 0.5208 }, // rear tires
-      { x: 1.5045, y: 0.39, z: 0.5208 },
+      { x: -0.7233, y: 0.1955, z: -0.7956 }, // front blade-support skids
+      { x: 0.7233, y: 0.1955, z: -0.7956 },
+      { x: -1.5189, y: 0.3355, z: 0.5208 }, // rear tires
+      { x: 1.5045, y: 0.3355, z: 0.5208 },
     ],
     maxSpeedFps: mph(6.545), // 9.60
     accel: 5.8,
@@ -596,10 +596,10 @@ export const CATALOG = {
     weaponWeightLbs: 24, // 11 kg head
     bodyDims: { x: 2.898, y: 1.1404, z: 2.605 }, // MEASURED shell, then scaled to realWorld.size.widthFt, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -0.9939, y: 0.2, z: -0.8893 },
-      { x: 0.9939, y: 0.2, z: -0.8893 },
-      { x: -0.9939, y: 0.2, z: 0.68 },
-      { x: 0.9939, y: 0.2, z: 0.68 },
+      { x: -0.9939, y: 0.21, z: -0.8893 },
+      { x: 0.9939, y: 0.21, z: -0.8893 },
+      { x: -0.9939, y: 0.21, z: 0.68 },
+      { x: 0.9939, y: 0.21, z: 0.68 },
     ],
     maxSpeedFps: mph(8), // 11.73
     accel: 7.0,
@@ -658,10 +658,10 @@ export const CATALOG = {
     // Four exposed wheels, MEASURED from the GLB wheel pivots. Both pairs sit
     // in the rear half — the front of the chassis is all arm and forks.
     wheelAnchors: [
-      { x: -1.2644, y: 0.23, z: -0.1654 },
-      { x: 1.2644, y: 0.23, z: -0.1654 },
-      { x: -1.2762, y: 0.23, z: 1.3235 },
-      { x: 1.2762, y: 0.23, z: 1.3235 },
+      { x: -1.2644, y: 0.21, z: -0.1654 },
+      { x: 1.2644, y: 0.21, z: -0.1654 },
+      { x: -1.2762, y: 0.21, z: 1.3235 },
+      { x: 1.2762, y: 0.21, z: 1.3235 },
     ],
     maxSpeedFps: 16.0, // known for its driving
     accel: 8.5,
@@ -724,10 +724,10 @@ export const CATALOG = {
     bodyDims: { x: 2.8948, y: 1.1842, z: 3.8158 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     // Both wheel pairs sit in the rear half — the front is all forks.
     wheelAnchors: [
-      { x: -1.0263, y: 0.22, z: 0.0789 },
-      { x: 1.0263, y: 0.22, z: 0.0789 },
-      { x: -1.0263, y: 0.22, z: 1.7632 },
-      { x: 1.0263, y: 0.22, z: 1.7632 },
+      { x: -1.0263, y: 0.2495, z: 0.0789 },
+      { x: 1.0263, y: 0.2495, z: 0.0789 },
+      { x: -1.0263, y: 0.2495, z: 1.7632 },
+      { x: 1.0263, y: 0.2495, z: 1.7632 },
     ],
     maxSpeedFps: 17.0, // weapon-class motor on every wheel
     accel: 9.5,
@@ -792,10 +792,10 @@ export const CATALOG = {
     bodyDims: { x: 4, y: 2.0444, z: 3.0555 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     // The outrigger forks ARE the support base, so the probes ride on them.
     wheelAnchors: [
-      { x: -1.4444, y: 0.2, z: -1 },
-      { x: 1.4444, y: 0.2, z: -1 },
-      { x: -1.4444, y: 0.2, z: 1 },
-      { x: 1.4444, y: 0.2, z: 1 },
+      { x: -1.4444, y: 0.21, z: -1 },
+      { x: 1.4444, y: 0.21, z: -1 },
+      { x: -1.4444, y: 0.21, z: 1 },
+      { x: 1.4444, y: 0.21, z: 1 },
     ],
     maxSpeedFps: 12.0,
     accel: 7.0,
@@ -869,10 +869,10 @@ export const CATALOG = {
     weaponWeightLbs: 45,
     bodyDims: { x: 3.0149, y: 1.0467, z: 3.5838 }, // MEASURED shell, then scaled to realWorld.size.widthFt — very low and flat
     wheelAnchors: [
-      { x: -1.1377, y: 0.2, z: -1.1377 },
-      { x: 1.1377, y: 0.2, z: -1.1377 },
-      { x: -1.1377, y: 0.2, z: 1.1377 },
-      { x: 1.1377, y: 0.2, z: 1.1377 },
+      { x: -1.1377, y: 0.21, z: -1.1377 },
+      { x: 1.1377, y: 0.21, z: -1.1377 },
+      { x: -1.1377, y: 0.21, z: 1.1377 },
+      { x: 1.1377, y: 0.21, z: 1.1377 },
     ],
     maxSpeedFps: 16.5,
     accel: 9.0,
@@ -931,10 +931,10 @@ export const CATALOG = {
     bodyDims: { x: 2.951, y: 1.5268, z: 3.6461 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     // Only the rear pair segmented out; the fronts are inboard under the deck.
     wheelAnchors: [
-      { x: -1.0824, y: 0.3, z: -0.9685 },
-      { x: 1.0824, y: 0.3, z: -0.9685 },
-      { x: -1.0824, y: 0.3, z: 0.9685 },
-      { x: 1.0824, y: 0.3, z: 0.9685 },
+      { x: -1.0824, y: 0.21, z: -0.9685 },
+      { x: 1.0824, y: 0.21, z: -0.9685 },
+      { x: -1.0824, y: 0.21, z: 0.9685 },
+      { x: 1.0824, y: 0.21, z: 0.9685 },
     ],
     maxSpeedFps: 17.0,
     accel: 9.5,
@@ -996,10 +996,10 @@ export const CATALOG = {
     // structure, so the height here is the deck, not the bounding box.
     bodyDims: { x: 3.1218, y: 1.428, z: 3.2203 },
     wheelAnchors: [
-      { x: -1.2802, y: 0.5, z: -0.8863 },
-      { x: 1.2802, y: 0.5, z: -0.8863 },
-      { x: -1.2802, y: 0.5, z: 0.8863 },
-      { x: 1.2802, y: 0.5, z: 0.8863 },
+      { x: -1.2802, y: 0.2395, z: -0.8863 },
+      { x: 1.2802, y: 0.2395, z: -0.8863 },
+      { x: -1.2802, y: 0.2395, z: 0.8863 },
+      { x: 1.2802, y: 0.2395, z: 0.8863 },
     ],
     maxSpeedFps: 14.0,
     accel: 8.0,
@@ -1035,7 +1035,9 @@ export const CATALOG = {
     referenceImage: "./public/reference/duck.png",
     modelPath: "./public/models/duck.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X
-    modelRoll: Math.PI, // MEASURED: Tripo built it upside down (wheels on top)
+    // NO modelRoll. Duck's wheels really do stand proud of its deck — look at
+    // the reference — so "wheels above the deck plane" is not the upside-down
+    // tell it is on other bots, and rolling it put thewhite deck on the floor.
     modelScale: 3.4999,
     // --- the real machine ---------------------------------------------
     // The plow is 3/4in steel and weighs 50lb — it is the widest part of the
@@ -1054,10 +1056,10 @@ export const CATALOG = {
     weaponWeightLbs: 35,
     bodyDims: { x: 2.6749, y: 0.7666, z: 2.2916 }, // MEASURED shell, then scaled to realWorld.size.widthFt — very flat
     wheelAnchors: [
-      { x: -1.2083, y: 0.3, z: -0.7916 },
-      { x: 1.2083, y: 0.3, z: -0.7916 },
-      { x: -1.2083, y: 0.3, z: 0.9416 },
-      { x: 1.2083, y: 0.3, z: 0.9416 },
+      { x: -1.2083, y: 0.21, z: -0.7916 },
+      { x: 1.2083, y: 0.21, z: -0.7916 },
+      { x: -1.2083, y: 0.21, z: 0.9416 },
+      { x: 1.2083, y: 0.21, z: 0.9416 },
     ],
     maxSpeedFps: 13.0,
     accel: 7.5,
@@ -1066,13 +1068,23 @@ export const CATALOG = {
     accentDark: "#1a1a1a",
     weapon: {
       type: "lifter",
-      pivot: { x: 0.1917, y: 0.7333, z: -0.85 }, // MEASURED scoop hinge, game space
+      // MEASURED off the reference, not off the GLB. The plow rides on two long
+      // carrier bars back to a hinge between the axles; swinging it about its
+      // own lip — which is the pivot segmentation wrote — rotates the scoop in
+      // place instead of reaching. The bars themselves are built procedurally,
+      // because photogrammetry resolved two thin tubes as nothing at all.
+      pivotFromCatalog: true,
+      pivot: { x: 0, y: 0.32, z: 0.34 },
+      arms: [
+        { x: -1.1, radius: 0.05, from: { y: 0.34, z: 0.34 }, to: { y: 0.3, z: -0.98 }, color: "#b9bdc4" },
+        { x: 1.1, radius: 0.05, from: { y: 0.34, z: 0.34 }, to: { y: 0.3, z: -0.98 }, color: "#b9bdc4" },
+      ],
       axis: { x: 1, y: 0, z: 0 },
       // MEASURED: the scoop is baked DOWN (0 rests its lip on the floor at
       // y 0.008) and 1.1 stands it up over the nose. That resting pose is why
       // the front collider below is a wedge.
       restAngle: 0,
-      fireAngle: 1.1,
+      fireAngle: 0.6, // MEASURED on the new hinge: plow tip up at 1.5ft, still reaching forward
       liftImpulse: 190,
       liftRecoil: 0.5,
       lowerSeconds: 0.6,
@@ -1114,10 +1126,10 @@ export const CATALOG = {
     weaponWeightLbs: 55,
     bodyDims: { x: 3.3, y: 1.7083, z: 2.2421 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -1.2618, y: 0.25, z: -0.6794 },
-      { x: 1.2618, y: 0.25, z: -0.6794 },
-      { x: -1.2618, y: 0.25, z: 0.6794 },
-      { x: 1.2618, y: 0.25, z: 0.6794 },
+      { x: -1.2618, y: 0.21, z: -0.6794 },
+      { x: 1.2618, y: 0.21, z: -0.6794 },
+      { x: -1.2618, y: 0.21, z: 0.6794 },
+      { x: 1.2618, y: 0.21, z: 0.6794 },
     ],
     maxSpeedFps: 15.0,
     accel: 8.5,
@@ -1126,17 +1138,22 @@ export const CATALOG = {
     accentDark: "#191c24",
     weapon: {
       type: "drum",
-      pivot: { x: 0.0679, y: 0.7959, z: -0.3979 }, // MEASURED disc axle, game space
+      // The blade is tripo_part_20 — the DARK teardrop carrying the yellow
+      // stripe. Segmentation filed a WHITE frame teardrop as the weapon
+      // instead, so what spun was a piece of bodywork while the real blade sat
+      // still; tools/repairs/endgame-weapon.json swaps them.
+      // Axle and radius are the smallest circle that part sweeps, measured with
+      // `rig-inspect --axle`: for a blade this shape the min-enclosing centre
+      // IS the axle, and it lands 0.14ft off the bbox centre.
+      pivotFromCatalog: true,
+      pivot: { x: 0.006, y: 0.912, z: -0.268 },
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 0.9,
       inertia: 1.4,
       maxOmega: 640,
       budgetCap: 400,
-      // MEASURED swept radius. The blade is a TEARDROP: its axle is at the fat
-      // end, so the bbox centre is 0.29ft off the real hub and the swept
-      // circle is set by the tip, not by half the height.
-      radius: 0.7542,
-      dims: { x: 0.3494, y: 0.7542, z: 0.7542 },
+      radius: 0.471,
+      dims: { x: 0.092, y: 0.471, z: 0.471 },
       tuning: { efficiency: 0.6, impulseScale: 11.5, liftScale: 30.0, liftVelocity: 5.0, gyroScale: 1.1 },
     },
     colliders: [
@@ -1172,10 +1189,10 @@ export const CATALOG = {
     weaponWeightLbs: 45,
     bodyDims: { x: 2.7049, y: 1.1116, z: 4.0141 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -1.0622, y: 0.3, z: -1.2351 },
-      { x: 1.0622, y: 0.3, z: -1.2351 },
-      { x: -0.9881, y: 0.3, z: 1.6427 },
-      { x: 0.9881, y: 0.3, z: 1.6427 },
+      { x: -1.0622, y: 0.21, z: -1.2351 },
+      { x: 1.0622, y: 0.21, z: -1.2351 },
+      { x: -0.9881, y: 0.21, z: 1.6427 },
+      { x: 0.9881, y: 0.21, z: 1.6427 },
     ],
     maxSpeedFps: 14.5,
     accel: 8.0,
@@ -1243,10 +1260,10 @@ export const CATALOG = {
     weaponWeightLbs: 40,
     bodyDims: { x: 5.3381, y: 6.066, z: 4.8932 }, // MEASURED frame, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -2.4264, y: 0.25, z: -1.8198 },
-      { x: 2.4264, y: 0.25, z: -1.8198 },
-      { x: -2.3455, y: 0.25, z: 1.1525 },
-      { x: 2.3455, y: 0.25, z: 1.1525 },
+      { x: -2.4264, y: 0.21, z: -1.8198 },
+      { x: 2.4264, y: 0.21, z: -1.8198 },
+      { x: -2.3455, y: 0.21, z: 1.1525 },
+      { x: 2.3455, y: 0.21, z: 1.1525 },
     ],
     maxSpeedFps: 11.0,
     accel: 5.5,
@@ -1319,10 +1336,10 @@ export const CATALOG = {
     weaponWeightLbs: 45,
     bodyDims: { x: 3.1032, y: 1.5621, z: 3.3459 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -1.2033, y: 0.44, z: -1.0027 },
-      { x: 1.2033, y: 0.44, z: -1.0027 },
-      { x: -1.2033, y: 0.42, z: 1.1294 },
-      { x: 1.2033, y: 0.42, z: 1.1294 },
+      { x: -1.2033, y: 0.23, z: -1.0027 },
+      { x: 1.2033, y: 0.23, z: -1.0027 },
+      { x: -1.2033, y: 0.21, z: 1.1294 },
+      { x: 1.2033, y: 0.21, z: 1.1294 },
     ],
     maxSpeedFps: 15.5,
     accel: 8.5,
@@ -1383,10 +1400,10 @@ export const CATALOG = {
     weaponWeightLbs: 50,
     bodyDims: { x: 2.454, y: 1.1226, z: 4.177 }, // MEASURED shell, then scaled to realWorld.size.widthFt — long and narrow
     wheelAnchors: [
-      { x: -0.979, y: 0.25, z: -1.1748 },
-      { x: 0.979, y: 0.25, z: -1.1748 },
-      { x: -0.979, y: 0.25, z: 1.4358 },
-      { x: 0.979, y: 0.25, z: 1.4358 },
+      { x: -0.979, y: 0.21, z: -1.1748 },
+      { x: 0.979, y: 0.21, z: -1.1748 },
+      { x: -0.979, y: 0.21, z: 1.4358 },
+      { x: 0.979, y: 0.21, z: 1.4358 },
     ],
     maxSpeedFps: 14.0,
     accel: 8.0,
@@ -1447,10 +1464,10 @@ export const CATALOG = {
     weaponWeightLbs: 40,
     bodyDims: { x: 2.9957, y: 1.0806, z: 3.4237 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -1.1769, y: 0.25, z: -0.9629 },
-      { x: 1.1769, y: 0.25, z: -0.9629 },
-      { x: -1.1769, y: 0.25, z: 0.9629 },
-      { x: 1.1769, y: 0.25, z: 0.9629 },
+      { x: -1.1769, y: 0.21, z: -0.9629 },
+      { x: 1.1769, y: 0.21, z: -0.9629 },
+      { x: -1.1769, y: 0.21, z: 0.9629 },
+      { x: 1.1769, y: 0.21, z: 0.9629 },
     ],
     maxSpeedFps: 15.0,
     accel: 8.5,
@@ -1516,10 +1533,10 @@ export const CATALOG = {
     weaponWeightLbs: 47,
     bodyDims: { x: 2.9263, y: 1.3006, z: 3.3598 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -1.1163, y: 0.22, z: -0.336 },
-      { x: 1.1163, y: 0.22, z: -0.336 },
-      { x: -1.138, y: 0.22, z: 1.3764 },
-      { x: 1.138, y: 0.22, z: 1.3764 },
+      { x: -1.1163, y: 0.21, z: -0.336 },
+      { x: 1.1163, y: 0.21, z: -0.336 },
+      { x: -1.138, y: 0.21, z: 1.3764 },
+      { x: 1.138, y: 0.21, z: 1.3764 },
     ],
     maxSpeedFps: 15.0,
     accel: 8.5,

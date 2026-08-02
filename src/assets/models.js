@@ -184,6 +184,33 @@ function placeholderWeapon(spec) {
   return group;
 }
 
+/**
+ * A single tubular arm inside a weapon group, from `bar.from` to `bar.to` in
+ * BODY-local feet, mirrored to both sides by `bar.x`. Positioned in the pivot
+ * group's frame, so it swings with the weapon it belongs to.
+ */
+function buildWeaponArm(weaponPivot, bar, spec) {
+  const material = new THREE.MeshStandardMaterial({
+    color: bar.color || spec.accentDark || "#2a2d33",
+    metalness: 0.85,
+    roughness: 0.35,
+  });
+  const from = new THREE.Vector3(bar.x, bar.from.y, bar.from.z);
+  const to = new THREE.Vector3(bar.x, bar.to.y, bar.to.z);
+  const span = new THREE.Vector3().subVectors(to, from);
+  const mesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(bar.radius ?? 0.06, bar.radius ?? 0.06, span.length(), 12),
+    material,
+  );
+  mesh.name = "weaponArm";
+  // CylinderGeometry runs along +Y; aim it down the span.
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), span.clone().normalize());
+  mesh.position.copy(from).addScaledVector(span, 0.5);
+  weaponPivot.updateMatrixWorld(true);
+  weaponPivot.attach(mesh);
+  return mesh;
+}
+
 function placeholderWheels(spec) {
   const material = new THREE.MeshStandardMaterial({ color: "#181a1d", metalness: 0.2, roughness: 0.85 });
   return (spec.wheelAnchors || []).map((anchor, index) => {
@@ -397,7 +424,14 @@ export async function loadBotModel(spec, { onProgress } = {}) {
       const pivotLocal = glbWeapon.userData?.pivotLocal;
       const center = new THREE.Vector3();
       let havePivot = false;
-      if (Array.isArray(pivotLocal) && glbWeapon.parent) {
+      // ...unless the catalog says the GLB's is wrong. Duck's plow rides on two
+      // long carrier bars back to a hinge between the axles; segmentation never
+      // saw the bars, so the pivot it wrote is at the plow itself and the scoop
+      // hinges on its own lip instead of swinging on an arm.
+      if (spec.weapon.pivotFromCatalog) {
+        center.set(pivot.x, pivot.y, pivot.z);
+        havePivot = true;
+      } else if (Array.isArray(pivotLocal) && glbWeapon.parent) {
         glbWeapon.parent.updateWorldMatrix(true, false);
         center.fromArray(pivotLocal).applyMatrix4(glbWeapon.parent.matrixWorld);
         havePivot = true;
@@ -413,6 +447,11 @@ export async function loadBotModel(spec, { onProgress } = {}) {
       pivot.z = center.z;
       weaponPivot.position.set(pivot.x, pivot.y, pivot.z);
       weaponPivot.attach(glbWeapon); // preserves the part's world placement
+      // Structure the scan could not see. Some mechanisms are mostly air —
+      // Duck's plow hangs off two thin bars — and photogrammetry resolves them
+      // as nothing at all, which leaves the moving part floating unattached to
+      // the hinge it turns about. They are simple enough to state as numbers.
+      for (const bar of spec.weapon.arms || []) buildWeaponArm(weaponPivot, bar, spec);
       // Nested sub-spinner (modelWeaponSub-*, e.g. sawblaze's saw disc):
       // wrapped in its own pivot at its bbox center INSIDE the weapon group,
       // so it swings with the arm and spins locally.

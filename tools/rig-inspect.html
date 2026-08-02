@@ -78,6 +78,43 @@ function vbox(root) {
   return { n, min, max, size: [max[0] - min[0], max[1] - min[1], max[2] - min[2]] };
 }
 
+// Best-fit axle for a spinner: the point in the rotation plane that minimises
+// the MAXIMUM vertex distance, i.e. the centre of the smallest circle the part
+// sweeps. A blade hung off the wrong point sweeps a circle far bigger than
+// itself and visibly orbits instead of spinning; this is the point it wants.
+// Iterative 1-centre (Badoyu-Clarkson): walk the centre toward the current
+// farthest vertex by 1/(i+1). Converges fast and needs no hull.
+window.__axle = (partName) => {
+  const root = partName
+    ? (() => { let f = null; current.parts.weapon.traverse((c) => { if (!f && c.name === partName) f = c; }); return f; })()
+    : current.parts.weapon;
+  if (!root) return null;
+  const spec = current.spec;
+  const a = new THREE.Vector3(spec.weapon.axis?.x ?? 1, spec.weapon.axis?.y ?? 0, spec.weapon.axis?.z ?? 0).normalize();
+  const pts = [];
+  eachVertex(root, (v) => pts.push(v.clone()));
+  if (!pts.length) return null;
+  // Work in the plane: strip the axial component relative to an arbitrary origin.
+  const flat = (v) => v.clone().addScaledVector(a, -v.dot(a));
+  const centre = flat(pts[0]).clone();
+  for (let i = 0; i < 4000; i += 1) {
+    let far = null;
+    let best = -1;
+    for (const p of pts) {
+      const d = flat(p).distanceTo(centre);
+      if (d > best) { best = d; far = p; }
+    }
+    centre.lerp(flat(far), 1 / (i + 2));
+  }
+  let radius = 0;
+  for (const p of pts) radius = Math.max(radius, flat(p).distanceTo(centre));
+  // Put the axial coordinate back at the part's own mid-thickness.
+  let lo = Infinity, hi = -Infinity;
+  for (const p of pts) { const t = p.dot(a); lo = Math.min(lo, t); hi = Math.max(hi, t); }
+  const axle = centre.clone().addScaledVector(a, (lo + hi) / 2);
+  return { axle: axle.toArray(), radius };
+};
+
 // Max perpendicular distance from the spin axis through `pivot` over every vertex.
 function sweptRadius(root, pivot, axis) {
   const a = new THREE.Vector3(axis.x, axis.y, axis.z).normalize();
@@ -262,6 +299,34 @@ window.__sweep = (on) => {
   const hub = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 8), new THREE.MeshBasicMaterial({ color: 0xffe14a }));
   hub.position.copy(p);
   overlays.add(hub);
+};
+
+// Highlight one segmentation part by name (tripo_part_N) and grey the rest.
+// This is the view that settles "is modelWeapon holding the right geometry",
+// which is the single most common way a bot's rig comes out wrong.
+window.__part = (name, mode = "highlight") => {
+  if (!current) return;
+  const grey = new THREE.MeshStandardMaterial({ color: 0x3a3f47, roughness: 0.8, metalness: 0.1 });
+  const hot = new THREE.MeshStandardMaterial({ color: 0xff3b30, roughness: 0.4, metalness: 0.3 });
+  current.group.traverse((c) => {
+    if (!c.isMesh) return;
+    const hit = c.name === name || c.parent?.name === name;
+    if (mode === "solo") c.visible = hit;
+    else { c.visible = true; c.material = hit ? hot : grey; }
+  });
+};
+
+// Every mesh name in the loaded rig, and which loader part owns it.
+window.__parts = () => {
+  const out = [];
+  const walk = (root, owner) => root?.traverse((c) => {
+    if (c.isMesh) out.push({ name: c.name || "?", owner });
+  });
+  walk(current.parts.body, "body");
+  walk(current.parts.weapon, "weapon");
+  current.parts.wheels.forEach((w, i) => walk(w, `wheel${i}`));
+  for (const [k, v] of Object.entries(current.parts.aux || {})) walk(v, `aux:${k}`);
+  return out;
 };
 
 // Show only part of the rig: "weapon" hides everything but modelWeapon, etc.

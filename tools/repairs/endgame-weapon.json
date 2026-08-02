@@ -1,0 +1,17 @@
+[
+ {
+  "mode": "reparent",
+  "part": 24,
+  "parent": "modelBody"
+ },
+ {
+  "mode": "reparent",
+  "part": 16,
+  "parent": "modelBody"
+ },
+ {
+  "mode": "reparent",
+  "part": 20,
+  "parent": "modelWeapon"
+ }
+]
