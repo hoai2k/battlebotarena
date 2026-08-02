@@ -986,7 +986,10 @@ export const CATALOG = {
     accentDark: "#14161b",
     weapon: {
       type: "flipper",
-      pivot: { x: 0, y: 0.695, z: 0.9685 }, // MEASURED rear hinge, game space
+      // MEASURED white axle across the top, game space. Not the lid's rear edge:
+      // that is where this sat, two thirds of a foot BELOW the panel, so firing
+      // swung the lid up and back off the body and opened its interior.
+      pivot: { x: 0, y: 1.34, z: 1.065 },
       axis: { x: 1, y: 0, z: 0 },
       // MEASURED through the loader: the plate is baked FLAT in the deck (0)
       // and 1.15 stands it on end. Blip throws straight up off a flywheel, so
