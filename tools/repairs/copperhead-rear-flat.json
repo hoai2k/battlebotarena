@@ -1,0 +1,8 @@
+[
+  {
+    "_comment": "FLAT BACK. Copperhead's rear is a plain frame between the two tyres; the scan grew a pair of ragged, half-red-painted lumps off the back of the BOTTOM LAYER and a couple of tabs above them. Measured through the loader in game space: the bottom pan is solid across the full width up to z=0.92 and then all but stops — the slab z[0.92,1.00] carries only two outboard lumps (left x[-1.44,-1.08], right x[+0.78,+0.96]) plus two small tabs at x[-0.55,-0.25], and the slab z[1.00,1.25] is nothing BUT those, running back to z=1.187 on the left and z=1.209 on the right at y[0.106,0.314]. They are not the wheelie prongs — those sit inboard and higher — they are scan mush, asymmetric left to right, and they made the machine measure 2.418ft long against a 0.92-to-front true length. Cut at z=0.93, a hair behind where the pan genuinely ends. y is capped at 0.62 so the cut is the BOTTOM LAYER only: the hex deck's own scalloped rear lugs live at y[0.84,0.90] and reach z=0.984, and they are real — they are in the reference. x is swept wide because the two lumps are at opposite ends of the width. Region is game x[-1.8,1.8] y[-0.2,0.62] z[0.93,1.6] through rig-inspect's __toGlb.",
+    "part": 13,
+    "mode": "delete",
+    "region": { "type": "box", "min": [-0.3687, -0.1235, -0.5515], "max": [-0.1625, 0.1288, 0.5563] }
+  }
+]

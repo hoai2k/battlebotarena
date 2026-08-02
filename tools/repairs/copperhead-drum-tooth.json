@@ -1,0 +1,22 @@
+[
+  {
+    "_comment": "THE DRUM'S GOOD SIDE IS ITS TOOTH, NOT ITS SHELL. copperhead-drum-mirror.json already mirrored the shell (parts 14 + 901) about the axle, so the copper barrel and its two pockets are symmetric — but the thing that FILLS a pocket is a separate segmentation part, and only the +X one came out of the scan whole. tripo_part_12 (game x[-0.057,0.305] y[0.320,0.799] z[-0.778,-0.280]) is a solid black tooth that plugs the +X pocket; the -X pocket had tripo_part_16 and tripo_part_18 (game x[-0.293,-0.129] and x[-0.389,-0.244]), two torn slivers that cover a fraction of it. Hide part 12 and BOTH pockets read as ragged holes; leave it and only the near one does — which is exactly the 'one good end, one bad end' the bot shows head-on. So: mirror the good tooth across the axle. Plane is GLB z=-0.0099, i.e. game x=-0.040, the drum axle rig-inspect --axle measured and the same plane copperhead-drum-mirror.json used for the shell. keep '+' takes the whole of part 12 bar a 0.017ft sliver that crosses the plane. The copy lands at game x[-0.385,-0.023], which is where 16 and 18 were trying to be. Parented where part 12 already is (modelBody, per copperhead-drum-mirror.json's reparent) so it stays put while the drum spins — it is the axle-line hardware seen through the pockets, not part of the rotor.",
+    "part": 12,
+    "mode": "mirror",
+    "axis": 2,
+    "plane": -0.0099,
+    "keep": "+"
+  },
+  {
+    "_comment": "The failed -X tooth, half 1: tripo_part_16, game x[-0.293,-0.129] y[0.456,0.613] z[-0.374,-0.256]. 1416 vertices of torn shell against part 12's 11883, and it sits inside the volume the mirrored tooth now occupies, poking through it as black shards. Region is its own bounding box plus 0.05ft, so nothing else is touched.",
+    "part": 16,
+    "mode": "delete",
+    "region": { "type": "box", "min": [0.1871, 0.0629, -0.1032], "max": [0.2542, 0.1420, -0.0219] }
+  },
+  {
+    "_comment": "The failed -X tooth, half 2: tripo_part_18, game x[-0.389,-0.244] y[0.349,0.784] z[-0.770,-0.321]. Same story as 16 — 5223 vertices of ragged sheet where a solid tooth belongs.",
+    "part": 18,
+    "mode": "delete",
+    "region": { "type": "box", "min": [0.2071, 0.0300, -0.1327], "max": [0.3760, 0.1946, -0.0573] }
+  }
+]
