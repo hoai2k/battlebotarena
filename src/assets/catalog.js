@@ -313,7 +313,16 @@ export const CATALOG = {
     weapon: {
       type: "crusher",
       spinUpSeconds: 0.2, // jaw close response
-      fireAngle: -0.95, // GLB jaw baked OPEN (=rest); full stroke brings the tooth down onto the front wedge palette
+      // THE JAW MUST CLOSE ONTO THE PALLET. Verify with:
+      //   node tools/rig-inspect.mjs quantum --arc "-1.0,-0.5,0.05" --bite --bitez -1.05
+      // `gap` is the tooth's clearance over the pallet forks; it must reach ~0.
+      // Rotation ALONE cannot do it and never could: past about -0.85 the jaw
+      // has no geometry left forward of the pallet at all (it has swung in
+      // behind it), and the closest any angle gets is 0.132ft short at -0.70.
+      // The old -0.95 looked "more closed" while actually holding the teeth
+      // further back and higher over the forks than -0.75 does. Do not just
+      // wind this number down again — that is what was tried before.
+      fireAngle: -0.75, // GLB jaw baked OPEN (=rest); the tooth is over the pallet here, jawSlide covers the rest
       budgetCap: 90,
       dims: { x: 0.1523, y: 0.4244, z: 0.8488 },
       // MEASURED: the hinge is the white circular boss at the BOTTOM of the
@@ -328,6 +337,37 @@ export const CATALOG = {
         { x: 0, radius: 0.13, attach: "body", from: { y: 0.5, z: 0.42 }, to: { y: 1.14, z: -0.24 }, color: "#9aa1ab" },
       ],
       axis: { x: 1, y: 0, z: 0 },
+      // ---- REMOVABLE: jaw slide rig -------------------------------------
+      // Delete this one block and Quantum goes back to a purely rotating jaw
+      // (nothing else references it; models.js and botAnimation.js both no-op
+      // without it). It exists because rotation cannot reach the pallet: the
+      // hinge is too far back and too high, so the arc passes over the forks
+      // and comes down behind them.
+      //
+      // So the whole jaw assembly ALSO travels as it closes — hinge, jaw and
+      // the grey axle beam together — driven by a hydraulic ram that appears
+      // between the beam's base and its mount. `forward`/`down` are the travel
+      // at full stroke, in feet, game space (forward is -Z).
+      // Measured at full stroke with `--bite --bitez -1.05`: the tooth lands on
+      // the pallet at z=-1.05 with a gap of 0.005. Re-measure after ANY change
+      // to Quantum's pivot or part map — this travel is relative to where the
+      // hinge ends up, and it was retuned once already when the pivot moved.
+      jawSlide: {
+        forward: 0.22,
+        down: 0.55,
+        // OFF by default, and it should stay off unless it is reworked.
+        // Carrying the grey hinge assembly along with the arm and extending a
+        // ram behind it is implemented and works numerically, but it does not
+        // LOOK right: Tripo did not segment the hinge cleanly, so the two body
+        // pieces that make it up (the axle boss and the cross-beam it rides on)
+        // drag chunks of surrounding bodywork with them and end up poking out
+        // past the shell at full stroke. The travel above is what fixes the
+        // bite; this only changes how the travel is dressed. Flip to true to
+        // see it, or delete the three lines to drop the idea entirely.
+        carryAxle: false,
+        axleBodyParts: ["tripo_part_4", "tripo_part_2"],
+        ram: { radius: 0.075, color: "#9aa1aa", inset: 0.06, length: 0.45 },
+      },
       tuning: { holdDamagePerSecond: 6, holdReach: 1.1, holdStrength: 14, holdDamping: 1, holdImpulseCap: 70 },
     },
     colliders: [

@@ -101,7 +101,9 @@
         </header>
         <div class="select-stage">
           <div id="pod-player" class="preview-pod pod-player is-armed">
-            <button id="slot-player" class="pod-plate" type="button" data-role="YOU">
+            <!-- data-nav-*: stepping across the stage stops at FIGHT rather
+                 than jumping pod to pod (see gamepadNav's hintedNext). -->
+            <button id="slot-player" class="pod-plate" type="button" data-role="YOU" data-nav-right="#btn-fight">
               <span class="pod-plate-body"></span>
             </button>
             <div id="pod-view-player" class="pod-view">
@@ -113,11 +115,11 @@
               <span class="pod-stats"></span>
               <span class="pod-controls">
                 <span class="pod-control">
-                  <button id="pod-primary-player" class="pod-test" type="button" hidden><span data-control-label>WEAPON</span></button>
+                  <button id="pod-primary-player" class="pod-test" type="button" hidden data-nav-right="#pod-secondary-player,#btn-fight"><span data-control-label>WEAPON</span></button>
                   <span class="pod-meter"><i id="pod-primary-meter-player"></i></span>
                 </span>
                 <span class="pod-control">
-                  <button id="pod-secondary-player" class="pod-test pod-test-alt" type="button" hidden><span data-control-label>ALT</span></button>
+                  <button id="pod-secondary-player" class="pod-test pod-test-alt" type="button" hidden data-nav-right="#btn-fight"><span data-control-label>ALT</span></button>
                   <span class="pod-meter"><i id="pod-secondary-meter-player"></i></span>
                 </span>
               </span>
@@ -125,7 +127,8 @@
           </div>
           <div class="select-mid">
             <span class="vs-label">VS</span>
-            <button id="btn-fight" class="btn btn-primary btn-xl" type="button" disabled><span>FIGHT</span></button>
+            <button id="btn-fight" class="btn btn-primary btn-xl" type="button" disabled
+                    data-nav-left="#slot-player" data-nav-right="#slot-rival"><span>FIGHT</span></button>
             <div class="pod-controls-hint">
               R-STICK ORBIT &middot; LT ZOOM<br />
               RT WEAPON &middot; RB SECONDARY<br />
@@ -133,7 +136,7 @@
             </div>
           </div>
           <div id="pod-rival" class="preview-pod pod-rival">
-            <button id="slot-rival" class="pod-plate" type="button" data-role="RIVAL">
+            <button id="slot-rival" class="pod-plate" type="button" data-role="RIVAL" data-nav-left="#btn-fight">
               <span class="pod-plate-body"></span>
             </button>
             <div id="pod-view-rival" class="pod-view">
@@ -146,11 +149,11 @@
               <span class="pod-stats"></span>
               <span class="pod-controls">
                 <span class="pod-control">
-                  <button id="pod-primary-rival" class="pod-test" type="button" hidden><span data-control-label>WEAPON</span></button>
+                  <button id="pod-primary-rival" class="pod-test" type="button" hidden data-nav-left="#pod-secondary-rival,#btn-fight"><span data-control-label>WEAPON</span></button>
                   <span class="pod-meter"><i id="pod-primary-meter-rival"></i></span>
                 </span>
                 <span class="pod-control">
-                  <button id="pod-secondary-rival" class="pod-test pod-test-alt" type="button" hidden><span data-control-label>ALT</span></button>
+                  <button id="pod-secondary-rival" class="pod-test pod-test-alt" type="button" hidden data-nav-left="#btn-fight"><span data-control-label>ALT</span></button>
                   <span class="pod-meter"><i id="pod-secondary-meter-rival"></i></span>
                 </span>
               </span>

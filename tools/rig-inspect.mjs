@@ -109,14 +109,28 @@ for (const id of ids) {
 
   if (arc) {
     const [from, to, step] = arc.split(",").map(Number);
-    console.log("  angle    armYmin  armYmax  armZmin  armZmax");
+    // --bite adds the arm TIP and its clearance to the bodywork under it. The
+    // arm bbox alone hides a jaw closing on nothing, because the tail swinging
+    // up and back keeps armYmin low while the tooth stops short (see
+    // __biteAt in rig-inspect.html).
+    const withBite = has("--bite");
+    // Optional z window for --bite (see __biteAt): forward of this, in game space.
+    const biteZ = opt("--bitez") === null ? null : Number(opt("--bitez"));
+    console.log(withBite
+      ? "  angle    armYmin  armYmax  armZmin  armZmax |     gap   at x       y       z  surface"
+      : "  angle    armYmin  armYmax  armZmin  armZmax");
     for (let a = from; a <= to + 1e-9; a += step) {
-      const s = await page.evaluate((v) => window.__armAt(v), Number(a.toFixed(4)));
+      const angle = Number(a.toFixed(4));
+      const s = await page.evaluate((v) => window.__armAt(v), angle);
       const b = s.box;
-      console.log(
-        `  ${a.toFixed(2).padStart(6)}  ${b.min[1].toFixed(3).padStart(7)}  ${b.max[1].toFixed(3).padStart(7)}`
-        + `  ${b.min[2].toFixed(3).padStart(7)}  ${b.max[2].toFixed(3).padStart(7)}`,
-      );
+      let line = `  ${a.toFixed(2).padStart(6)}  ${b.min[1].toFixed(3).padStart(7)}  ${b.max[1].toFixed(3).padStart(7)}`
+        + `  ${b.min[2].toFixed(3).padStart(7)}  ${b.max[2].toFixed(3).padStart(7)}`;
+      if (withBite) {
+        const t = await page.evaluate((v) => window.__biteAt(v[0], v[1]), [angle, biteZ]);
+        line += ` | ${(t.gap === null ? "-" : t.gap.toFixed(3)).padStart(7)}`
+          + (t.at ? `  ${t.at.map((n) => n.toFixed(3).padStart(7)).join(" ")}` : "  -");
+      }
+      console.log(line);
     }
     continue;
   }

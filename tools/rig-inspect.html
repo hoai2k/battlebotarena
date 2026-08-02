@@ -254,6 +254,120 @@ window.__subAt = (angle) => {
   return { angle, box: vbox(sub) };
 };
 
+
+// Where a closing arm's BUSINESS END actually lands, and how far it still is
+// from the bodywork under it.
+//
+// The whole-arm bbox that __armAt reports cannot answer this: the box is
+// dominated by the arm's tail, which swings up and back while the tip comes
+// down, so a jaw that visibly stops short still reports a low armYmin. Quantum
+// shipped that way — a crusher whose tooth closed onto thin air a third of a
+// foot above its own front pallet.
+//
+// tip     = the vertex furthest from the pivot in the rotation plane (the same
+//           point sweptRadius calls `far`), carried round by `angle`.
+// surface = the highest body vertex in a small column under the tip, i.e. what
+//           the tip would actually touch.
+// clearance = tip.y - surface.y. Zero or slightly negative is a jaw that bites
+//           onto its own pallet; positive is a jaw closing on nothing.
+// A coarse top-down height field of the body: (x,z) cell -> highest body
+// vertex in it. Cheap to build once and it is what "the surface under the
+// tooth" means when the bodywork is not flat.
+function bodyHeightField(cell = 0.09) {
+  const grid = new Map();
+  eachVertex(current.parts.body, (v) => {
+    const key = `${Math.round(v.x / cell)},${Math.round(v.z / cell)}`;
+    const prev = grid.get(key);
+    if (prev === undefined || v.y > prev) grid.set(key, v.y);
+  });
+  return {
+    at(x, z) {
+      // Look at the cell and its neighbours: a tooth between two cells should
+      // still see the surface it is about to land on.
+      let best = -Infinity;
+      const cx = Math.round(x / cell);
+      const cz = Math.round(z / cell);
+      for (let i = -1; i <= 1; i += 1) {
+        for (let j = -1; j <= 1; j += 1) {
+          const y = grid.get(`${cx + i},${cz + j}`);
+          if (y !== undefined && y > best) best = y;
+        }
+      }
+      return Number.isFinite(best) ? best : null;
+    },
+  };
+}
+
+// zMax windows the test to the arm's BUSINESS END. Without it the minimum is
+// always the hinge, which sits alongside the tall bodywork it is bolted to and
+// reports a large overlap at every angle including fully open. Default: half a
+// foot forward of the pivot.
+// Measure whatever pose the arm is in right now. Split out so __strokeAt can
+// pose through the GAME's own animation path and then measure the result.
+function measureBite(zMax) {
+  const pivotNode = current.parts.weapon;
+  const zLimit = zMax === null || zMax === undefined ? pivotNode.position.z - 0.5 : zMax;
+  const field = bodyHeightField();
+  // Closest approach over the WHOLE arm, not just its radially-furthest
+  // vertex. On Quantum the furthest vertex is the jaw's outer nose, which
+  // sweeps down BEHIND the pallet, while the teeth — the part that is supposed
+  // to land — hang lower and further forward. Measuring the nose said the jaw
+  // was buried 0.23ft in the bodywork at the very angle where the teeth were
+  // still hanging in the air.
+  let gap = Infinity;
+  let at = null;
+  let lowest = Infinity;
+  let lowestAt = null;
+  eachVertex(pivotNode, (v) => {
+    if (v.z > zLimit) return;
+    if (v.y < lowest) { lowest = v.y; lowestAt = [v.x, v.y, v.z]; }
+    const surface = field.at(v.x, v.z);
+    if (surface === null) return;
+    const d = v.y - surface;
+    if (d < gap) { gap = d; at = [v.x, v.y, v.z, surface]; }
+  });
+  return {
+    gap: Number.isFinite(gap) ? gap : null, // <=0 means the arm is touching/through
+    at, // [x, y, z, surfaceY] of the closest approach
+    lowest: lowestAt,
+  };
+}
+
+window.__biteAt = (angle, zMax = null) => {
+  const spec = current.spec;
+  const axis = spec.weapon.axis || { x: 1, y: 0, z: 0 };
+  const a = new THREE.Vector3(axis.x, axis.y, axis.z).normalize();
+  current.parts.weapon.quaternion.setFromAxisAngle(a, angle);
+  current.parts.weapon.updateMatrixWorld(true);
+  return { angle, ...measureBite(zMax) };
+};
+
+// Pose through the GAME's own animation path — syncBotVisual over a synthesized
+// render state — then measure. This is the only honest way to check a rig that
+// does more than rotate about the pivot (Quantum's jawSlide translates the
+// whole assembly), because the extra motion lives in botAnimation, not here.
+window.__strokeAt = async (stroke, zMax = null) => {
+  const { syncBotVisual } = await import("/src/engine/botAnimation.js");
+  const state = {
+    position: new THREE.Vector3(0, 0, 0),
+    quaternion: new THREE.Quaternion(),
+    weaponAngle: stroke,
+    weaponSubAngle: 0,
+    wheelSpin: [],
+  };
+  // MUST be a stable object across calls: syncBotVisual caches per-model state
+  // on it (rest positions for a slide rig, spinner angle), so handing it a
+  // fresh literal each call re-captures "rest" from an already-offset pose and
+  // the offset compounds. main.js and botPreview both pass their long-lived
+  // visual, which is why this only ever bit the harness.
+  current.__poseVisual ||= {
+    parts: current.parts, group: current.group, weaponIsPlaceholder: current.weaponIsPlaceholder,
+  };
+  syncBotVisual(current.__poseVisual, current.spec, state);
+  current.group.updateMatrixWorld(true);
+  return { stroke, ...measureBite(zMax) };
+};
+
 // Draw the catalog colliders as wireframes so a screenshot shows fit directly.
 window.__colliders = (show) => {
   overlays.clear();
@@ -384,6 +498,14 @@ window.__view = (name, zoom = 1) => {
 };
 window.__grid = (on) => { grid.visible = on; ax.visible = on; };
 window.__current = () => current;
+
+// Per-sub-part bounds inside modelBody, in GAME space. Tripo leaves the body
+// as a bag of a dozen unnamed pieces; this is how you work out which one is
+// the bracket / axle / panel you actually want to carve out or animate.
+window.__bodyParts = () => (current?.parts?.body?.children || []).map((child, i) => {
+  const b = vbox(child);
+  return { i, name: child.name || "?", box: b };
+}).filter((p) => p.box);
 window.__ready = true;
 </script>
 </body>

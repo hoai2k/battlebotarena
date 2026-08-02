@@ -622,6 +622,58 @@ export async function loadBotModel(spec, { onProgress } = {}) {
     group.add(spinBlur);
   }
 
+  // ---- REMOVABLE: jaw slide rig (spec.weapon.jawSlide) ---------------------
+  // Pulls the hinge beam out of the body so it can travel with the arm, and
+  // builds the ram that drives it. Purely additive: with no jawSlide block in
+  // the catalog nothing here runs and `parts.aux` is unchanged. Deleting this
+  // whole `if` and the block in botAnimation.js removes the feature.
+  const slide = spec.weapon?.jawSlide;
+  if (slide?.carryAxle && usedGlbWeapon) {
+    const wanted = [].concat(slide.axleBodyPart || slide.axleBodyParts || []);
+    const beams = body.children.filter((child) => wanted.includes(child.name));
+    if (beams.length) {
+      const box = new THREE.Box3();
+      beams.forEach((b) => box.expandByObject(b));
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      const anchor = new THREE.Group();
+      anchor.name = "auxAnchor-jawAxle";
+      anchor.position.set(center.x, box.min.y, center.z);
+      beams.forEach((b) => anchor.attach(b)); // keeps them exactly where they sit
+      group.add(anchor);
+      aux.jawAxle = anchor;
+
+      // The ram: a cylinder anchored BEHIND the beam and pointing forward at
+      // it, so closing the jaw extends it — a ram that visibly pushes rather
+      // than a strut that happens to stretch. Authored along +Y with its base
+      // at the origin, so the animation only scales Y and aims it at the
+      // beam's moving base.
+      const restLength = slide.ram?.length ?? 0.45;
+      const radius = slide.ram?.radius ?? 0.075;
+      const geometry = new THREE.CylinderGeometry(radius, radius * 1.3, restLength, 14);
+      geometry.translate(0, restLength / 2, 0);
+      const ram = new THREE.Mesh(
+        geometry,
+        new THREE.MeshStandardMaterial({
+          color: slide.ram?.color ?? "#9aa1aa",
+          metalness: 0.85,
+          roughness: 0.3,
+        }),
+      );
+      ram.name = "jawRam";
+      const mount = new THREE.Group();
+      mount.name = "auxAnchor-jawRam";
+      // Fixed end: directly behind the beam's base by the ram's rest length.
+      mount.position.set(center.x, box.min.y + (slide.ram?.inset ?? 0.06), center.z + restLength);
+      mount.add(ram);
+      mount.userData.restLength = restLength;
+      // Aimed at the beam's base; the animation re-aims it every frame.
+      mount.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, -1));
+      group.add(mount);
+      aux.jawRam = mount;
+    }
+  }
+
   repaintScanned(group, spec);
   markShadows(group);
   if (spinBlur) spinBlur.castShadow = false;
