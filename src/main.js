@@ -261,6 +261,19 @@ function syncBotVisual(visual, spec, state) {
     const stroke = THREE.MathUtils.clamp(state.weaponAngle ?? 0, 0, 1);
     ram.scale.y = 0.35 + 0.65 * stroke;
   }
+  // Tantrum's fists: a SECOND independent mechanism, so it cannot be a
+  // weaponSub (a sub inherits the drum's spin). It hinges off its own aux
+  // anchor from the sim's punch stroke.
+  const punch = visual.parts.aux?.fists;
+  if (punch && spec.weapon?.fists) {
+    const f = spec.weapon.fists;
+    const open = f.openAngle ?? 0;
+    const shut = f.punchAngle ?? -1.0;
+    const stroke = THREE.MathUtils.clamp(state.weaponSubAngle ?? 0, 0, 1);
+    const a = f.axis ?? { x: 1, y: 0, z: 0 };
+    scratchAxis.set(a.x, a.y, a.z).normalize();
+    punch.quaternion.setFromAxisAngle(scratchAxis, open + stroke * (shut - open));
+  }
 }
 
 // Nested sub-spinner inside a weapon arm (Sawblaze's saw, Whiplash's disc).
@@ -298,11 +311,15 @@ function shapePlayerInput(raw, spec, slot) {
   prevAltDown[slot] = raw.weaponAlt;
   if (type === "bar" || type === "drum") {
     if (weaponEdge) weaponLatch[slot] = !weaponLatch[slot];
+    // Tantrum's fists are the exception: its drum latches like any spinner, but
+    // the punch is momentary — a toggle would leave the arms stuck out.
+    if (spec.weapon.fists) return { ...raw, weapon: weaponLatch[slot], sawActive: raw.weaponAlt };
     return { ...raw, weapon: weaponLatch[slot] };
   }
   // hammerSaw and lifterDisc both split their controls: the trigger drives the
-  // arm, RB toggles the disc motor.
-  if (type === "hammerSaw" || type === "lifterDisc" || type === "grappler") {
+  // arm, RB toggles the disc motor. Free Shipping spends the same channel on
+  // its flamethrowers; Duck has nothing on it and simply ignores it.
+  if (type === "hammerSaw" || type === "lifterDisc" || type === "grappler" || type === "lifter") {
     if (altEdge) sawActive[slot] = !sawActive[slot];
     return { ...raw, sawActive: sawActive[slot] };
   }
@@ -384,4 +401,8 @@ window.__bba2 = {
     return session?.match.getState?.();
   },
   camera: stage.camera,
+  // Boot straight into a fight without clicking through the menus, so a
+  // headless browser can verify that a bot actually renders and drives rather
+  // than only that its catalog entry parses.
+  startMatch,
 };

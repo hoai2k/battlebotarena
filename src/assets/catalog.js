@@ -706,6 +706,483 @@ export const CATALOG = {
     ],
   },
 
+  // ---------------------------------------------------------------------
+  // Nine-bot drop. Every number below marked MEASURED came off the model
+  // through the loader in GAME space, not out of the drop's notes.
+  // ---------------------------------------------------------------------
+
+  blip: {
+    id: "blip",
+    name: "Blip",
+    tagline: "Flywheel launcher. Straight to the ceiling.",
+    referenceImage: "./public/reference/blip.png",
+    modelPath: "./public/models/blip.glb",
+    modelYaw: Math.PI, // MEASURED: forks came out at +Z, so +Z is the nose
+    modelScale: 3.2,
+    weightLbs: 250,
+    weaponWeightLbs: 40,
+    bodyDims: { x: 2.59, y: 1.34, z: 3.2 }, // MEASURED shell
+    // Only the rear pair segmented out; the fronts are inboard under the deck.
+    wheelAnchors: [
+      { x: -0.95, y: 0.3, z: -0.85 },
+      { x: 0.95, y: 0.3, z: -0.85 },
+      { x: -0.95, y: 0.3, z: 0.85 },
+      { x: 0.95, y: 0.3, z: 0.85 },
+    ],
+    maxSpeedFps: 17.0,
+    accel: 9.5,
+    turnRate: 1.1,
+    accent: "#2f6fd0",
+    accentDark: "#14161b",
+    weapon: {
+      type: "flipper",
+      pivot: { x: 0, y: 0.61, z: 0.85 }, // MEASURED rear hinge, game space
+      axis: { x: 1, y: 0, z: 0 },
+      // MEASURED through the loader: the plate is baked FLAT in the deck (0)
+      // and 1.15 stands it on end. Blip throws straight up off a flywheel, so
+      // there is no forward reach in the stroke — it is all elevation.
+      restAngle: 0,
+      fireAngle: 1.15,
+      budgetCap: 200,
+      dims: { x: 0.46, y: 0.1, z: 0.64 },
+      selfRight: true,
+      tuning: { strokeSeconds: 0.06, returnSeconds: 0.7, reach: 1.5, liftVelocity: 26.0, pitchVelocity: 11.0 },
+    },
+    colliders: [
+      // The forks. MEASURED at y 0.17-0.32 in the model, but authored down to
+      // the floor: on the real machine they scrape, and a fork a fifth of a foot
+      // in the air is a fork nothing can climb.
+      { shape: "wedge", halfExtents: { x: 0.62, y: 0.17, z: 0.44 }, offset: { x: 0, y: 0.17, z: -1.16 }, tipY: 0.03 },
+      // The whole shell IS a wedge: MEASURED 0.53ft tall at z=-0.6 climbing to
+      // 1.34 at the tail.
+      { shape: "wedge", halfExtents: { x: 1.29, y: 0.6, z: 0.8 }, offset: { x: 0, y: 0.6, z: 0.2 }, tipY: 0.3 },
+      { shape: "box", halfExtents: { x: 1.29, y: 0.67, z: 0.3 }, offset: { x: 0, y: 0.67, z: 1.3 } },
+    ],
+  },
+
+  copperhead: {
+    id: "copperhead",
+    name: "Copperhead",
+    tagline: "Fifty pounds of copper drum.",
+    referenceImage: "./public/reference/copperhead.png",
+    modelPath: "./public/models/copperhead.glb",
+    modelYaw: Math.PI / 2, // MEASURED: model faces +X
+    modelRoll: Math.PI, // MEASURED: Tripo built it upside down (wheels on top)
+    modelScale: 3.3,
+    canDriveInverted: true, // symmetrical drum bot; it fights either way up
+    weightLbs: 250,
+    weaponWeightLbs: 50,
+    // MEASURED shell. The two whiskers reaching 2.08 are its antennae, not
+    // structure, so the height here is the deck, not the bounding box.
+    bodyDims: { x: 3.17, y: 1.45, z: 3.27 },
+    wheelAnchors: [
+      { x: -1.3, y: 0.5, z: -0.9 },
+      { x: 1.3, y: 0.5, z: -0.9 },
+      { x: -1.3, y: 0.5, z: 0.9 },
+      { x: 1.3, y: 0.5, z: 0.9 },
+    ],
+    maxSpeedFps: 14.0,
+    accel: 8.0,
+    turnRate: 1.0,
+    accent: "#c1743a",
+    accentDark: "#16181c",
+    weapon: {
+      type: "drum",
+      pivot: { x: 0.04, y: 0.71, z: -0.96 }, // MEASURED drum axle, game space
+      axis: { x: 1, y: 0, z: 0 },
+      spinUpSeconds: 1.6,
+      inertia: 1.25,
+      maxOmega: 560,
+      budgetCap: 340,
+      radius: 0.545, // MEASURED swept radius about the axle
+      dims: { x: 0.9, y: 0.545, z: 0.545 },
+      tuning: { efficiency: 0.58, impulseScale: 10.5, liftScale: 30.0, liftVelocity: 4.5, gyroScale: 1.0 },
+    },
+    // NOTHING in front of z=-0.36, which is where the drum's sweep ends. The
+    // model does carry a deck lip out to z=-1.6, but it sits at y 1.02-1.23 —
+    // level with the top of the drum — so a collider there would be a pure
+    // stand-off: opponents would stop on the lip with the drum still a foot
+    // short of them. Same call as Deep Six, for the same reason.
+    colliders: [
+      { shape: "box", halfExtents: { x: 1.55, y: 0.62, z: 0.98 }, offset: { x: 0, y: 0.65, z: 0.62 } },
+    ],
+  },
+
+  duck: {
+    id: "duck",
+    name: "Duck",
+    tagline: "Never counted out.",
+    referenceImage: "./public/reference/duck.png",
+    modelPath: "./public/models/duck.glb",
+    modelYaw: Math.PI / 2, // MEASURED: model faces +X
+    modelRoll: Math.PI, // MEASURED: Tripo built it upside down (wheels on top)
+    modelScale: 4.2,
+    weightLbs: 250,
+    weaponWeightLbs: 35,
+    bodyDims: { x: 3.21, y: 0.92, z: 2.75 }, // MEASURED shell — very flat
+    wheelAnchors: [
+      { x: -1.45, y: 0.3, z: -0.95 },
+      { x: 1.45, y: 0.3, z: -0.95 },
+      { x: -1.45, y: 0.3, z: 1.13 },
+      { x: 1.45, y: 0.3, z: 1.13 },
+    ],
+    maxSpeedFps: 13.0,
+    accel: 7.5,
+    turnRate: 0.95,
+    accent: "#d8b62c",
+    accentDark: "#1a1a1a",
+    weapon: {
+      type: "lifter",
+      pivot: { x: 0.23, y: 0.88, z: -1.02 }, // MEASURED scoop hinge, game space
+      axis: { x: 1, y: 0, z: 0 },
+      // MEASURED: the scoop is baked DOWN (0 rests its lip on the floor at
+      // y 0.008) and 1.1 stands it up over the nose. That resting pose is why
+      // the front collider below is a wedge.
+      restAngle: 0,
+      fireAngle: 1.1,
+      liftImpulse: 190,
+      liftRecoil: 0.5,
+      lowerSeconds: 0.6,
+      dims: { x: 1.4, y: 0.12, z: 0.5 },
+      selfRight: true,
+      tuning: { strokeSeconds: 0.45, reach: 1.7 },
+    },
+    colliders: [
+      // The scoop at rest. MEASURED z -2.03..-1.03 climbing from the floor to
+      // 0.56 — the flattest, longest wedge in the game, which is the whole bot.
+      { shape: "wedge", halfExtents: { x: 1.6, y: 0.28, z: 0.5 }, offset: { x: 0, y: 0.28, z: -1.53 }, tipY: 0.02 },
+      { shape: "box", halfExtents: { x: 1.61, y: 0.28, z: 1.21 }, offset: { x: 0, y: 0.28, z: 0.17 } },
+      { shape: "box", halfExtents: { x: 1.0, y: 0.46, z: 0.18 }, offset: { x: 0, y: 0.46, z: -1.13 } }, // hinge block
+    ],
+  },
+
+  endgame: {
+    id: "endgame",
+    name: "Endgame",
+    tagline: "Teardrop disc, and it never misses twice.",
+    referenceImage: "./public/reference/endgame.png",
+    modelPath: "./public/models/endgame.glb",
+    modelYaw: Math.PI / 2, // MEASURED: model faces +X
+    modelScale: 3.4,
+    hideWheels: true, // drive is inboard; segmentation never saw a wheel
+    weightLbs: 250,
+    weaponWeightLbs: 55,
+    bodyDims: { x: 3.4, y: 1.76, z: 2.31 }, // MEASURED shell
+    wheelAnchors: [
+      { x: -1.3, y: 0.25, z: -0.7 },
+      { x: 1.3, y: 0.25, z: -0.7 },
+      { x: -1.3, y: 0.25, z: 0.7 },
+      { x: 1.3, y: 0.25, z: 0.7 },
+    ],
+    maxSpeedFps: 15.0,
+    accel: 8.5,
+    turnRate: 1.05,
+    accent: "#e8502a",
+    accentDark: "#191c24",
+    weapon: {
+      type: "drum",
+      pivot: { x: 0.07, y: 0.82, z: -0.41 }, // MEASURED disc axle, game space
+      axis: { x: 1, y: 0, z: 0 },
+      spinUpSeconds: 0.9,
+      inertia: 1.4,
+      maxOmega: 640,
+      budgetCap: 400,
+      // MEASURED swept radius. The blade is a TEARDROP: its axle is at the fat
+      // end, so the bbox centre is 0.29ft off the real hub and the swept
+      // circle is set by the tip, not by half the height.
+      radius: 0.777,
+      dims: { x: 0.36, y: 0.777, z: 0.777 },
+      tuning: { efficiency: 0.6, impulseScale: 11.5, liftScale: 30.0, liftVelocity: 5.0, gyroScale: 1.1 },
+    },
+    colliders: [
+      // The two lettered forks, LEFT and RIGHT of the disc with a clear gap
+      // between them: the disc sweeps down to y 0.04 and out to z -0.91, and
+      // anything spanning the centreline there would hold opponents off it.
+      { shape: "wedge", halfExtents: { x: 0.6, y: 0.42, z: 0.4 }, offset: { x: -1.1, y: 0.42, z: -0.75 }, tipY: 0.05 },
+      { shape: "wedge", halfExtents: { x: 0.6, y: 0.42, z: 0.4 }, offset: { x: 1.1, y: 0.42, z: -0.75 }, tipY: 0.05 },
+      { shape: "box", halfExtents: { x: 1.58, y: 0.5, z: 0.75 }, offset: { x: 0, y: 0.5, z: 0.41 } },
+    ],
+  },
+
+  freeshipping: {
+    id: "freeshipping",
+    name: "Free Shipping",
+    tagline: "Forklift in front, flame out the back.",
+    referenceImage: "./public/reference/freeshipping.png",
+    modelPath: "./public/models/freeshipping.glb",
+    modelYaw: Math.PI / 2, // MEASURED: model faces +X
+    modelScale: 3.4,
+    weightLbs: 250,
+    weaponWeightLbs: 45,
+    bodyDims: { x: 2.19, y: 0.9, z: 3.25 }, // MEASURED shell
+    wheelAnchors: [
+      { x: -0.86, y: 0.3, z: -1.0 },
+      { x: 0.86, y: 0.3, z: -1.0 },
+      { x: -0.8, y: 0.3, z: 1.33 },
+      { x: 0.8, y: 0.3, z: 1.33 },
+    ],
+    maxSpeedFps: 14.5,
+    accel: 8.0,
+    turnRate: 1.0,
+    accent: "#d94b2b",
+    accentDark: "#17181b",
+    weapon: {
+      type: "lifter",
+      pivot: { x: 0, y: 0.63, z: 0.61 }, // MEASURED mast hinge, game space
+      axis: { x: 1, y: 0, z: 0 },
+      // MEASURED: the GLB bakes the mast RAISED, so rest is -0.43 (fork tips
+      // on the floor at y 0.00) and 0.30 hoists them to about 1.7ft — a
+      // forklift, not a flipper.
+      restAngle: -0.43,
+      fireAngle: 0.3,
+      liftImpulse: 165,
+      liftRecoil: 0.5,
+      lowerSeconds: 0.7,
+      dims: { x: 0.26, y: 0.12, z: 1.2 },
+      selfRight: true,
+      // The flamethrowers. Static geometry on the model, so they are a damage
+      // cone on the alt channel rather than a rigged part: no shove, no
+      // knockdown, just a steady burn on whatever is held in front.
+      flame: { damagePerSecond: 9, reach: 3.2 },
+      tuning: { strokeSeconds: 0.5, reach: 1.8 },
+    },
+    colliders: [
+      // MEASURED wedge: the nose is on the floor at z=-1.62 and 0.54 tall by
+      // z=-0.88. This is the cleanest wedge in the drop.
+      { shape: "wedge", halfExtents: { x: 1.02, y: 0.27, z: 0.37 }, offset: { x: 0, y: 0.27, z: -1.25 }, tipY: 0.02 },
+      { shape: "box", halfExtents: { x: 0.96, y: 0.33, z: 0.64 }, offset: { x: 0, y: 0.33, z: -0.24 } },
+      { shape: "box", halfExtents: { x: 0.93, y: 0.45, z: 0.62 }, offset: { x: 0, y: 0.45, z: 1.01 } },
+    ],
+  },
+
+  mammoth: {
+    id: "mammoth",
+    name: "Mammoth",
+    tagline: "Drive in if you dare.",
+    referenceImage: "./public/reference/mammoth.png",
+    modelPath: "./public/models/mammoth.glb",
+    modelYaw: 0, // MEASURED: the disc end is the nose, and it starts at -Z
+    // 3.0 makes Mammoth the tallest machine in the game while keeping its disc
+    // usable. The disc hangs high on the truss — at this scale its sweep bottoms
+    // out at y 1.16, which reaches every tall bot in the roster and nothing that
+    // is built to go underneath. Bigger and it hits nobody; small enough to hit
+    // everybody and it is not Mammoth any more.
+    modelScale: 3.0,
+    weightLbs: 250,
+    weaponWeightLbs: 40,
+    bodyDims: { x: 2.64, y: 3.0, z: 2.42 }, // MEASURED frame
+    wheelAnchors: [
+      { x: -1.2, y: 0.25, z: -0.9 },
+      { x: 1.2, y: 0.25, z: -0.9 },
+      { x: -1.16, y: 0.25, z: 0.57 },
+      { x: 1.16, y: 0.25, z: 0.57 },
+    ],
+    maxSpeedFps: 11.0,
+    accel: 5.5,
+    turnRate: 0.7,
+    accent: "#8a5a2c",
+    accentDark: "#1b1c20",
+    weapon: {
+      type: "bar",
+      pivot: { x: 0, y: 1.59, z: -0.48 }, // MEASURED hub, game space
+      axis: { x: 1, y: 0, z: 0 },
+      spinUpSeconds: 2.4,
+      inertia: 1.0,
+      maxOmega: 300,
+      budgetCap: 90,
+      // MEASURED swept radius of the animated hub is 0.428 — but the hub is not
+      // the weapon. Segmentation fused Mammoth's trunk into the truss and only
+      // the centre spins (updates/new-bots/SEGMENTATION.md), so the part that
+      // turns is a fraction of what the machine swings.
+      //
+      // 1.0 is also the number that makes this bot exist. Its axle sits at
+      // y 1.59, higher than the TOP of every collider stack in the roster (Deep
+      // Six is the tallest at 1.86 local, and rides low): measured over a full
+      // 40-second fight, radius 0.6 landed 0 hits, 0.75 landed 1, 0.85 landed
+      // 5 and 1.0 landed 7 — the same band as Beta and Deep Six. Below 1.0
+      // Mammoth is a 250lb punching bag. The visual disc is smaller than the
+      // hitbox, the same compromise Tantrum and Minotaur already ship.
+      radius: 1.0,
+      dims: { x: 0.3, y: 1.0, z: 1.0 },
+      // A displacement weapon: it throws opponents rather than cutting them, so
+      // the lift is the largest in the game and the damage the smallest.
+      tuning: { efficiency: 0.5, impulseScale: 9.0, liftScale: 46.0, liftVelocity: 7.0, gyroScale: 0.9, damageScale: 0.35 },
+    },
+    colliders: [
+      // The nose is a RAMP, and it is the whole machine. Mammoth's disc hangs
+      // at y 0.99-2.19, which is over the top of every collider stack in the
+      // roster — measured, it landed exactly zero hits in a 40-second fight
+      // with a short wedge. The frame is 1.85ft tall at z=-0.75, so the wedge
+      // is authored to the frame rather than to the bottom bar: opponents ride
+      // it up INTO the disc, which is the only way this weapon ever connects
+      // and is what "drive in if you dare" is supposed to mean.
+      { shape: "wedge", halfExtents: { x: 1.3, y: 0.62, z: 0.5 }, offset: { x: 0, y: 0.62, z: -0.7 }, tipY: 0.05 },
+      // Chassis stops at y 1.04 so the disc's lower sweep is clear.
+      { shape: "box", halfExtents: { x: 1.32, y: 0.52, z: 0.55 }, offset: { x: 0, y: 0.52, z: 0.2 } },
+      // Truss, sitting BEHIND the disc so the disc's leading face is exposed.
+      { shape: "box", halfExtents: { x: 0.62, y: 0.98, z: 0.4 }, offset: { x: 0, y: 2.02, z: 0.05 } },
+      { shape: "box", halfExtents: { x: 0.88, y: 0.36, z: 0.23 }, offset: { x: 0, y: 0.83, z: 0.98 } }, // rear outriggers
+    ],
+  },
+
+  overhaul: {
+    id: "overhaul",
+    name: "Overhaul",
+    tagline: "Grab it, lift it, hold it.",
+    referenceImage: "./public/reference/overhaul.png",
+    modelPath: "./public/models/overhaul.glb",
+    modelYaw: Math.PI / 2, // MEASURED: model faces +X
+    modelScale: 3.8,
+    weightLbs: 250,
+    weaponWeightLbs: 45,
+    bodyDims: { x: 2.94, y: 1.48, z: 3.17 }, // MEASURED shell
+    wheelAnchors: [
+      { x: -1.14, y: 0.44, z: -0.95 },
+      { x: 1.14, y: 0.44, z: -0.95 },
+      { x: -1.14, y: 0.42, z: 1.07 },
+      { x: 1.14, y: 0.42, z: 1.07 },
+    ],
+    maxSpeedFps: 15.5,
+    accel: 8.5,
+    turnRate: 1.05,
+    accent: "#cf3b3b",
+    accentDark: "#17171a",
+    weapon: {
+      type: "grappler",
+      pivot: { x: 0, y: 0.9, z: 0.25 }, // MEASURED lift hinge, game space
+      axis: { x: 1, y: 0, z: 0 },
+      // MEASURED: the arm is baked RAISED, so -0.26 drops the fork tips to the
+      // floor and 0.55 hoists them. Grabbing needs the forks DOWN, which is why
+      // the sim only takes a grip below a third of the lift stroke.
+      restAngle: -0.26,
+      liftAngle: 0.55,
+      liftSeconds: 0.6,
+      lowerSeconds: 0.8,
+      gripReach: 1.6,
+      gripHeight: 0.4,
+      gripStrength: 15,
+      throwScale: 0.55,
+      dims: { x: 0.2, y: 0.2, z: 0.5 },
+      selfRight: true,
+      claw: { openAngle: 0, closedAngle: -0.9, clampSeconds: 0.3 },
+      tuning: { reach: 1.6, holdDamagePerSecond: 3 },
+    },
+    colliders: [
+      // MEASURED front skirt: z -1.58..-0.86 at y 0.20-0.44, authored down to
+      // the floor so opponents can climb it into the forks.
+      { shape: "wedge", halfExtents: { x: 1.27, y: 0.22, z: 0.36 }, offset: { x: 0, y: 0.22, z: -1.22 }, tipY: 0.02 },
+      { shape: "box", halfExtents: { x: 1.47, y: 0.52, z: 0.63 }, offset: { x: 0, y: 0.52, z: -0.23 } },
+      { shape: "box", halfExtents: { x: 0.99, y: 0.74, z: 0.63 }, offset: { x: 0, y: 0.74, z: 0.42 } },
+      { shape: "box", halfExtents: { x: 1.01, y: 0.35, z: 0.27 }, offset: { x: 0, y: 0.35, z: 1.31 } },
+    ],
+  },
+
+  shatter: {
+    id: "shatter",
+    name: "Shatter",
+    tagline: "One hammer, straight down.",
+    referenceImage: "./public/reference/shatter.png",
+    modelPath: "./public/models/shatter.glb",
+    modelYaw: Math.PI / 2, // MEASURED: model faces +X
+    modelScale: 3.2,
+    hideWheels: true, // omni drive enclosed by the side armour
+    weightLbs: 250,
+    weaponWeightLbs: 50,
+    bodyDims: { x: 1.88, y: 0.86, z: 3.2 }, // MEASURED shell — long and narrow
+    wheelAnchors: [
+      { x: -0.75, y: 0.25, z: -0.9 },
+      { x: 0.75, y: 0.25, z: -0.9 },
+      { x: -0.75, y: 0.25, z: 1.1 },
+      { x: 0.75, y: 0.25, z: 1.1 },
+    ],
+    maxSpeedFps: 14.0,
+    accel: 8.0,
+    turnRate: 1.15,
+    accent: "#8f6fd0",
+    accentDark: "#141019",
+    weapon: {
+      type: "hammer",
+      pivot: { x: 0, y: 0.67, z: 0.1 }, // MEASURED gearbox hinge, game space
+      axis: { x: 1, y: 0, z: 0 },
+      // MEASURED: the GLB bakes the hammer COCKED — up and back over the tail —
+      // so rest is 0 and -2.45 brings the head over the top and down onto the
+      // floor at the nose (arm low point 0.00, tip out at z -1.53).
+      restAngle: 0,
+      fireAngle: -2.45,
+      budgetCap: 300,
+      dims: { x: 0.16, y: 0.5, z: 0.16 },
+      selfRight: true,
+      tuning: { strokeSeconds: 0.2, returnSeconds: 0.85, reach: 1.9 },
+    },
+    colliders: [
+      // The two front forks — MEASURED thin (|x| <= 0.39) and on the floor.
+      { shape: "wedge", halfExtents: { x: 0.39, y: 0.145, z: 0.5 }, offset: { x: 0, y: 0.145, z: -1.1 }, tipY: 0.02 },
+      // The body is itself a wedge: 0.28 tall where the forks meet it, 0.86 by
+      // the time it reaches the hammer's gearbox.
+      { shape: "wedge", halfExtents: { x: 0.94, y: 0.43, z: 0.4 }, offset: { x: 0, y: 0.43, z: -0.2 }, tipY: 0.28 },
+      { shape: "box", halfExtents: { x: 0.85, y: 0.43, z: 0.7 }, offset: { x: 0, y: 0.43, z: 0.9 } },
+    ],
+  },
+
+  tantrum: {
+    id: "tantrum",
+    name: "Tantrum",
+    tagline: "Drum up front, fists on top.",
+    referenceImage: "./public/reference/tantrum.png",
+    modelPath: "./public/models/tantrum.glb",
+    modelYaw: Math.PI, // MEASURED: model faces +Z
+    // Tripo read this bot off a photo taken on a shiny floor and modelled the
+    // REFLECTION as geometry; it is carved out in
+    // tools/repairs/tantrum-reflection.json. The slant on the side panels is
+    // the real robot's wedge skirt, not a tilt, and is left alone.
+    modelScale: 3.4,
+    hideWheels: true, // drive enclosed by the side pods
+    weightLbs: 250,
+    weaponWeightLbs: 40,
+    bodyDims: { x: 2.8, y: 1.01, z: 3.2 }, // MEASURED shell
+    wheelAnchors: [
+      { x: -1.1, y: 0.25, z: -0.9 },
+      { x: 1.1, y: 0.25, z: -0.9 },
+      { x: -1.1, y: 0.25, z: 0.9 },
+      { x: 1.1, y: 0.25, z: 0.9 },
+    ],
+    maxSpeedFps: 15.0,
+    accel: 8.5,
+    turnRate: 1.05,
+    accent: "#e2701f",
+    accentDark: "#141a1c",
+    weapon: {
+      type: "drum",
+      pivot: { x: 0.02, y: 0.74, z: -1.41 }, // MEASURED axle, game space
+      axis: { x: 1, y: 0, z: 0 },
+      spinUpSeconds: 1.1,
+      inertia: 1.0,
+      maxOmega: 600,
+      budgetCap: 300,
+      // Tripo built the drum as a SLIM BAR: swept radius measures 0.145, which
+      // is a third of the real machine's drum and would leave it unable to
+      // touch anything with 0.6ft of air under the axle. 0.30 is the radius the
+      // reference photo's drum actually has. Same call as Minotaur's unmodelled
+      // notches — the collider follows the robot, not the segmentation.
+      radius: 0.3,
+      dims: { x: 0.51, y: 0.3, z: 0.3 },
+      // The fists punch on the alt channel, independent of the drum.
+      fists: {
+        openAngle: 0, punchAngle: -0.85, punchSeconds: 0.18,
+        impulse: 90, damagePerHit: 2.5, reach: 1.1,
+        axis: { x: 1, y: 0, z: 0 },
+      },
+      tuning: { efficiency: 0.55, impulseScale: 10.0, liftScale: 28.0, liftVelocity: 4.5, gyroScale: 1.0 },
+    },
+    // Nothing forward of z=-1.20: the drum sweeps down to y 0.44 and out to
+    // z -1.71, and the model's nose shroud sits at y 0.50-1.00, right across
+    // the sweep. Leaving it out is what lets the drum reach.
+    colliders: [
+      { shape: "box", halfExtents: { x: 1.4, y: 0.5, z: 0.98 }, offset: { x: 0, y: 0.5, z: -0.22 } },
+      { shape: "box", halfExtents: { x: 0.68, y: 0.21, z: 0.42 }, offset: { x: 0, y: 0.31, z: 1.18 } },
+    ],
+  },
+
   witchdoctor: {
     id: "witchdoctor",
     name: "Witch Doctor",
@@ -759,6 +1236,8 @@ export const BOT_IDS = Object.freeze([
   "beta", "biteforce", "bronco", "clawviper", "deepsix", "huge",
   "hydra", "hypershock", "minotaur", "quantum", "sawblaze", "tombstone",
   "whiplash", "witchdoctor",
+  "blip", "copperhead", "duck", "endgame", "freeshipping",
+  "mammoth", "overhaul", "shatter", "tantrum",
 ]);
 
 /** @returns {BotSpec} */

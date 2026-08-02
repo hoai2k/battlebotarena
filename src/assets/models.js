@@ -146,8 +146,9 @@ function placeholderWeapon(spec) {
     const head = cylinderAcross(0.22, 0.3, accent, "x");
     head.position.z = -reach;
     group.add(head);
-  } else if (weapon.type === "lifterDisc") {
-    // Lifter beam with fork prongs, plus the disc that rides on it.
+  } else if (weapon.type === "lifterDisc" || weapon.type === "lifter") {
+    // Lifter beam with fork prongs, plus the disc that rides on it (lifterDisc
+    // only — a plain lifter is the same arm with nothing bolted to it).
     const reach = Math.max(1.0, dims.z * 4);
     const beam = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.14, reach), dark);
     beam.position.z = -reach / 2;
@@ -157,9 +158,11 @@ function placeholderWeapon(spec) {
       prong.position.set(side * 0.28, -0.06, -reach - 0.2);
       group.add(prong);
     }
-    const disc = cylinderAcross(weapon.disc?.radius ?? 0.42, 0.07, accent, "x");
-    disc.position.set(0, 0.25, -reach * 0.55);
-    group.add(disc);
+    if (weapon.disc) {
+      const disc = cylinderAcross(weapon.disc.radius ?? 0.42, 0.07, accent, "x");
+      disc.position.set(0, 0.25, -reach * 0.55);
+      group.add(disc);
+    }
   } else if (weapon.type === "hammerSaw") {
     const sawCenter = weapon.tuning?.sawCenter || { x: 0, y: 0, z: -0.9 };
     const armVec = new THREE.Vector3(
@@ -214,19 +217,74 @@ async function tryLoadScene(path, onProgress) {
   }
 }
 
+// Bounds over the geometry a mesh actually DRAWS, not over its whole position
+// buffer. glb-carve moves triangles between parts and leaves the donor's
+// vertices in place, so a deleted stand-off leg still sits in the buffer at its
+// old height — and Box3.setFromObject, which reads positions and ignores the
+// index, would keep resting the model on geometry nobody can see. Endgame came
+// out of the carve floating 0.46ft off the floor for exactly that reason.
+//
+// The local box is cached on the geometry (once per model, not per call) and
+// the world box expands by its eight transformed corners. For the axis-aligned
+// yaw/roll every bot in the catalog uses that is exact; for an arbitrary angle
+// it is the same AABB-of-rotated-AABB three.js already returns, so it is never
+// worse than what it replaces.
+const scratchCorner = new THREE.Vector3();
+function drawnLocalBox(geometry) {
+  if (geometry.userData.__drawnBox) return geometry.userData.__drawnBox;
+  const box = new THREE.Box3();
+  const pos = geometry.attributes.position;
+  const index = geometry.index;
+  if (pos) {
+    const count = index ? index.count : pos.count;
+    for (let i = 0; i < count; i += 1) {
+      scratchCorner.fromBufferAttribute(pos, index ? index.getX(i) : i);
+      box.expandByPoint(scratchCorner);
+    }
+  }
+  geometry.userData.__drawnBox = box;
+  return box;
+}
+
+function drawnBox(object, target = new THREE.Box3()) {
+  target.makeEmpty();
+  object.updateWorldMatrix(true, true);
+  object.traverse((node) => {
+    if (!node.isMesh || !node.geometry) return;
+    const local = drawnLocalBox(node.geometry);
+    if (local.isEmpty()) return;
+    for (let i = 0; i < 8; i += 1) {
+      scratchCorner.set(
+        i & 1 ? local.max.x : local.min.x,
+        i & 2 ? local.max.y : local.min.y,
+        i & 4 ? local.max.z : local.min.z,
+      ).applyMatrix4(node.matrixWorld);
+      target.expandByPoint(scratchCorner);
+    }
+  });
+  return target;
+}
+
 // Tripo GLBs are ~1-unit normalized and face +X in authoring space; the game
 // convention is feet with forward -Z (see catalog header). Rather than baking
-// transforms into the files, normalize at load: yaw by spec.modelYaw, scale to
-// the catalog footprint (spec.modelScale overrides), and rest the wheels on
-// y=0. Runs BEFORE part extraction so detach() bakes it into every part.
+// transforms into the files, normalize at load: yaw by spec.modelYaw, roll by
+// spec.modelRoll, scale to the catalog footprint (spec.modelScale overrides),
+// and rest the wheels on y=0. Runs BEFORE part extraction so detach() bakes it
+// into every part.
+//
+// modelRoll is applied on the WRAPPER, i.e. about the game-space forward axis
+// AFTER the yaw, so `Math.PI` means "this model came out of Tripo upside down"
+// no matter which way it was facing. Copperhead and Duck both did; nothing in
+// the segmentation pass looks at which way is up.
 function normalizeScene(scene, spec) {
   if (!scene) return null;
   const wrapper = new THREE.Group();
   wrapper.name = "modelNormalized";
   wrapper.add(scene);
   scene.rotation.y = spec.modelYaw ?? 0;
+  wrapper.rotation.z = spec.modelRoll ?? 0;
   wrapper.updateMatrixWorld(true);
-  const bbox = new THREE.Box3().setFromObject(wrapper);
+  const bbox = drawnBox(wrapper);
   if (bbox.isEmpty()) return wrapper;
   const size = new THREE.Vector3();
   bbox.getSize(size);
@@ -234,12 +292,12 @@ function normalizeScene(scene, spec) {
   const scale = spec.modelScale ?? footprintScale;
   wrapper.scale.setScalar(scale);
   wrapper.updateMatrixWorld(true);
-  const grounded = new THREE.Box3().setFromObject(wrapper);
+  const grounded = drawnBox(wrapper);
   wrapper.position.y = -grounded.min.y;
   // Center the footprint on the origin (Tripo models are near-centered but
   // weapon overhangs skew the bbox; recenter on the body when present).
   const bodyNode = wrapper.getObjectByName("modelBody");
-  const centerBox = bodyNode ? new THREE.Box3().setFromObject(bodyNode) : grounded;
+  const centerBox = bodyNode ? drawnBox(bodyNode) : grounded;
   const center = new THREE.Vector3();
   centerBox.getCenter(center);
   wrapper.position.x -= center.x;
@@ -289,7 +347,7 @@ function detach(node) {
 export function weaponVisualAngle(visual, spec, state) {
   const type = spec.weapon?.type;
   if (type === "flipper" || type === "hammerSaw" || type === "crusher"
-    || type === "hammer" || type === "lifterDisc" || type === "grappler") {
+    || type === "hammer" || type === "lifter" || type === "lifterDisc" || type === "grappler") {
     const stroke = THREE.MathUtils.clamp(state.weaponAngle ?? 0, 0, 1);
     if (visual.weaponIsPlaceholder) return stroke * (spec.weapon.throwAngle ?? 0.9);
     // GLB arms are baked in one pose (angle 0). restAngle poses the arm at

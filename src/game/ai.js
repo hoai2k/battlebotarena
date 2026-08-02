@@ -263,6 +263,12 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
       ai.lastFireAt = ai.t;
     }
     weapon = ai.t - ai.lastFireAt < (spec.weapon.tuning?.strokeSeconds || 0.22);
+  } else if (type === "lifter") {
+    // Same shape as lifterDisc but there is no disc to fall back on, so the
+    // whole game is getting under them: keep the forks DOWN until contact, then
+    // hold the lift up to tip them over rather than pumping it.
+    weapon = distance < strikeRange * 0.8;
+    if (weapon && distance < 2.4) throttleScale = 0.65;
   } else if (type === "lifterDisc") {
     // Get under them and hold the arm up — the lift is the point, the disc is
     // opportunistic. Hold the arm DOWN while closing so the forks can scoop.
@@ -282,9 +288,15 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
   // anywhere near the fight. Without this an AI Sawblaze never spun its saw.
   // For the grappler the same channel is the jaw: shut it near the foe, and
   // open it again at the top of the hoist so the throw actually releases.
-  const sawActive = type === "grappler"
-    ? (ai.t < ai.latchedUntil && ai.latchedUntil - ai.t > 0.55)
-    : ((type === "hammerSaw" || type === "lifterDisc") && distance < engage + 3);
+  // Free Shipping's flame and Tantrum's fists ride the same channel, but both
+  // are short-range: burning or punching at nothing across the arena reads as
+  // an AI that does not understand its own machine. The fists pulse so the arms
+  // actually cycle instead of parking at full extension.
+  let sawActive = false;
+  if (type === "grappler") sawActive = ai.t < ai.latchedUntil && ai.latchedUntil - ai.t > 0.55;
+  else if (spec?.weapon?.fists) sawActive = distance < strikeRange * 0.9 && Math.floor(ai.t * 2.6) % 2 === 0;
+  else if (spec?.weapon?.flame) sawActive = distance < (spec.weapon.flame.reach ?? 3) + 1;
+  else if (type === "hammerSaw" || type === "lifterDisc") sawActive = distance < engage + 3;
 
   const throttle = steer.throttle * level.drive * throttleScale;
   const turn = clamp(steer.turn * level.turnGain, -1, 1);

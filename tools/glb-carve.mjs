@@ -308,7 +308,18 @@ for (const op of ops) {
     const inside = inRegion(world, op.region, sample) !== Boolean(op.invert);
     (inside ? moved : kept).push(indices[t], indices[t + 1], indices[t + 2]);
   }
-  if (!moved.length) throw new Error(`part ${op.part}: region matched 0 triangles — check coordinates`);
+  if (!moved.length) {
+    // Sweeping one region across a whole model (a Tripo scan's mirrored floor
+    // reflection, a support stand) means listing every part whose BOX dips into
+    // it, and a box that overlaps need not contain a triangle centroid. Opting
+    // in to a no-op keeps that a single readable ops file instead of a
+    // bisection.
+    if (op.allowEmpty) {
+      console.log(`part ${op.part} [${op.mode}]: region matched 0 triangles (allowEmpty)`);
+      continue;
+    }
+    throw new Error(`part ${op.part}: region matched 0 triangles — check coordinates`);
+  }
 
   primitive.indices = appendIndexBuffer(kept);
   console.log(`part ${op.part} [${op.mode}]: kept ${kept.length / 3} tris, ${op.mode === "delete" ? "deleted" : "extracted"} ${moved.length / 3}`);

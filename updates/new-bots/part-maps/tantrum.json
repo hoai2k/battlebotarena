@@ -1,9 +1,0 @@
-{
-  "weapon": [0],
-  "wheels": [],
-  "weaponAxis": [1, 0, 0],
-  "pivotOverride": [-0.046, 0.059, 0.387],
-  "aux": {
-    "fists": { "parts": [10, 11], "axis": [-1, 0, 0], "pivotOverride": [0, 0.1, -0.05] }
-  }
-}

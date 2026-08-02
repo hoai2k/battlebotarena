@@ -28,6 +28,9 @@ Each area has exactly one owner; do not edit files outside your area.
 | `v2/index.html`, `v2/styles/*.css`, `v2/src/ui/*` | UI agent | screens, HUD DOM, styling |
 | `v2/src/sim/*` | SIM agent | Rapier world, vehicle, weapons, impacts, hazards |
 | `v2/tools/sim-tests.mjs` | SIM agent | headless scenario tests (node) |
+| `v2/tools/rig-inspect.*` | GAME agent | measure a bot in GAME space through the loader |
+| `v2/tools/roster-probe.mjs` | GAME agent | every bot, AI-driven, vs a reference foe |
+| `v2/tools/boot-probe.mjs` | integrator | boot the real page into a match, per bot |
 | `v2/src/game/*`, `v2/src/assets/*` | GAME agent | match state, AI, input, audio, damage, model loading, bot catalog |
 | `v2/src/engine/*`, `v2/src/main.js` | integrator (Claude, later) | renderer, arena visuals, cameras, boot/wiring |
 | `v2/src/shared/*` | frozen (already written) | event types, settings store — import, don't edit |
@@ -166,8 +169,9 @@ Port stats from v1 `src/botConfig.js` (speeds, weights, weapon params) into:
   maxSpeedFps, accel, turnRate,
   canDriveInverted?,                       // keeps driving upside down (Witch Doctor)
   hideWheels?,                             // no procedural wheel fallback (enclosed drive)
+  modelRoll?,                              // PI when Tripo built the model upside down
   weapon: { type: 'bar'|'drum'|'flipper'|'crusher'|'hammerSaw'
-                 |'hammer'|'lifterDisc'|'grappler',
+                 |'hammer'|'lifter'|'lifterDisc'|'grappler',
             spinUpSeconds?, inertia?, maxOmega?, budgetCap?,
             pivot: {x,y,z}, axis: {x,y,z} },   // body-local, placeholder until models land
   colliders: [{ shape:'box'|'cylinder'|'hull', ...dims, offset }],
@@ -176,7 +180,7 @@ Port stats from v1 `src/botConfig.js` (speeds, weights, weapon params) into:
 
 All 8 v1 bots must be present with sane numbers (copy v1 values; estimate
 wheel anchors from reference images / v1 collider configs). The roster has
-since grown to 14; `BOT_IDS` is the single source of truth for it, and both
+since grown to 23; `BOT_IDS` is the single source of truth for it, and both
 the sim tests and the roster grid size themselves off it.
 
 ### Weapon types beyond v1's five
@@ -186,6 +190,19 @@ the sim tests and the roster grid size themselves off it.
   possible contact instead delivers about a tenth of the power.
 - `lifterDisc` (Whiplash) — a lifting arm plus an arm-mounted disc on its own
   channel. The disc motor rides `input.sawActive`, not the weapon button.
+- `lifter` (Duck, Free Shipping) — the same arm with nothing bolted to it. It
+  is the SAME implementation: everything disc-shaped is gated on `weapon.disc`
+  existing, so a bot without one neither spins a phantom rotor nor chews the
+  target on a channel it has no hardware for. Free Shipping spends that channel
+  on `weapon.flame` instead — a damage cone with no shove, since fire pushes
+  nothing over. A lifter ticks a small amount of damage while it is actually
+  hoisting someone: control is its job, but a bot that can never score cannot
+  win a judged match, and Duck scored a flat zero over a full fight without it.
+- `weapon.fists` (Tantrum) — a SECOND, independent mechanism on a spinner. It
+  cannot be a `modelWeaponSub` (a sub inherits the drum's spin), so the model
+  side is a `modelAux-fists` group and the sim side is a punch stroke on
+  `sawActive` reported through `getSubAngle()`. Momentary, not latched: a
+  toggle would leave the arms parked at full extension.
 - `grappler` (Claw Viper) — forks on the weapon button, jaw on `sawActive`.
   It takes a grip when the jaw is shut, the forks are DOWN and the foe is in
   the front zone, then servos the victim onto a grip point that sweeps with the
@@ -355,6 +372,18 @@ documents the contract from the segmentation side. `hideWheels: true` skips
 the procedural wheel fallback for a bot whose real wheels are enclosed by its
 shell (Beta, Deep Six, Hydra) — the suspension still runs off `wheelAnchors`.
 
+`modelRoll` is applied on the wrapper, i.e. about the game-space forward axis
+AFTER `modelYaw`, so `Math.PI` means "Tripo built this one upside down"
+whichever way it was facing. Copperhead and Duck both were — nothing in the
+segmentation pass looks at which way is up, so it is not caught upstream and
+shows as wheels resting on the roof.
+
+**Model bounds come from the geometry the index buffer actually DRAWS**
+(`drawnBox` in models.js), not from `Box3.setFromObject`. `glb-carve` moves
+triangles between parts and leaves the donor's vertices in place, so deleted
+geometry still sits in the position buffer; grounding off it left Endgame
+hovering 0.46ft up on a support stand that had already been carved away.
+
 **Weapon arm angles (`restAngle` / `fireAngle`) must be measured in GAME
 space, through the loader** — after `modelYaw`, `modelScale` and grounding.
 Measuring in raw GLB space is off by enough to bury a fork half a foot in the
@@ -381,6 +410,13 @@ driven by a checked-in spec so the edit is reviewable and repeatable:
 | `glb-add-panels.mjs` | `tools/repairs/tombstone-panels.json` | surfaces the scan never saw — Tombstone had no rear panel and no floor, so you could see into the chassis from behind or below |
 | `glb-erase-decal.mjs` | `tools/repairs/huge-eyes.json` | livery mirrored onto the wrong side — HUGE's eyes are bolted to the front of the frame only, but the scan painted (and embossed) them on the rear faces too |
 | `glb-carve.mjs` | `tools/repairs/hypershock-weapon.json` | parts the segmenter mis-assigned — Hypershock's `modelWeapon` had swallowed the front scoop and a fin, which then counter-rotated with the drum |
+| `glb-carve.mjs` | `tools/repairs/endgame-stand.json` | geometry the SUBJECT never had — Tripo sculpted a pair of support legs under Endgame's rear and the model rested on them, forks half a foot off the floor |
+| `glb-carve.mjs` | `tools/repairs/tantrum-reflection.json` | Tantrum's reference photo was taken on a polished floor and the scan modelled the REFLECTION as solid geometry, a mirrored ghost bot hanging under the real one |
+
+`glb-carve` ops take `"allowEmpty": true` for the case those two are: one
+region swept across every part whose bounding box dips into it, where a box
+that overlaps need not contain a triangle centroid. Without it, sweeping a
+model means bisecting the part list by hand.
 
 `glb-erase-decal.mjs` needs `sharp` (`npm i --no-save sharp`) and takes an
 optional debug directory that dumps what it saw and what it selected.

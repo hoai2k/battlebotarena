@@ -207,3 +207,43 @@ Both are in `tools/` and are general, not bot-specific:
 default** so the rig is visible at a glance. That is a debug overlay, not the
 model's texture — add **`&tint=0`** to see real materials. Worth remembering
 before concluding a model's colours are broken.
+
+---
+
+## As integrated — what this file got wrong
+
+Corrections found by measuring each model **in game space, through the loader**
+(`node tools/rig-inspect.mjs <id>`), which is not a check the segmentation pass
+makes. Kept here rather than edited into the tables above, because the tables
+are an accurate record of what the pipeline produced.
+
+**Nothing above looks at which way is UP.** The orientation table settles the
+forward axis and stops. Two models came out of Tripo upside down and needed
+`modelRoll: Math.PI` in the catalog:
+
+- **Copperhead** — wheels centred at y 1.57 on a 2.08ft-tall bot, i.e. resting
+  on the roof, with the deck underneath.
+- **Duck** — wheels sitting on top of the deck plate, logo facing the floor.
+
+**Two models carried geometry the robot does not have**, and both of them
+were what the model rested on, so every other part floated:
+
+- **Endgame** — a sculpted pair of support legs under the rear held the chassis
+  up with the END/GAME forks 0.53ft clear of the floor. Carved out in
+  `tools/repairs/endgame-stand.json`.
+- **Tantrum** — the reference photo was shot on a polished floor and the scan
+  modelled the reflection as solid geometry: a mirrored ghost bot hanging
+  underneath. Carved out in `tools/repairs/tantrum-reflection.json`. The slant
+  on its side panels is NOT a tilt; that is the real robot's wedge skirt.
+
+**Mammoth's and Tantrum's under-built weapons** are called out above as needing
+a carve. Neither got one — you cannot carve geometry that is not there. Both
+instead carry a collider radius larger than the animated part, documented at
+the catalog entry: Mammoth 0.6 against a 0.43 hub, Tantrum 0.30 against a
+0.145 bar. Mammoth also drops to `modelScale: 3.0`, because at the scale its
+frame implies the disc sweeps down only to y 1.4 and reaches nothing.
+
+**The measured swept radii** (game space, at the catalog's scale) are the
+numbers the catalog now carries. Notably Endgame's blade is a TEARDROP: its
+axle is at the fat end, so its bbox centre is 0.29ft off the real hub and the
+swept circle is set by the tip, not by half the height.

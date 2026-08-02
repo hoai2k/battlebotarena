@@ -1,0 +1,11 @@
+{
+  "weapon": [30, 11, 19],
+  "weaponSub": {
+    "name": "claw",
+    "parts": [21, 12, 28, 13],
+    "pivotOverride": [-0.12, -0.06, 0]
+  },
+  "wheels": [[2], [35], [1], [34]],
+  "weaponAxis": [0, 0, 1],
+  "pivotOverride": [-0.15, -0.04, 0]
+}

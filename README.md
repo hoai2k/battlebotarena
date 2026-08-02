@@ -71,12 +71,27 @@ blueprint — are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
 ## Development
 
 ```bash
-node tools/sim-tests.mjs          # 13 headless physics scenarios
-node tools/feel-probe.mjs bronco  # driving response/smoothness metrics
+node tools/sim-tests.mjs             # headless physics scenarios
+node tools/feel-probe.mjs bronco     # driving response/smoothness metrics
+node tools/weapon-tuning-verify.mjs  # per-spinner damage ladder
+node tools/roster-probe.mjs          # every bot, AI-driven, vs a reference foe
+node tools/boot-probe.mjs duck       # boot the real page into a match (needs the server)
 ```
 
 Open `tools/viewer.html?bot=minotaur` in the browser to inspect a bot model
 (`&spin=1` animates its weapon, `&parts=1` shows raw segmentation parts).
+
+`tools/rig-inspect.mjs` is the one that matters when a bot's rig looks wrong.
+It loads a bot **through the game loader** and measures it in game space with
+the model grounded, which is the only space the catalog's numbers mean anything
+in — a raw-GLB viewer cannot show you a model that is upside down, a nose held
+off the floor, or an arm whose rest angle buries it:
+
+```bash
+node server.mjs &
+node tools/rig-inspect.mjs duck /tmp/shots side,iso --tint --colliders
+node tools/rig-inspect.mjs shatter --arc -2.6,-2.3,0.1   # pick a fireAngle
+```
 
 ### Bot models
 

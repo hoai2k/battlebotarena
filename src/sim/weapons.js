@@ -160,6 +160,41 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
   let lastEmittedRatio = -1;
   const lastHitAt = new Map(); // "foe" | "arena" -> simTime
 
+  // Tantrum's fist arms: a second, independent mechanism on the alt channel.
+  // They punch straight out over the drum, so their zone is short and high —
+  // they hit what is already pressed against the front, which is exactly the
+  // moment the drum has stalled against an opponent and needs help.
+  const fists = w.fists ?? null;
+  const fistZone = fists ? frontZone(spec, fists.reach ?? 1.0, { pad: -0.1, minY: -0.2, maxY: 1.6 }) : null;
+  let fistStroke = 0; // 0 arms back, 1 arms punched out
+  let fistOut = false; // debounces one hit per punch
+  function updateFists(dt, ctx) {
+    const punching = Boolean(ctx.input?.sawActive);
+    const seconds = Math.max(0.05, fists.punchSeconds ?? 0.18);
+    fistStroke = m.clamp(fistStroke + (punching ? dt / seconds : -dt / (seconds * 2.2)), 0, 1);
+    if (fistStroke < 0.85) { if (fistStroke < 0.4) fistOut = false; return; }
+    if (fistOut) return;
+    fistOut = true;
+    const foe = ctx.foe;
+    const local = toLocal(vehicle, foe.body.translation());
+    if (!localZoneContains(fistZone, local)) return;
+    const h = horizontalBetween(vehicle.body.translation(), foe.body.translation());
+    const impulse = fists.impulse ?? 90;
+    const point = m.add(foe.body.translation(), m.v3(0, 0.35, 0));
+    foe.body.applyImpulseAtPoint(m.add(m.scale(h, impulse), m.scale(UP, impulse * 0.35)), point, true);
+    vehicle.body.applyImpulse(m.scale(h, -impulse * 0.35), true);
+    emit(EV.WEAPON_HIT, {
+      attackerIndex: index,
+      targetIndex: foe.index,
+      point,
+      normal: m.scale(h, -1),
+      impulse: damageImpulseForRate(fists.damagePerHit ?? 2.5, 1),
+      appliedImpulse: impulse,
+      energyBefore: 0,
+      heavy: false,
+    });
+  }
+
   function energy() {
     return 0.5 * w.inertia * omega * omega;
   }
@@ -342,8 +377,10 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
       if (gyro) vehicle.body.applyTorqueImpulse(gyro, true);
 
       if (ratio > TU.minHitRatio) checkContacts(ctx);
+      if (fists) updateFists(dt, ctx);
     },
     getAngle: () => angle,
+    getSubAngle: () => fistStroke,
     getRatio: () => omega / w.maxOmega,
     setOmega(value) {
       omega = m.clamp(value, 0, w.maxOmega);
@@ -353,6 +390,8 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
       angle = 0;
       lastEmittedRatio = -1;
       lastHitAt.clear();
+      fistStroke = 0;
+      fistOut = false;
     },
   };
 }
@@ -766,11 +805,17 @@ function createHammer({ vehicle, index, emit }) {
 // (not a one-shot stroke — the point is to get under an opponent and carry
 // them), and a disc on that arm which spins independently on its own toggle,
 // exactly the RT/RB split Sawblaze already uses.
+// Also serves the plain `lifter` (Duck's beak, Free Shipping's forklift): same
+// arm, no disc. Everything disc-shaped is gated on `weapon.disc` existing, so a
+// lifter without one neither spins a phantom rotor nor chews the target on a
+// channel its bot has no hardware for. Free Shipping instead spends that
+// channel on `weapon.flame`.
 function createLifterDisc({ vehicle, index, emit }) {
   const spec = vehicle.spec;
   const w = spec.weapon;
   const tune = resolveWeaponTuning(spec);
-  const disc = w.disc ?? {};
+  const disc = w.disc ?? null;
+  const flame = w.flame ?? null;
   const raiseSeconds = tune.strokeSeconds;
   const lowerSeconds = w.lowerSeconds ?? tune.strokeSeconds * 1.3;
   // The lift zone sits LOW and close: the forks have to be under the target.
@@ -778,7 +823,13 @@ function createLifterDisc({ vehicle, index, emit }) {
   // The disc rides high on the arm, so its reach is taller and a little longer.
   const discZone = w.discZone ?? frontZone(spec, (tune.reach ?? 1.5) + 0.5, { minY: -0.5, maxY: 1.8 });
   const liftImpulse = w.liftImpulse ?? 150;
-  const discMaxOmega = disc.maxOmega ?? 380;
+  const discMaxOmega = disc?.maxOmega ?? 380;
+  // The flame cone is long and narrow: it reaches well past the forks but only
+  // burns what is roughly ahead, so it rewards facing the target rather than
+  // being a free aura.
+  const flameZone = flame
+    ? frontZone(spec, flame.reach ?? 3.0, { pad: -0.2, minY: -0.6, maxY: 1.4 })
+    : null;
 
   let stroke = 0; // 0 forks down, 1 arm fully raised
   let omega = 0;
@@ -786,13 +837,16 @@ function createLifterDisc({ vehicle, index, emit }) {
   let lastEmittedRatio = -1;
   const srimech = { lastSrimechAt: -Infinity };
   let lastDiscHitAt = -Infinity;
+  let lastLiftTickAt = -Infinity;
+  let lastBurnAt = -Infinity;
+  let burning = 0; // 0..1, drives the nozzle VFX through getSubAngle()
 
   function pivotWorld() {
     return m.add(vehicle.body.translation(), m.qRotate(vehicle.body.rotation(), w.pivot));
   }
 
   return {
-    type: "lifterDisc",
+    type: w.type,
     update(dt, fire, ctx) {
       const { foe, simTime } = ctx;
       const previous = stroke;
@@ -809,7 +863,7 @@ function createLifterDisc({ vehicle, index, emit }) {
       if (rise > 0 && inZone) {
         if (!carrying) {
           carrying = true;
-          emit(EV.WEAPON_FIRED, { botIndex: index, weaponType: "lifterDisc" });
+          emit(EV.WEAPON_FIRED, { botIndex: index, weaponType: w.type });
         }
         const share = rise * liftImpulse;
         const h = horizontalBetween(vehicle.body.translation(), foe.body.translation());
@@ -818,9 +872,49 @@ function createLifterDisc({ vehicle, index, emit }) {
         const point = m.add(foe.body.translation(), m.scale(h, -0.45));
         foe.body.applyImpulseAtPoint(m.scale(UP, share), point, true);
         vehicle.body.applyImpulseAtPoint(m.scale(UP, -share * (w.liftRecoil ?? 0.5)), pivotWorld(), true);
+        // A lifter's job is control, not damage — but a bot that can NEVER
+        // score cannot win a judged match, and Duck scored a flat zero across a
+        // full fight before this. The forks grinding under an opponent tick a
+        // small amount, the same way the grappler's carry does.
+        if (simTime - lastLiftTickAt >= TU.crusherTickSeconds) {
+          lastLiftTickAt = simTime;
+          emit(EV.WEAPON_HIT, {
+            attackerIndex: index,
+            targetIndex: foe.index,
+            point,
+            normal: m.v3(0, -1, 0),
+            impulse: damageImpulseForRate(tune.holdDamagePerSecond || 2.5, TU.crusherTickSeconds),
+            appliedImpulse: share,
+            energyBefore: 0,
+            heavy: false,
+          });
+        }
       }
       if (!inZone) carrying = false;
 
+      // Flamethrower (free shipping): the alt channel again, but it burns
+      // rather than spins. Damage is continuous and small — it is a finisher
+      // and a crowd-pleaser, not a way to win a fight on its own.
+      if (flame) {
+        const lit = Boolean(ctx.input?.sawActive);
+        burning = m.clamp(burning + (lit ? dt / 0.12 : -dt / 0.25), 0, 1);
+        if (lit && localZoneContains(flameZone, local)
+          && simTime - lastBurnAt >= TU.hammerGrindTickSeconds) {
+          lastBurnAt = simTime;
+          emit(EV.WEAPON_HIT, {
+            attackerIndex: index,
+            targetIndex: foe.index,
+            point: m.add(foe.body.translation(), m.v3(0, 0.25, 0)),
+            normal: m.v3(0, -1, 0),
+            impulse: damageImpulseForRate(flame.damagePerSecond ?? 8, TU.hammerGrindTickSeconds),
+            appliedImpulse: 0, // fire pushes nothing over
+            energyBefore: 0,
+            heavy: false,
+          });
+        }
+      }
+
+      if (!disc) return;
       // Disc: its own toggle, spinning whatever the arm is doing.
       const spinning = Boolean(ctx.input?.sawActive);
       const spinUp = discMaxOmega / Math.max(0.05, disc.spinUpSeconds ?? 1.4);
@@ -857,14 +951,18 @@ function createLifterDisc({ vehicle, index, emit }) {
       }
     },
     getAngle: () => stroke,
+    getSubAngle: () => burning,
     // The meter reads the disc when it is spinning, the arm otherwise.
-    getRatio: () => Math.max(stroke, omega / discMaxOmega),
+    getRatio: () => Math.max(stroke, disc ? omega / discMaxOmega : burning),
     reset() {
       stroke = 0;
       omega = 0;
       carrying = false;
       lastEmittedRatio = -1;
       lastDiscHitAt = -Infinity;
+      lastLiftTickAt = -Infinity;
+      lastBurnAt = -Infinity;
+      burning = 0;
     },
   };
 }
@@ -999,7 +1097,7 @@ export function createWeapon(args) {
   if (type === "crusher") return createCrusher(args);
   if (type === "hammerSaw") return createHammerSaw(args);
   if (type === "hammer") return createHammer(args);
-  if (type === "lifterDisc") return createLifterDisc(args);
+  if (type === "lifterDisc" || type === "lifter") return createLifterDisc(args);
   if (type === "grappler") return createGrappler(args);
   // Weaponless fallback (keeps the sim robust to partial specs).
   return {
