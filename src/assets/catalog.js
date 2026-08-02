@@ -1036,8 +1036,9 @@ export const CATALOG = {
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       // lengthFt/heightFt were read off the model BEFORE the repair: 3.22 was
       // the mirrored rear forks and 2.05 was a scan whisker. Re-measured
-      // through the loader the machine is 2.44 long and 1.23 tall.
-      size: { widthFt: 3.25, lengthFt: 2.44, heightFt: 1.23, source: "class-estimate" },
+      // through the loader the machine is 2.19 long and 1.23 tall — 2.44 was
+      // the rear scan lumps, gone with tools/repairs/copperhead-rear-flat.json.
+      size: { widthFt: 3.25, lengthFt: 2.19, heightFt: 1.23, source: "class-estimate" },
       weapon: { name: "Eggbeater drum spinner", weightLbs: 50, tipSpeedMph: 180, rpm: null },
       drive: "2x Maytech MTO6365", power: "5Ah 6S LiPo",
     },
@@ -1046,19 +1047,23 @@ export const CATALOG = {
     weaponWeightLbs: 50,
     // MEASURED shell through the loader after the stray-geometry carve. The
     // old numbers were the pre-repair bbox: 1.428 tall was a whisker and
-    // 3.2203 long was the mirrored rear fork pair.
-    bodyDims: { x: 3.1188, y: 1.1141, z: 2.4177 },
-    // MEASURED. Copperhead is 2WD: the tyres are a single pair at z=+0.37 and
+    // 3.2203 long was the mirrored rear fork pair. z came down again from
+    // 2.4177 with copperhead-rear-flat.json — the last 0.22ft of "machine" was
+    // the two scan lumps hanging off the back of the bottom pan.
+    bodyDims: { x: 3.1188, y: 1.1141, z: 2.1928 },
+    // MEASURED. Copperhead is 2WD: the tyres are a single pair at z=+0.48 and
     // the front of the machine rides on its fork skids, so the probes go where
     // the machine actually touches down rather than on a symmetric rectangle
     // (same shape as Tombstone's front-skid/rear-tyre set). y stays 0.2395 —
     // it is a probe origin against the fixed 0.45ft ray travel, not a length
-    // that scales with the model.
+    // that scales with the model. Every z here moved +0.1125 when the rear
+    // lumps came off: the loader centres the body on its OWN bbox, so shortening
+    // the back walks the whole machine forward under the rig.
     wheelAnchors: [
-      { x: -1.1002, y: 0.2395, z: -0.9497 }, // front fork skids
-      { x: 1.1002, y: 0.2395, z: -0.9497 },
-      { x: -1.27, y: 0.2395, z: 0.3657 }, // rear tyres
-      { x: 1.27, y: 0.2395, z: 0.3657 },
+      { x: -1.1002, y: 0.2395, z: -0.8372 }, // front fork skids
+      { x: 1.1002, y: 0.2395, z: -0.8372 },
+      { x: -1.27, y: 0.2395, z: 0.4775 }, // rear tyres
+      { x: 1.27, y: 0.2395, z: 0.4775 },
     ],
     maxSpeedFps: 14.0,
     accel: 8.0,
@@ -1072,11 +1077,15 @@ export const CATALOG = {
       // weapon read as a lump rather than a drum. Its far end also came out of
       // the scan ragged, so the good half is mirrored across the axle — the
       // real drum is symmetric. See tools/repairs/copperhead-drum-mirror.json.
+      // The TOOTH inside each pocket is a separate part and only the +X one
+      // survived the scan; copperhead-drum-tooth.json mirrors it too, and it
+      // stays in modelBody — it is axle-line hardware, not rotor.
       pivotFromCatalog: true,
       // MEASURED with rig-inspect --axle after the strays carve. Both the sign
       // of x (the roll used to mirror it) and z (removing the rear forks moved
-      // the model's own centre back 0.40ft) moved with the repair.
-      pivot: { x: -0.04, y: 0.514, z: -0.408 },
+      // the model's own centre back 0.40ft) moved with the repair; z moved
+      // again, +0.1125, when copperhead-rear-flat.json shortened the back.
+      pivot: { x: -0.04, y: 0.514, z: -0.296 },
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 1.6,
       inertia: 1.25,
@@ -1086,13 +1095,16 @@ export const CATALOG = {
       dims: { x: 0.891, y: 0.5367, z: 0.5367 }, // half the MEASURED 1.782ft drum length
       tuning: { efficiency: 0.58, impulseScale: 10.5, liftScale: 30.0, liftVelocity: 4.5, gyroScale: 1.0 },
     },
-    // NOTHING in front of z=-0.70, and the drum's sweep reaches z=-0.831, so
+    // NOTHING in front of z=-0.588, and the drum's sweep reaches z=-0.719, so
     // the blade stands 0.13ft proud of the chassis. The forks ahead of that
     // carry no collider at all: they sit at the drum's own height, so a solid
     // there would be a pure stand-off and opponents would stop on the fork
     // tips with the drum still short of them. Same call as Deep Six.
+    // RE-DERIVED after copperhead-rear-flat.json: the box used to run
+    // z[-0.70,1.15] on a body that ended at z=1.209; the body now ends at
+    // 1.097 and everything moved forward 0.1125, so it runs z[-0.588,1.037].
     colliders: [
-      { shape: "box", halfExtents: { x: 1.5264, y: 0.505, z: 0.925 }, offset: { x: 0, y: 0.605, z: 0.225 } },
+      { shape: "box", halfExtents: { x: 1.5264, y: 0.505, z: 0.8123 }, offset: { x: 0, y: 0.605, z: 0.2248 } },
     ],
   },
 
@@ -1142,42 +1154,75 @@ export const CATALOG = {
       // place instead of reaching. The bars themselves are built procedurally,
       // because photogrammetry resolved two thin tubes as nothing at all.
       pivotFromCatalog: true,
-      // MEASURED off the wheels: hubs sit at y=0.508 (front) and 0.521 (rear),
-      // and on the real machine the carrier bars run straight through that
-      // line into a block between them. The hinge was at 0.32, which hung the
-      // bars visibly below the axles and left the block with nothing to hold.
-      pivot: { x: 0, y: 0.51, z: 0.34 },
+      // MEASURED off the wheels, AFTER the re-grounding in
+      // tools/repairs/duck-underfloor.json dropped the model 0.277ft onto its
+      // tyres: hubs now sit at y=0.229 (front) and 0.243 (rear), and on the
+      // real machine the carrier bars run straight through that line into a
+      // block between them.
+      pivot: { x: 0, y: 0.233, z: 0.34 },
+      // EVERY NUMBER BELOW IS PER SIDE, and it has to be: the scan is not
+      // symmetric about the model origin. normalizeScene centres the model on
+      // the BODY bounding box, which the wide front bodywork dominates, so the
+      // chassis proper ends up offset — its side walls measure +0.843 and
+      // -1.166, and its wheels reach +1.277 and -1.598. A single mirrored x
+      // therefore cannot be right on both sides, and the old symmetric +-1.38
+      // was wrong in two different ways at once: on the +x side the bar hung
+      // outboard of everything in open air, on the -x side it ran straight
+      // through the middle of both tyres.
       arms: [
-        // Carrier bars at x=1.38, OUTBOARD of the deck (which reaches 1.34), so the
-        // arm clears the bodywork on its way over the top — it now travels a
-        // full half turn, see restAngle/fireAngle. The scan is lopsided (the
-        // -x wheels sit 0.38ft further out than the +x pair), so at part of the
-        // sweep the left bar grazes its wheel; no single x clears both the deck
-        // and that wheel, and moving the bars inboard to miss it would put them
-        // through the deck instead, which is far more visible.
-        { x: -1.38, radius: 0.05, from: { y: 0.51, z: 0.42 }, to: { y: 0.51, z: -0.98 }, color: "#b9bdc4" },
-        { x: 1.38, radius: 0.05, from: { y: 0.51, z: 0.42 }, to: { y: 0.51, z: -0.98 }, color: "#b9bdc4" },
-        // The machined block each bar hinges in, between the front and rear
-        // wheels (z -0.25 and 0.94), tucked against the deck edge so the bar
-        // runs out of something rather than out of thin air. attach: "body" —
-        // it is part of the frame and stays put while the arm swings.
-        { x: -1.29, shape: "box", width: 0.2, height: 0.2, attach: "body",
-          from: { y: 0.51, z: 0.66 }, to: { y: 0.51, z: 0.06 }, color: "#c3c7cc" },
-        { x: 1.29, shape: "box", width: 0.2, height: 0.2, attach: "body",
-          from: { y: 0.51, z: 0.66 }, to: { y: 0.51, z: 0.06 }, color: "#c3c7cc" },
+        // The MOUNTING BOXES. Each is flush against the chassis flank on its
+        // inboard face — MEASURED in the hub band over z 0.05..0.66 at +0.8431
+        // and -1.1655, and the box is set 0.003 INTO that so the two surfaces
+        // are never coplanar (a scan wall and a flat box face landing on the
+        // same plane z-fight) — and reaches 0.146ft past that side's outermost
+        // tyre (+x 1.277 -> 1.423, -x -1.598 -> -1.744), a little more than the
+        // 0.10ft diameter of the bar it carries, so the bar has somewhere to
+        // sit outboard of the wheel. Both come out ~0.58 wide, which is the
+        // check that the two sides really are the same bracket: the machine is
+        // symmetric about its own chassis, only not about the model origin.
+        // z 0.66..0.06 threads the gap between the front tyres (z max -0.023)
+        // and the rear (z min 0.692). attach: "body" — part of the frame, it
+        // stays put while the arm swings.
+        { x: -1.4532, shape: "box", width: 0.5814, height: 0.2, attach: "body",
+          from: { y: 0.233, z: 0.66 }, to: { y: 0.233, z: 0.06 }, color: "#c3c7cc" },
+        { x: 1.1316, shape: "box", width: 0.5830, height: 0.2, attach: "body",
+          from: { y: 0.233, z: 0.66 }, to: { y: 0.233, z: 0.06 }, color: "#c3c7cc" },
+        // The CARRIER BARS, at the outboard END of their own box: the bar's
+        // outer face lands 0.006 short of the end of the bracket (flush, but
+        // NOT coplanar — the bar's rear 0.3ft lives inside the box, and two
+        // faces on the same plane put a z-fighting disc on the outside of the
+        // bracket) and its inner face stands 0.04ft clear of the tyre — and,
+        // on the +x side, 0.005 clear of the widest bodywork it sweeps over at
+        // full lift. Forward they run to the plow's rear surface MEASURED at that
+        // bar's own x in the bar's own height band (-1.086 on the -x side,
+        // -1.088 on the +x): the end of the cylinder lands ON the panel, not
+        // short of it and not buried through it. Aft they stop 0.02 behind the
+        // hinge, so the cap turns on the spot inside the bracket.
+        { x: -1.688, radius: 0.05, from: { y: 0.233, z: 0.36 }, to: { y: 0.233, z: -1.086 }, color: "#b9bdc4" },
+        { x: 1.367, radius: 0.05, from: { y: 0.233, z: 0.36 }, to: { y: 0.233, z: -1.088 }, color: "#b9bdc4" },
       ],
       axis: { x: 1, y: 0, z: 0 },
-      // MEASURED: the scoop is baked DOWN (0 rests its lip on the floor at
-      // y 0.008) and 1.1 stands it up over the nose. That resting pose is why
-      // the front collider below is a wedge.
-      // MEASURED on the raised hinge with --arc: the plow's lip touches the
-      // floor at -0.118 and goes no lower. It used to rest at 0, which left
-      // the lip 0.16ft in the air once the stray tabs under the plow — the
-      // stilts the whole machine had been standing on — were carved away.
-      restAngle: -0.118,
+      // MEASURED: the scoop is baked DOWN and 1.1 stands it up over the nose.
+      // That resting pose is why the front collider below is a wedge.
+      // RE-MEASURED with `rig-inspect duck --arc "-0.010,0.006,0.002"` after
+      // tools/repairs/duck-underfloor.json shaved the plow off at the tyre
+      // line and dropped the machine 0.277ft onto its wheels: armYmin crosses
+      // zero at -0.001 (-0.001 reads -0.001ft, 0.000 reads +0.002). The old
+      // -0.118 was measured with the whole bot standing 0.277ft up on scan
+      // junk, and applied to a grounded Duck it drove the lip through the
+      // floor. Effectively the plow is baked resting flat now, which is what
+      // a flat-shaved lip on a grounded machine means.
+      restAngle: -0.001,
       // A full half turn from there, so the plow can be parked over the far
       // side of the body instead of only reaching forward. The arms sit
-      // outboard of the deck so they have somewhere to go.
+      // outboard of the TYRES (see the per-side numbers above) so they have
+      // somewhere to go. An earlier note here blamed a lopsided scan for the
+      // asymmetry; that was wrong. The chassis is symmetric — both wheel sets
+      // stand exactly 0.433ft proud of their own frame rail — and what is
+      // off-centre is the model ORIGIN, because normalizeScene centres on the
+      // body bounding box and Duck's wide front bodywork dominates it, putting
+      // the chassis 0.161ft to -x of zero. That is why one mirrored x cannot
+      // work and each side carries its own.
       fireAngle: 3.024,
       liftImpulse: 190,
       liftRecoil: 0.5,
@@ -1195,11 +1240,18 @@ export const CATALOG = {
       tuning: { strokeSeconds: 0.8, reach: 1.4166 },
     },
     colliders: [
-      // The scoop at rest. MEASURED z -2.03..-1.03 climbing from the floor to
-      // 0.56 — the flattest, longest wedge in the game, which is the whole bot.
+      // The scoop at rest. RE-CHECKED against the grounded model: the plow now
+      // measures z -1.689..-0.987 climbing from y 0.002 to 0.476, so the wedge
+      // (z -1.692..-0.858, y 0..0.467) still wraps it — the flattest, longest
+      // wedge in the game, which is the whole bot.
       { shape: "wedge", halfExtents: { x: 1.3333, y: 0.2333, z: 0.4167 }, offset: { x: 0, y: 0.2333, z: -1.2749 }, tipY: 0.0167 },
+      // The chassis, MEASURED x -1.312..1.312, y 0.005..0.451, z -1.148..1.148.
       { shape: "box", halfExtents: { x: 1.3416, y: 0.2333, z: 1.0083 }, offset: { x: 0, y: 0.2333, z: 0.1417 } },
-      { shape: "box", halfExtents: { x: 0.8333, y: 0.3833, z: 0.15 }, offset: { x: 0, y: 0.3833, z: -0.9416 } }, // hinge block
+      // Hinge block. Its height came down from 0.767 to match the deck: that
+      // number was authored when the model floated 0.277ft up on scan junk, and
+      // once the bot sat down on its tyres it left a third of a foot of
+      // invisible collider standing proud of the bodywork.
+      { shape: "box", halfExtents: { x: 0.8333, y: 0.2333, z: 0.15 }, offset: { x: 0, y: 0.2333, z: -0.9416 } },
     ],
   },
 
