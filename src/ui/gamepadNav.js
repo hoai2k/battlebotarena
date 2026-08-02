@@ -263,6 +263,29 @@ export function createGamepadNav({
   // ------------------------------------------------------------ spatial move
 
   /**
+   * Explicit next-focus hint: `data-nav-left/right/up/down="<selector>"`.
+   * Geometry alone cannot express "stop at the thing between these two" — on
+   * bot select the two pods sit at the same height, so a purely spatial step
+   * right from one pod lands on the other and skips FIGHT in the middle. The
+   * hint is ignored when its target is not currently focusable (FIGHT is
+   * disabled until both bots are picked), so nav falls back to geometry rather
+   * than dead-ending.
+   */
+  function hintedNext(from, dir) {
+    const hint = from?.dataset?.[`nav${dir[0].toUpperCase()}${dir.slice(1)}`];
+    if (!hint) return null;
+    const list = items();
+    // Comma-separated = priority order, NOT a selector list: the first entry
+    // that is focusable right now wins. That is what lets a pod's weapon button
+    // say "the other button in my pod, or FIGHT if this bot has only one".
+    for (const selector of hint.split(",")) {
+      const target = /** @type {HTMLElement|null} */ (document.querySelector(selector.trim()));
+      if (target && list.includes(target)) return target;
+    }
+    return null;
+  }
+
+  /**
    * Pick the nearest candidate in `dir` using bounding rects; this makes the
    * 4-column bot grid, the difficulty row, the button stacks and the results
    * row all behave without any hardcoded layout knowledge.
@@ -273,6 +296,9 @@ export function createGamepadNav({
     const current = cursors[player];
     const from = current && list.includes(current) ? current : null;
     if (!from) return defaultTarget(list, player);
+
+    const hinted = hintedNext(from, dir);
+    if (hinted) return hinted;
 
     const a = centerOf(from);
     const horizontal = dir === "left" || dir === "right";

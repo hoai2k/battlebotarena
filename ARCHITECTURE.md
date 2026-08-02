@@ -398,6 +398,47 @@ flipper plate) with per-bot accent colors — the game must be fully playable
 with placeholders. Weapon pivot/axis from catalog; when a GLB weapon part
 exists, its bbox center may override pivot.
 
+### Quantum's jaw must close onto its own pallet (regression-prone)
+
+This has been "fixed" by winding `fireAngle` down before, and that can never
+work — write it down rather than re-deriving it:
+
+**Rotation alone cannot reach the pallet.** The hinge sits too far back and too
+high, so the tooth's arc passes OVER the forks and comes down behind them. Past
+about -0.85 the jaw has no geometry left forward of the pallet at all, and the
+closest any pure angle gets is **0.132ft short, at -0.70**. A bigger negative
+angle looks more closed while actually holding the teeth further back and
+higher — which is exactly the trap.
+
+So Quantum carries `weapon.jawSlide`: the whole arm also travels forward (and a
+little down) as it closes. Most of the closing comes from the forward push,
+because the pallet slopes down toward the front. Shipped numbers land the tooth
+on the forks at z=-1.21 with a gap of 0.00 at full stroke.
+
+Check it in one command — `gap` must reach ~0, and the run must not go far
+negative (that is the tooth through the forks):
+
+```
+node tools/rig-inspect.mjs quantum --arc "-1.0,-0.5,0.05" --bite --bitez -1.05
+```
+
+`--bite` reports the arm's closest approach to the bodywork under it, windowed
+by `--bitez` to the business end. The window matters: without it the minimum is
+always the hinge sitting alongside the bodywork it is bolted to, and the
+whole-arm bbox that `--arc` prints on its own is useless here because the tail
+swings up and back while the tooth comes down — `armYmin` stays low while the
+jaw closes on nothing. `window.__strokeAt(stroke)` poses through the game's own
+`syncBotVisual`, which is the only honest check for a rig that does more than
+rotate about its pivot.
+
+`jawSlide.carryAxle` (default **false**) is the unfinished half: carrying the
+grey hinge assembly along with the arm and extending a ram behind it. It works
+numerically but does not look right — Tripo did not segment the hinge cleanly,
+so the two body pieces that make it up drag surrounding bodywork with them and
+poke past the shell at full stroke. The travel is what fixes the bite; this only
+dresses it. Deleting the whole `jawSlide` block reverts to a purely rotating jaw
+(models.js and botAnimation.js both no-op without it).
+
 ### Model repair tools (v2/tools/)
 
 The GLBs are photogrammetry, so they carry scan artefacts the reference photos
