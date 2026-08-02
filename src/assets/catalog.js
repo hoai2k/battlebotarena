@@ -310,7 +310,17 @@ export const CATALOG = {
       fireAngle: -0.95, // GLB jaw baked OPEN (=rest); full stroke brings the tooth down onto the front wedge palette
       budgetCap: 90,
       dims: { x: 0.1523, y: 0.4244, z: 0.8488 },
-      pivot: { x: 0, y: 1.0338, z: 0.5441 }, // jaw hinge, rear-top
+      // MEASURED: the hinge is the white circular boss at the BOTTOM of the
+      // beak — the shield over the axle — not the point up the casting that
+      // segmentation wrote, where the beak scissors about its own middle
+      // instead of biting. The grey block beside it is the hydraulic ram; the
+      // scan resolved it as a stub, so it is rebuilt as a cylinder pushing up
+      // and forward into the beak from behind the hinge.
+      pivotFromCatalog: true,
+      pivot: { x: 0, y: 1.03, z: -0.5 },
+      arms: [
+        { x: 0, radius: 0.13, attach: "body", from: { y: 0.5, z: 0.42 }, to: { y: 1.14, z: -0.24 }, color: "#9aa1ab" },
+      ],
       axis: { x: 1, y: 0, z: 0 },
       tuning: { holdDamagePerSecond: 6, holdReach: 1.1, holdStrength: 14, holdDamping: 1, holdImpulseCap: 70 },
     },
@@ -1373,7 +1383,11 @@ export const CATALOG = {
       throwScale: 0.55,
       dims: { x: 0.2111, y: 0.2111, z: 0.5278 },
       selfRight: true,
-      claw: { openAngle: 0, closedAngle: -0.9, clampSeconds: 0.3 },
+      // MEASURED with `rig-inspect --subarc`: the baked pose curls the claw
+      // forward over its own forks, which is mid-travel and can neither reach
+      // nor clamp. 0.5 stands it up and open — the horse-head pose it carries
+      // into a fight — and -0.2 brings it down onto the forks.
+      claw: { openAngle: 0.5, closedAngle: -0.2, clampSeconds: 0.3 },
       tuning: { reach: 1.6888, holdDamagePerSecond: 3 },
     },
     colliders: [

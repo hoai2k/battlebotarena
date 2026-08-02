@@ -451,7 +451,13 @@ export async function loadBotModel(spec, { onProgress } = {}) {
       // Duck's plow hangs off two thin bars — and photogrammetry resolves them
       // as nothing at all, which leaves the moving part floating unattached to
       // the hinge it turns about. They are simple enough to state as numbers.
-      for (const bar of spec.weapon.arms || []) buildWeaponArm(weaponPivot, bar, spec);
+      for (const bar of spec.weapon.arms || []) {
+        // attach: "body" pins the part to the chassis instead of the moving
+        // group. A hydraulic ram belongs to the frame — it PUSHES the arm, it
+        // does not ride on it, and swinging it rigidly with the jaw reads as a
+        // strut welded to the wrong end.
+        buildWeaponArm(bar.attach === "body" ? group : weaponPivot, bar, spec);
+      }
       // Nested sub-spinner (modelWeaponSub-*, e.g. sawblaze's saw disc):
       // wrapped in its own pivot at its bbox center INSIDE the weapon group,
       // so it swings with the arm and spins locally.

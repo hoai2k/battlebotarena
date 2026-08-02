@@ -134,6 +134,25 @@ for (const id of ids) {
     if (a) console.log(`  best-fit axle ${a.axle.map(f).join(", ")}  radius ${f(a.radius)}`);
   }
 
+  if (has("--lowest")) {
+    const lo = await page.evaluate(() => window.__lowest());
+    if (lo) console.log(`  weapon lowest vertex ${lo.map(f).join(", ")}`);
+  }
+  const subArc = opt("--subarc");
+  if (subArc) {
+    const [from, to, step] = subArc.split(",").map(Number);
+    console.log("  sub      Ymin     Ymax     Zmin     Zmax");
+    for (let a = from; a <= to + 1e-9; a += step) {
+      const r = await page.evaluate((v) => window.__subAt(v), Number(a.toFixed(4)));
+      if (!r) break;
+      const b = r.box;
+      console.log(`  ${a.toFixed(2).padStart(6)}  ${b.min[1].toFixed(3).padStart(7)}  ${b.max[1].toFixed(3).padStart(7)}`
+        + `  ${b.min[2].toFixed(3).padStart(7)}  ${b.max[2].toFixed(3).padStart(7)}`);
+    }
+  }
+  const subAt = opt("--sub");
+  if (subAt !== null) await page.evaluate((v) => window.__subAt(Number(v)), subAt);
+
   const part = opt("--part");
   if (part) await page.evaluate((n) => window.__part(n, "highlight"), part);
   if (has("--colliders")) await page.evaluate(() => window.__colliders(true));

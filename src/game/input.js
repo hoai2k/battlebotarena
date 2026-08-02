@@ -126,9 +126,14 @@ export function createInput({ on, playerIndex = 0, gamepadIndex = 0 } = {}) {
         duration: 55 + strength * 90,
       });
     }));
-    unsubscribes.push(on(EV.WEAPON_SPIN, ({ botIndex, ratio, hapticScale }) => {
+    unsubscribes.push(on(EV.WEAPON_SPIN, ({ botIndex, ratio, powered, hapticScale }) => {
       if (botIndex !== playerIndex) return;
-      spin.ratio = clamp(ratio || 0, 0, 1);
+      // Rumble tracks the MOTOR, not the rotor. Spinning up, it climbs with the
+      // ratio; the moment the trigger comes off it goes to nothing, even though
+      // HUGE's bar takes the better part of ten seconds to actually stop. What
+      // the driver feels through the sticks is the drive fighting the weapon,
+      // and that ends when the power does.
+      spin.ratio = powered === false ? 0 : clamp(ratio || 0, 0, 1);
       spin.scale = hapticScale || 1;
     }));
     unsubscribes.push(on(EV.WEAPON_HIT, ({ attackerIndex, targetIndex, impulse, heavy }) => {

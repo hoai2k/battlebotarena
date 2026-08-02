@@ -232,6 +232,28 @@ window.__armAt = (angle) => {
   return { angle, box: b };
 };
 
+// Pose a nested sub-part (a grappler's jaw, a saw disc) at an angle about the
+// weapon axis, so a rest pose can be chosen by measurement like an arm's.
+// The weapon's lowest drawn vertex. A hinge is often "the round boss at the
+// bottom of the part", and that is easier to point at than to eyeball.
+window.__lowest = () => {
+  let best = null;
+  eachVertex(current.parts.weapon, (v) => {
+    if (!best || v.y < best[1]) best = [v.x, v.y, v.z];
+  });
+  return best;
+};
+
+window.__subAt = (angle) => {
+  const sub = current.parts.weaponSub;
+  if (!sub) return null;
+  const axis = current.spec.weapon.axis || { x: 1, y: 0, z: 0 };
+  const a = new THREE.Vector3(axis.x, axis.y, axis.z).normalize();
+  sub.quaternion.setFromAxisAngle(a, angle);
+  sub.updateMatrixWorld(true);
+  return { angle, box: vbox(sub) };
+};
+
 // Draw the catalog colliders as wireframes so a screenshot shows fit directly.
 window.__colliders = (show) => {
   overlays.clear();

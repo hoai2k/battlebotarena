@@ -158,6 +158,7 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
   let omega = 0;
   let angle = 0;
   let lastEmittedRatio = -1;
+  let lastEmittedPowered = false;
   const lastHitAt = new Map(); // "foe" | "arena" -> simTime
 
   // Tantrum's fist arms: a second, independent mechanism on the alt channel.
@@ -326,14 +327,22 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
       angle += omega * dt;
 
       const ratio = omega / w.maxOmega;
-      if (Math.abs(ratio - lastEmittedRatio) >= 0.01) {
+      // Emit on a POWER change too, not just a speed change: the rumble has to
+      // stop the instant the trigger does, and at a held full ratio there is no
+      // speed change to carry the news.
+      if (Math.abs(ratio - lastEmittedRatio) >= 0.01 || Boolean(fire) !== lastEmittedPowered) {
         lastEmittedRatio = ratio;
+        lastEmittedPowered = Boolean(fire);
         // hapticScale rides along so the pad rumble can be per-bot without the
         // input layer having to know the catalog.
         emit(EV.WEAPON_SPIN, {
           botIndex: index,
           weaponType: w.type,
           ratio,
+          // Whether the motor is DRIVING, which is not the same as whether the
+          // rotor is turning: a big spinner coasts for many seconds after the
+          // trigger comes off. The pad should follow the motor.
+          powered: Boolean(fire),
           hapticScale: tuning.hapticScale,
         });
       }
