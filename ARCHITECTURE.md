@@ -450,9 +450,24 @@ Screens as DOM sections toggled by a tiny screen manager: `title`,
 `botSelect`, `match` (HUD overlay on canvas), `results`. BattleBots-broadcast
 energy: dark carbon/steel textures, bold italic condensed type, red/yellow
 accent angle-cut panels, subtle scanline/glow. Title: "BATTLEBOT ARENA" logo
-treatment + Fight / Settings. Bot select: 8-card grid using
-`../public/reference/*.png`, stat bars (speed/power/armor), weapon type badge,
-opponent pick + AI difficulty. HUD: damage bars top corners with bot names,
+treatment + Fight / Settings. Bot select is a hangar: two showcase PODS (yours
+and the rival's) flank the VS/FIGHT column, and the roster is a compact
+horizontally scrolling dock strip along the bottom (`#bot-grid` keeps its id —
+nav code targets it). Picking a bot loads its GLB onto a lit turntable plinth
+in the pod's transparent view window; the pod's owner orbits it with the right
+stick, leans in with LT and test-fires the weapon with RT (mouse: drag/wheel
+the window, hold the TEST WEAPON button; a plain click on it fires a one-shot
+pulse for pad-A/keyboard users). The 3D itself is `src/engine/botPreview.js`
+(integrator-owned — UI never imports three.js): ui.js only emits a
+`previewSelection` action from `refreshSelect()`, main.js routes it to the
+previewer, and the previewer scissors one shared transparent canvas
+(`#preview-canvas`) into a viewport per pod. Weapon test-fires reuse the match
+animation path (`engine/botAnimation.js`, shared with main.js's frame loop) so
+a flip on the plinth moves exactly like a flip in the arena. Random stays a
+sealed "?" — no model until the box opens. On match start the previewer drops
+its models (GPU memory); every path back into botSelect calls `refreshSelect`,
+which re-emits the selection and repopulates the bays from the GLB cache.
+HUD: damage bars top corners with bot names,
 center match clock, event ticker, KO banner, kill-saw callout. Results:
 winner card + Rematch / Change Bots / Title. Sound toggle visible on title +
 settings; wire to settings store. UI never imports three/rapier/sim; exposes

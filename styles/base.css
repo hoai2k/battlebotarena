@@ -448,7 +448,8 @@ img {
 
 .btn.is-nav-focus:not(:disabled),
 .bot-card.is-nav-focus,
-.vs-slot.is-nav-focus,
+.pod-plate.is-nav-focus,
+.pod-test.is-nav-focus,
 .switch-btn.is-nav-focus,
 .select.is-nav-focus,
 .difficulty-buttons button.is-nav-focus,
@@ -465,9 +466,12 @@ img {
   filter: brightness(1.22);
 }
 
-.bot-card.is-nav-focus,
-.vs-slot.is-nav-focus {
+.bot-card.is-nav-focus {
   transform: translateY(-3px);
+  border-color: var(--line-strong);
+}
+
+.pod-plate.is-nav-focus {
   border-color: var(--line-strong);
 }
 

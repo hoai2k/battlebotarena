@@ -81,8 +81,12 @@
       </section>
 
       <!-- ============================================= BOT SELECT -->
+      <!-- Hangar layout: each chosen bot renders live in its pod's 3D window
+           (engine/botPreview.js draws into #preview-canvas behind the DOM;
+           the pod view areas are transparent scissor rects into it). -->
       <section id="screen-botSelect" class="screen screen-select" data-screen-name="botSelect" aria-hidden="true">
         <div class="screen-backdrop"></div>
+        <canvas id="preview-canvas" aria-hidden="true"></canvas>
         <header class="select-head">
           <button id="btn-select-back" class="btn btn-sm" type="button"><span>&#9668; EXIT</span></button>
           <h2 id="sel-step" class="select-step">STEP 1 — CHOOSE YOUR BOT</h2>
@@ -95,19 +99,46 @@
             </span>
           </div>
         </header>
-        <div class="vs-strip">
-          <button id="slot-player" class="vs-slot vs-slot-player is-armed" type="button" data-role="YOU">
-            <span class="vs-slot-body"></span>
-          </button>
-          <div class="vs-mid">
+        <div class="select-stage">
+          <div id="pod-player" class="preview-pod pod-player is-armed">
+            <button id="slot-player" class="pod-plate" type="button" data-role="YOU">
+              <span class="pod-plate-body"></span>
+            </button>
+            <div id="pod-view-player" class="pod-view">
+              <span class="pod-empty">PICK<br />YOUR BOT</span>
+              <span class="pod-loading loader-spinner" hidden></span>
+            </div>
+            <div class="pod-foot">
+              <span class="pod-badge"></span>
+              <span class="pod-stats"></span>
+              <button id="pod-test-player" class="pod-test" type="button" hidden><span>TEST WEAPON</span></button>
+            </div>
+          </div>
+          <div class="select-mid">
             <span class="vs-label">VS</span>
             <button id="btn-fight" class="btn btn-primary btn-xl" type="button" disabled><span>FIGHT</span></button>
+            <div class="pod-controls-hint">
+              R-STICK ORBIT &middot; LT ZOOM &middot; RT TEST WEAPON<br />
+              MOUSE DRAG &middot; WHEEL ZOOM
+            </div>
           </div>
-          <button id="slot-rival" class="vs-slot vs-slot-rival" type="button" data-role="RIVAL">
-            <span class="vs-slot-body"></span>
-          </button>
+          <div id="pod-rival" class="preview-pod pod-rival">
+            <button id="slot-rival" class="pod-plate" type="button" data-role="RIVAL">
+              <span class="pod-plate-body"></span>
+            </button>
+            <div id="pod-view-rival" class="pod-view">
+              <span class="pod-empty">PICK THE<br />OPPONENT</span>
+              <span class="pod-random-glyph" aria-hidden="true">?</span>
+              <span class="pod-loading loader-spinner" hidden></span>
+            </div>
+            <div class="pod-foot">
+              <span class="pod-badge"></span>
+              <span class="pod-stats"></span>
+              <button id="pod-test-rival" class="pod-test" type="button" hidden><span>TEST WEAPON</span></button>
+            </div>
+          </div>
         </div>
-        <div id="bot-grid" class="bot-grid" role="listbox" aria-label="Bot roster"></div>
+        <div id="bot-grid" class="bot-dock" role="listbox" aria-label="Bot roster"></div>
       </section>
 
       <!-- ================================================== MATCH -->

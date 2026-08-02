@@ -7,12 +7,14 @@ import { createRenderer } from "./engine/renderer.js";
 import { createCameraDirector, createChaseCamera } from "./engine/cameras.js";
 import { createEffects } from "./engine/effects.js";
 import { createArenaVisuals } from "./engine/arena.js";
+import { createBotPreview } from "./engine/botPreview.js";
+import { syncBotVisual, updateWeaponSub } from "./engine/botAnimation.js";
 
 // Written by the parallel build agents; wired here at integration time.
 import { createUI } from "./ui/ui.js";
 import { createLoader } from "./ui/loader.js";
 import { getBotSpec } from "./assets/catalog.js";
-import { loadBotModel, weaponVisualAngle } from "./assets/models.js";
+import { loadBotModel } from "./assets/models.js";
 import { createSim } from "./sim/sim.js";
 import { createMatch } from "./game/match.js";
 import { computeAiInput, resetAiState } from "./game/ai.js";
@@ -34,6 +36,16 @@ const inputP2 = createInput({ on: bus.on, playerIndex: 1, gamepadIndex: 1 });
 const music = createMusic(bus);
 
 const loader = createLoader();
+// 3D showcase on the bot select screen: each chosen bot renders on a lit
+// turntable inside its pod. ui.js only emits selection actions; the routing
+// to this module happens below (UI never imports three.js).
+const botPreview = createBotPreview({
+  canvas: document.querySelector("#preview-canvas"),
+  pods: [
+    { view: document.querySelector("#pod-view-player"), test: document.querySelector("#pod-test-player") },
+    { view: document.querySelector("#pod-view-rival"), test: document.querySelector("#pod-test-rival") },
+  ],
+});
 let arenaVisuals = null;
 let session = null; // { sim, match, botVisuals: [{group, parts, spec}], raf }
 let paused = false;
@@ -107,6 +119,10 @@ const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => res
 
 async function startMatch({ playerBotId, rivalBotId, difficulty }) {
   await endMatch();
+  // Free the showcase's GPU copies while the arena runs; ui.js re-emits the
+  // selection whenever the select screen is re-entered, so they reload from
+  // cache on the way back.
+  botPreview.unload();
   const specs = [getBotSpec(playerBotId), getBotSpec(rivalBotId)];
 
   // Bot models are the long pole: 10-17MB each, and both are needed before the
@@ -208,6 +224,19 @@ const ui = createUI({
         rivalBotId: session.specs[1].id,
         difficulty: session.difficulty,
       });
+      else if (action.type === "previewSelection") {
+        // Selection changed on the bot select screen: mirror it into the
+        // showcase bays. Random stays a mystery — no model until the box opens.
+        const ids = [
+          action.playerBotId,
+          action.rivalBotId === "random" ? null : action.rivalBotId,
+        ];
+        ids.forEach((id, slot) => {
+          if (id) botPreview.showBot(slot, getBotSpec(id));
+          else botPreview.clearBot(slot);
+        });
+        botPreview.setControl({ duo: action.duo, focusSlot: action.focusSlot });
+      }
       else if (action.type === "toTitle" || action.type === "changeBots") {
         loader.hide();
         music.player.stop({ fadeOut: 0.5 });
@@ -225,73 +254,8 @@ const ui = createUI({
 });
 
 // --- Frame loop ------------------------------------------------------------
-const scratchAxis = new THREE.Vector3();
-
-function syncBotVisual(visual, spec, state) {
-  visual.group.position.copy(state.position);
-  visual.group.quaternion.copy(state.quaternion);
-  if (visual.parts.weapon && state.weaponAngle !== undefined) {
-    scratchAxis.set(spec.weapon.axis.x, spec.weapon.axis.y, spec.weapon.axis.z).normalize();
-    visual.parts.weapon.quaternion.setFromAxisAngle(scratchAxis, weaponVisualAngle(visual, spec, state));
-  }
-  // Negated: wheelSpin accumulates ground speed along forward (-Z), and a wheel
-  // on the +X axle rolling the bot toward -Z turns NEGATIVE about +X. Without
-  // the sign the tyres spin backwards — invisible on small dark wheels, glaring
-  // on HUGE's six-foot spoked ones.
-  visual.parts.wheels?.forEach((wheel, i) => {
-    const spinIndex = wheel.userData.spinIndex ?? i;
-    wheel.rotation.x = -(state.wheelSpin?.[spinIndex] ?? 0);
-  });
-  // Claw Viper's jaw: a nested sub-part that HINGES on its own channel rather
-  // than spinning like Sawblaze's saw, so it is posed here from the sim's
-  // clamp stroke instead of being driven by updateWeaponSub.
-  const jaw = visual.parts.weaponSub;
-  if (jaw && spec.weapon?.claw) {
-    const open = spec.weapon.claw.openAngle ?? 0;
-    const shut = spec.weapon.claw.closedAngle ?? -0.8;
-    const clamp = THREE.MathUtils.clamp(state.weaponSubAngle ?? 0, 0, 1);
-    scratchAxis.set(spec.weapon.axis.x, spec.weapon.axis.y, spec.weapon.axis.z).normalize();
-    jaw.quaternion.setFromAxisAngle(scratchAxis, open + clamp * (shut - open));
-  }
-  // Bronco's pneumatic ram compresses with the flipper: fully shortened at
-  // rest (arm down over it), full length at the top of the stroke. The aux
-  // anchor sits at the ram's base, so scaling never pokes below the mount.
-  const ram = visual.parts.aux?.ram;
-  if (ram && spec.weapon?.type === "flipper") {
-    const stroke = THREE.MathUtils.clamp(state.weaponAngle ?? 0, 0, 1);
-    ram.scale.y = 0.35 + 0.65 * stroke;
-  }
-  // Tantrum's fists: a SECOND independent mechanism, so it cannot be a
-  // weaponSub (a sub inherits the drum's spin). It hinges off its own aux
-  // anchor from the sim's punch stroke.
-  const punch = visual.parts.aux?.fists;
-  if (punch && spec.weapon?.fists) {
-    const f = spec.weapon.fists;
-    const open = f.openAngle ?? 0;
-    const shut = f.punchAngle ?? -1.0;
-    const stroke = THREE.MathUtils.clamp(state.weaponSubAngle ?? 0, 0, 1);
-    const a = f.axis ?? { x: 1, y: 0, z: 0 };
-    scratchAxis.set(a.x, a.y, a.z).normalize();
-    punch.quaternion.setFromAxisAngle(scratchAxis, open + stroke * (shut - open));
-  }
-}
-
-// Nested sub-spinner inside a weapon arm (Sawblaze's saw, Whiplash's disc).
-// Spins up while the RB toggle is on, coasts down when off; rides the arm's
-// swing either way.
-// Negative: the disc cuts on the DOWNSWING, so the teeth travel toward the
-// target as the arm chops rather than away from it.
-const SAW_DISC_SPEED = -67.2; // rad/s at full speed (was 42, +60%)
-function updateWeaponSub(visual, spec, slot, dt, active) {
-  const sub = visual.parts.weaponSub;
-  if (!sub || !["hammerSaw", "lifterDisc"].includes(spec.weapon?.type)) return;
-  const state = (visual.__subSpin ||= { angle: 0, speed: 0 });
-  const target = active ? SAW_DISC_SPEED : 0;
-  state.speed += (target - state.speed) * Math.min(1, dt * (active ? 2.2 : 1.1));
-  state.angle += state.speed * dt;
-  scratchAxis.set(spec.weapon.axis.x, spec.weapon.axis.y, spec.weapon.axis.z).normalize();
-  sub.quaternion.setFromAxisAngle(scratchAxis, state.angle);
-}
+// syncBotVisual / updateWeaponSub live in engine/botAnimation.js, shared with
+// the bot-select showcase so a test-fired weapon moves exactly like the match.
 
 // --- Player weapon semantics (v1 parity) -----------------------------------
 // Spinners (bar/drum): RT/Space TOGGLES the spinner on press. Flipper: press
@@ -346,7 +310,7 @@ function frame() {
       session.sim.stepFrame(dt, filtered);
       session.match.update?.(dt);
       session.audio.updateFrame?.(filtered, renderNow);
-      filtered.forEach((filteredInput, i) => updateWeaponSub(session.botVisuals[i], session.specs[i], i, dt, Boolean(filteredInput?.sawActive)));
+      filtered.forEach((filteredInput, i) => updateWeaponSub(session.botVisuals[i], session.specs[i], dt, Boolean(filteredInput?.sawActive)));
     }
 
     const renderState = session.sim.getRenderState();
@@ -401,6 +365,7 @@ window.__bba2 = {
     return session?.match.getState?.();
   },
   camera: stage.camera,
+  botPreview,
   // Boot straight into a fight without clicking through the menus, so a
   // headless browser can verify that a bot actually renders and drives rather
   // than only that its catalog entry parses.
