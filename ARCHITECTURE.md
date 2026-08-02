@@ -391,7 +391,12 @@ shell (Beta, Deep Six, Hydra) — the suspension still runs off `wheelAnchors`.
 
 `modelRoll` is applied on the wrapper, i.e. about the game-space forward axis
 AFTER `modelYaw`, so `Math.PI` means "Tripo built this one upside down"
-whichever way it was facing. Copperhead and Duck both were — nothing in the
+whichever way it was facing. Duck's wheels stand proud of its deck and it is
+NOT one of these. Copperhead carried `Math.PI` for a long time and it was
+WRONG: the scan is the right way up, but scan whiskers under the belly reached
+lower than the wheels, so at roll 0 it grounded on a filament with the tyres
+floating 1.5ft up, and rolling it landed the wheels by accident with the deck
+underneath. Carve the junk BEFORE judging orientation — nothing in the
 segmentation pass looks at which way is up, so it is not caught upstream and
 shows as wheels resting on the roof.
 
