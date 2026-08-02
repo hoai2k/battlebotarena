@@ -1622,10 +1622,17 @@ export const CATALOG = {
       type: "hammer",
       pivot: { x: 0, y: 0.8746, z: 0.1305 }, // MEASURED gearbox hinge, game space
       axis: { x: 1, y: 0, z: 0 },
-      // MEASURED: the GLB bakes the hammer COCKED — up and back over the tail —
-      // so rest is 0 and -2.45 brings the head over the top and down onto the
-      // floor at the nose (arm low point 0.00, tip out at z -1.53).
-      restAngle: 0,
+      // MEASURED: the GLB bakes the hammer COCKED — up and back over the tail,
+      // but still clear of the bodywork — and 0.65 lays it back onto the frame.
+      // Swept aft in 0.05 steps, the closest approach between the arm and the
+      // rear deck runs out at 0.65: the shaft's underside sits at y 0.773 over
+      // a deck top of 0.777, so 0.004ft of overlap, with the head hanging just
+      // past the tail at z 2.15 (the tail plane is z 2.088). At 0.70 the shaft
+      // is 0.075ft into the deck. -2.45 carries the head over the top and down
+      // onto the floor at the nose: arm low point 0.023, and one more step to
+      // -2.50 puts it 0.078 under the floor. Rest to fire is 3.10rad, 178
+      // degrees of swing.
+      restAngle: 0.65,
       fireAngle: -2.45,
       budgetCap: 300,
       dims: { x: 0.2088, y: 0.6526, z: 0.2088 },
