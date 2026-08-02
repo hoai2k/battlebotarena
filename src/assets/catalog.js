@@ -1036,9 +1036,11 @@ export const CATALOG = {
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       // lengthFt/heightFt were read off the model BEFORE the repair: 3.22 was
       // the mirrored rear forks and 2.05 was a scan whisker. Re-measured
-      // through the loader the machine is 2.19 long and 1.23 tall — 2.44 was
-      // the rear scan lumps, gone with tools/repairs/copperhead-rear-flat.json.
-      size: { widthFt: 3.25, lengthFt: 2.19, heightFt: 1.23, source: "class-estimate" },
+      // through the loader the machine is 2.19 long and 1.16 tall — 2.44 was
+      // the rear scan lumps, gone with tools/repairs/copperhead-rear-flat.json,
+      // and 1.23 was the tyres standing proud of the deck before
+      // copperhead-wheels.json dropped them onto the floor.
+      size: { widthFt: 3.25, lengthFt: 2.19, heightFt: 1.16, source: "class-estimate" },
       weapon: { name: "Eggbeater drum spinner", weightLbs: 50, tipSpeedMph: 180, rpm: null },
       drive: "2x Maytech MTO6365", power: "5Ah 6S LiPo",
     },
@@ -1084,8 +1086,11 @@ export const CATALOG = {
       // MEASURED with rig-inspect --axle after the strays carve. Both the sign
       // of x (the roll used to mirror it) and z (removing the rear forks moved
       // the model's own centre back 0.40ft) moved with the repair; z moved
-      // again, +0.1125, when copperhead-rear-flat.json shortened the back.
-      pivot: { x: -0.04, y: 0.514, z: -0.296 },
+      // again, +0.1125, when copperhead-rear-flat.json shortened the back, and
+      // y +0.0444 when copperhead-wheels.json dropped the tyres — grounding now
+      // lands on a tyre rather than on the pan, so the whole machine rides that
+      // much higher in its own frame.
+      pivot: { x: -0.04, y: 0.5584, z: -0.296 },
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 1.6,
       inertia: 1.25,
@@ -1103,8 +1108,15 @@ export const CATALOG = {
     // RE-DERIVED after copperhead-rear-flat.json: the box used to run
     // z[-0.70,1.15] on a body that ended at z=1.209; the body now ends at
     // 1.097 and everything moved forward 0.1125, so it runs z[-0.588,1.037].
+    // The TOP rose 0.0444 with copperhead-wheels.json — the deck went up with
+    // the rest of the machine when grounding moved onto the tyres — but the
+    // BOTTOM stays at 0.100. It never hugged the pan anyway (the pan was at
+    // 0.000 and is now at 0.044), and the box has to reach down near the floor:
+    // the tyres carry the machine through the suspension probes, not through a
+    // collider, so a chassis box lifted clear of the floor is a bot that rests
+    // on nothing the physics can feel.
     colliders: [
-      { shape: "box", halfExtents: { x: 1.5264, y: 0.505, z: 0.8123 }, offset: { x: 0, y: 0.605, z: 0.2248 } },
+      { shape: "box", halfExtents: { x: 1.5264, y: 0.529, z: 0.8123 }, offset: { x: 0, y: 0.629, z: 0.2248 } },
     ],
   },
 
