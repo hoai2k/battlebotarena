@@ -451,22 +451,48 @@ Screens as DOM sections toggled by a tiny screen manager: `title`,
 energy: dark carbon/steel textures, bold italic condensed type, red/yellow
 accent angle-cut panels, subtle scanline/glow. Title: "BATTLEBOT ARENA" logo
 treatment + Fight / Settings. Bot select is a hangar: two showcase PODS (yours
-and the rival's) flank the VS/FIGHT column, and the roster is a compact
-horizontally scrolling dock strip along the bottom (`#bot-grid` keeps its id —
-nav code targets it). Picking a bot loads its GLB onto a lit turntable plinth
-in the pod's transparent view window; the pod's owner orbits it with the right
-stick, leans in with LT and test-fires the weapon with RT (mouse: drag/wheel
-the window, hold the TEST WEAPON button; a plain click on it fires a one-shot
-pulse for pad-A/keyboard users). The 3D itself is `src/engine/botPreview.js`
-(integrator-owned — UI never imports three.js): ui.js only emits a
-`previewSelection` action from `refreshSelect()`, main.js routes it to the
-previewer, and the previewer scissors one shared transparent canvas
-(`#preview-canvas`) into a viewport per pod. Weapon test-fires reuse the match
-animation path (`engine/botAnimation.js`, shared with main.js's frame loop) so
-a flip on the plinth moves exactly like a flip in the arena. Random stays a
-sealed "?" — no model until the box opens. On match start the previewer drops
-its models (GPU memory); every path back into botSelect calls `refreshSelect`,
-which re-emits the selection and repopulates the bays from the GLB cache.
+and the rival's) flank the VS/FIGHT column, over the full roster laid out as a
+reflowing grid. The 3D itself is `src/engine/botPreview.js` (integrator-owned —
+UI never imports three.js): ui.js only emits a `previewSelection` action from
+`refreshSelect()`, main.js routes it to the previewer, and the previewer
+scissors one shared transparent canvas (`#preview-canvas`) into a viewport per
+pod. Random stays a sealed "?" — no model until the box opens. On match start
+the previewer drops its models (GPU memory); every path back into botSelect
+calls `refreshSelect`, which re-emits the selection and repopulates the bays
+from the GLB cache.
+
+**The pods are a PRACTICE viewer, not a showreel.** The owner orbits with the
+right stick, leans in with LT, and works the weapon on RT/RB — the same two
+channels as a fight. Raw presses go through `game/weaponControls.js`, the ONE
+definition of which button does what, shared with main.js's match loop; the
+motion comes from `engine/previewWeapon.js`, which mirrors the phase machines
+in `sim/weapons.js` off the same `resolveWeaponTuning` numbers, and is drawn
+through the match animation path (`engine/botAnimation.js`). So HUGE's bar
+LATCHES on one press and takes its real five seconds to wind up, Bronco makes
+you wait out the reload, Sawblaze's arm holds out while the trigger is down,
+and every bot with a second mechanism (Sawblaze's saw, Whiplash's disc, Free
+Shipping's flame, Claw Viper's jaw, Tantrum's fists) gets a second button with
+the right latch/momentary behaviour. Each channel carries a readiness meter,
+because a latched rotor winding up is invisible from the button alone.
+Deliberately not modelled: anything needing an opponent (impulses, grabs,
+damage). Two details that are load-bearing:
+- The minimum press is counted in FRAMES, not seconds. A press only becomes a
+  rising edge once the loop observes it, and on a latching channel a missed
+  edge is a button that silently does nothing; a seconds-based floor loses that
+  race whenever a frame runs long.
+- Weapons advance for every staged bot, outside the render-culling loop, so a
+  press is never dropped and a latched rotor keeps spinning while you scroll.
+
+**Layout and scrolling.** The pods start COMPACT so the whole roster fits in
+one view (verified 1280x720 through 1920x1080); once both bays are filled the
+picking is done, so `.is-ready` grows them and pushes the grid below the fold.
+Card width shrinks on short viewports because the roster's cost is ROWS, not
+columns. Where the screen does scroll, ui.js keeps the pick and its consequence
+together: picking a bot scrolls its pod into view if it is off screen, and
+filling the second bay scrolls back to the top to show the now full-size
+viewers. Only real picks scroll (`refreshAfterPick`), never a plain
+`refreshSelect` on screen entry.
+
 HUD: damage bars top corners with bot names,
 center match clock, event ticker, KO banner, kill-saw callout. Results:
 winner card + Rematch / Change Bots / Title. Sound toggle visible on title +

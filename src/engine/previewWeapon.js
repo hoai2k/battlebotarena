@@ -1,0 +1,228 @@
+// Weapon behaviour for the bot-select practice viewer.
+//
+// createPreviewWeapon(spec) -> { update(dt, input), reset(), state, ratio() }
+//
+// The plinth has no physics world, so this mirrors the STROKE MACHINES in
+// src/sim/weapons.js rather than running them: same phase names, same timings
+// (read from the same `resolveWeaponTuning`), same 0..1 stroke and accumulated
+// spinner angle the sim reports through getAngle()/getSubAngle(). What it
+// deliberately does NOT model is anything that needs an opponent — impulses,
+// grabs, damage. The point is that the CONTROLS and the MOTION are the ones
+// the player will meet in the arena; HUGE's bar takes its real five seconds to
+// wind up here, and stopping it takes a second press, not letting go.
+//
+// Input is already shaped by game/weaponControls.js, i.e. `weapon` and
+// `sawActive` are post-latch, exactly as the sim receives them.
+
+import { resolveWeaponTuning } from "../sim/weaponTuning.js";
+import { SPINNER_TYPES } from "../game/weaponControls.js";
+
+// weapons.js TU.spinDownFactor: coast-down takes this many spin-up times.
+const SPIN_DOWN_FACTOR = 2.5;
+// A real rotor runs 300-1200 rad/s, which at 60fps is pure aliasing — the mesh
+// would look stationary or crawl backwards. The RATIO (and therefore the
+// spin-up TIME the player has to learn) is exact; only the drawn rate is
+// capped, and it scales with ratio so winding up still reads as winding up.
+const VISUAL_OMEGA_CAP = 34; // rad/s
+
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
+
+/**
+ * @param {import('../assets/catalog.js').BotSpec} spec
+ */
+export function createPreviewWeapon(spec) {
+  const w = spec?.weapon;
+  if (!w) {
+    return {
+      update: () => {},
+      reset: () => {},
+      state: { weaponAngle: 0, weaponSubAngle: 0 },
+      ratio: () => 0,
+      subRatio: () => 0,
+    };
+  }
+  const tune = resolveWeaponTuning(spec);
+  const type = w.type;
+
+  // Shared output, read by botAnimation's syncBotVisual exactly as the sim's
+  // render state would be.
+  const state = { weaponAngle: 0, weaponSubAngle: 0 };
+
+  // --- per-type state ------------------------------------------------------
+  let omega = 0; // spinner rotor
+  let visualAngle = 0; // drawn spinner angle
+  let stroke = 0; // 0..1 arm position (crusher/lifter/grappler)
+  let sub = 0; // 0..1 secondary stroke (fists punch / grappler jaw)
+  let subOmega = 0; // whiplash disc / free shipping flame ramp
+  let phase = "idle"; // flipper / hammer / hammerSaw phase machine
+  let t = 0;
+
+  const maxOmega = w.maxOmega || 1;
+  const spinUpSeconds = Math.max(0.05, w.spinUpSeconds || 1);
+  const spinUpRate = maxOmega / spinUpSeconds;
+  const spinDownRate = maxOmega / (spinUpSeconds * SPIN_DOWN_FACTOR);
+
+  const disc = w.disc || null;
+  const discMaxOmega = disc?.maxOmega ?? 380;
+  const discSpinUp = Math.max(0.05, disc?.spinUpSeconds ?? 1.4);
+
+  function updateSpinner(dt, fire, alt) {
+    omega = fire
+      ? Math.min(maxOmega, omega + spinUpRate * dt)
+      : Math.max(0, omega - spinDownRate * dt);
+    visualAngle += (omega / maxOmega) * VISUAL_OMEGA_CAP * dt;
+    state.weaponAngle = visualAngle;
+    // Tantrum's fists: momentary punch on the secondary channel, same rates as
+    // the sim's updateFists.
+    if (w.fists) {
+      const seconds = Math.max(0.05, w.fists.punchSeconds ?? 0.18);
+      sub = clamp01(sub + (alt ? dt / seconds : -dt / (seconds * 2.2)));
+      state.weaponSubAngle = sub;
+    }
+  }
+
+  // Flipper and hammer share a shape: fire from idle only, a fixed stroke, then
+  // a return you have to wait out. The wait IS the weapon's rhythm.
+  function updateOneShot(dt, fire, strokeSeconds, returnSeconds) {
+    if (phase === "idle" && fire) {
+      phase = "firing";
+      t = 0;
+    } else if (phase === "firing") {
+      t += dt;
+      if (t >= strokeSeconds) {
+        phase = "returning";
+        t = 0;
+      }
+    } else if (phase === "returning") {
+      t += dt;
+      if (t >= returnSeconds) phase = "idle";
+    }
+    state.weaponAngle =
+      phase === "firing"
+        ? Math.min(1, t / strokeSeconds)
+        : phase === "returning"
+          ? Math.max(0, 1 - t / returnSeconds)
+          : 0;
+  }
+
+  // Sawblaze: the arm swings, then HOLDS at full extension while the trigger is
+  // still down (that is the grind), and only returns when released. The saw
+  // motor is its own latched channel — in the sim it is visual/audio only
+  // (botAnimation's updateWeaponSub spins the mesh), so the ramp here mirrors
+  // that lerp rather than a rotor model, purely to drive the readiness meter.
+  function updateHammerSaw(dt, fire, alt) {
+    subOmega += ((alt ? 1 : 0) - subOmega) * Math.min(1, dt * (alt ? 2.2 : 1.1));
+    const swingSeconds = tune.swingSeconds;
+    const returnSeconds = tune.returnSeconds;
+    if (phase === "idle" && fire) {
+      phase = "swinging";
+      t = 0;
+    }
+    if (phase === "swinging") {
+      t += dt;
+      if (t >= swingSeconds) {
+        phase = fire ? "held" : "returning";
+        t = 0;
+      }
+    } else if (phase === "held") {
+      if (!fire) {
+        phase = "returning";
+        t = 0;
+      }
+    } else if (phase === "returning") {
+      t += dt;
+      if (t >= returnSeconds) phase = "idle";
+    }
+    state.weaponAngle =
+      phase === "swinging"
+        ? Math.min(1, t / swingSeconds)
+        : phase === "held"
+          ? 1
+          : phase === "returning"
+            ? Math.max(0, 1 - t / returnSeconds)
+            : 0;
+  }
+
+  function updateCrusher(dt, fire) {
+    // weapons.js: 0.25s to bite, 0.4s to open.
+    stroke = clamp01(stroke + (fire ? dt / 0.25 : -dt / 0.4));
+    state.weaponAngle = stroke;
+  }
+
+  function updateLifter(dt, fire, alt) {
+    const raiseSeconds = tune.strokeSeconds;
+    const lowerSeconds = w.lowerSeconds ?? tune.strokeSeconds * 1.3;
+    stroke = clamp01(stroke + (fire ? dt / raiseSeconds : -dt / lowerSeconds));
+    state.weaponAngle = stroke;
+    if (disc) {
+      const up = discMaxOmega / discSpinUp;
+      const down = discMaxOmega / (discSpinUp * SPIN_DOWN_FACTOR);
+      subOmega = alt
+        ? Math.min(discMaxOmega, subOmega + up * dt)
+        : Math.max(0, subOmega - down * dt);
+    } else if (w.flame) {
+      // weapons.js ramps `burning` 0..1 while lit; it drives the nozzle VFX.
+      subOmega = clamp01(subOmega + (alt ? dt / 0.25 : -dt / 0.35));
+    }
+  }
+
+  function updateGrappler(dt, fire, alt) {
+    const liftSeconds = w.liftSeconds ?? tune.strokeSeconds;
+    const lowerSeconds = w.lowerSeconds ?? liftSeconds * 1.3;
+    const clampSeconds = w.claw?.clampSeconds ?? 0.25;
+    stroke = clamp01(stroke + (fire ? dt / liftSeconds : -dt / lowerSeconds));
+    sub = clamp01(sub + (alt ? dt / clampSeconds : -dt / clampSeconds));
+    state.weaponAngle = stroke;
+    state.weaponSubAngle = sub;
+  }
+
+  function update(dt, input = {}) {
+    const fire = Boolean(input.weapon);
+    const alt = Boolean(input.sawActive);
+    if (SPINNER_TYPES.has(type)) updateSpinner(dt, fire, alt);
+    else if (type === "flipper") updateOneShot(dt, fire, tune.strokeSeconds, tune.returnSeconds);
+    else if (type === "hammer") updateOneShot(dt, fire, tune.strokeSeconds, tune.returnSeconds);
+    else if (type === "hammerSaw") updateHammerSaw(dt, fire, alt);
+    else if (type === "crusher") updateCrusher(dt, fire);
+    else if (type === "lifter" || type === "lifterDisc") updateLifter(dt, fire, alt);
+    else if (type === "grappler") updateGrappler(dt, fire, alt);
+  }
+
+  function reset() {
+    omega = 0;
+    visualAngle = 0;
+    stroke = 0;
+    sub = 0;
+    subOmega = 0;
+    phase = "idle";
+    t = 0;
+    state.weaponAngle = 0;
+    state.weaponSubAngle = 0;
+  }
+
+  return {
+    update,
+    reset,
+    state,
+    /** 0..1 primary readiness, matching the sim's getRatio() per type: rotor
+     *  speed for spinners, reload CHARGE for a flipper, arm position else. */
+    ratio() {
+      if (SPINNER_TYPES.has(type)) return omega / maxOmega;
+      if (type === "flipper") {
+        if (phase === "returning") return clamp01(t / tune.returnSeconds);
+        return phase === "idle" ? 1 : 0;
+      }
+      if (type === "hammer") {
+        if (phase === "returning") return clamp01(t / tune.returnSeconds);
+        return phase === "idle" ? 1 : 0;
+      }
+      return state.weaponAngle;
+    },
+    /** 0..1 secondary readiness — disc speed, saw motor, flame ramp, jaw, punch. */
+    subRatio() {
+      if (disc) return subOmega / discMaxOmega;
+      if (w.flame || type === "hammerSaw") return subOmega;
+      return sub;
+    },
+  };
+}

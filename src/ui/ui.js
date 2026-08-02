@@ -61,7 +61,10 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
 
   // Showcase pods: the big 3D windows the chosen bots render into. The UI owns
   // their DOM chrome (plate, badge, stats, empty copy); the integrator owns the
-  // 3D itself via the previewSelection actions emitted from refreshSelect.
+  // 3D and the weapon buttons via the previewSelection actions emitted from
+  // refreshSelect.
+  const stageEl = document.querySelector(".select-stage");
+  const selectScreen = document.querySelector(".screen-select");
   const pods = [$("pod-player"), $("pod-rival")].map((root, i) => ({
     root,
     plate: i === 0 ? slotPlayer : slotRival,
@@ -69,7 +72,6 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     empty: root?.querySelector(".pod-empty") || null,
     badge: root?.querySelector(".pod-badge") || null,
     stats: root?.querySelector(".pod-stats") || null,
-    test: root?.querySelector(".pod-test") || null,
   }));
 
   /** Shimmer an image's container until the bitmap lands. The roster photos
@@ -136,21 +138,23 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     if (mine === id) setSlot(slot, null);
     else if (theirs === id) return true; // taken — ignore rather than steal
     else setSlot(slot, id);
-    refreshSelect();
+    refreshAfterPick(slot);
     return true;
   }
 
   /** Solo flow: the single cursor fills YOU, then RIVAL. */
   function soloPick(id) {
+    let slot = 1;
     if (sel.stage === "player") {
       if (id === "random") return;
       sel.playerBotId = id;
       if (sel.rivalBotId === id) sel.rivalBotId = null; // no mirror match via direct pick collision
       sel.stage = "rival";
+      slot = 0;
     } else {
       sel.rivalBotId = id;
     }
-    refreshSelect();
+    refreshAfterPick(slot);
   }
 
   if (grid) {
@@ -187,16 +191,53 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
         pod.stats.innerHTML = isRandom
           ? `<span class="random-note">REVEALED AT THE BOX</span>`
           : `${statRow("SPD", card.stats.speed)}${statRow("PWR", card.stats.power)}${statRow("ARM", card.stats.armor)}`;
-      // Random has nothing to render or fire; a real pick gets the test rig.
-      if (pod.test) pod.test.hidden = isRandom;
     } else {
       pod.root.style.removeProperty("--accent");
       if (pod.plateBody) pod.plateBody.innerHTML = `<span class="pod-plate-empty">— OPEN BAY —</span>`;
       if (pod.empty) pod.empty.innerHTML = emptyCopy;
       if (pod.badge) pod.badge.textContent = "";
       if (pod.stats) pod.stats.innerHTML = "";
-      if (pod.test) pod.test.hidden = true;
     }
+  }
+
+  // ------------------------------------------------------------- stage size
+  // The pods start compact so the whole roster grid fits without scrolling.
+  // Once BOTH bays are filled the picking is done and the viewers are the
+  // point, so they grow and push the grid below the fold.
+  function syncStageSize() {
+    const bothPicked = Boolean(sel.playerBotId && sel.rivalBotId);
+    selectScreen?.classList.toggle("is-ready", bothPicked);
+    return bothPicked;
+  }
+
+  /** Is this element fully inside the scrolling screen's viewport? */
+  function isFullyVisible(el) {
+    if (!el || !selectScreen) return true;
+    const a = el.getBoundingClientRect();
+    const b = selectScreen.getBoundingClientRect();
+    return a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
+  }
+
+  const smooth = () =>
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+
+  /**
+   * Keep the pick and its consequence on screen together. Picking a bot from
+   * the bottom of a scrolled grid otherwise updates a pod the player cannot
+   * see, which reads as nothing happening at all.
+   * @param {number|null} slot which pod just changed; null = both are done
+   */
+  function revealSelection(slot) {
+    if (!selectScreen) return;
+    // Both picked: the viewers are now full size, so go back to the top and
+    // show them off rather than leaving the player parked in the roster.
+    if (slot === null) {
+      selectScreen.scrollTo({ top: 0, behavior: smooth() });
+      return;
+    }
+    const pod = pods[slot]?.root;
+    if (!pod || isFullyVisible(pod)) return;
+    pod.scrollIntoView({ behavior: smooth(), block: "nearest" });
   }
 
   /** Tell the integrator what to stage in the 3D pods and who owns the
@@ -250,7 +291,18 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       stepEl.textContent = sel.stage === "player" ? "STEP 1 — CHOOSE YOUR BOT" : "STEP 2 — CHOOSE THE OPPONENT";
     }
     fightBtn.disabled = !(sel.playerBotId && sel.rivalBotId);
+    syncStageSize();
     emitSelection();
+  }
+
+  /** refreshSelect() runs on every screen entry too; only a real PICK should
+   *  move the scroll position, so the pick handlers call this instead. */
+  function refreshAfterPick(slot) {
+    const wasReady = selectScreen?.classList.contains("is-ready");
+    refreshSelect();
+    const isReady = selectScreen?.classList.contains("is-ready");
+    // The stage only just grew, so let layout settle before measuring.
+    requestAnimationFrame(() => revealSelection(isReady && !wasReady ? null : slot));
   }
 
   /** Second pad plugged in / pulled out — reshape the screen around it. */

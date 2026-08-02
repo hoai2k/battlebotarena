@@ -6,8 +6,16 @@
 // pod's view window. One transparent WebGL canvas spans the whole screen and
 // every pod is a scissored viewport into a shared scene with one lit "bay"
 // per slot, so two previews cost one context. The pod's owner drives it like
-// a standard 3D camera: right stick orbits, LT leans in, RT test-fires the
-// weapon — mouse users drag/wheel the window and hold the TEST WEAPON button.
+// a standard 3D camera: right stick orbits, LT leans in — mouse users drag and
+// wheel the window.
+//
+// It is a PRACTICE viewer, not a showreel: the weapon buttons feed RAW input
+// through the same game/weaponControls.js shaper the match loop uses, and
+// engine/previewWeapon.js mirrors the sim's stroke machines with the real
+// per-bot timings. So HUGE's bar latches on with one press and takes its full
+// five seconds to wind up, Bronco's flipper makes you wait out the reload, and
+// Sawblaze's arm holds out while the trigger is down — the same as in a fight.
+// Pad RT/RB map to the same two channels the arena uses.
 //
 // Pad->pod routing mirrors the rest of the game: with two pads each pad owns
 // its own pod (dense getGamepads() order, same people as sim bots 0/1); solo,
@@ -15,7 +23,7 @@
 // setControl). ui.js never sees any of this — it only emits selection actions;
 // main.js routes them here (UI must not import three.js, see ARCHITECTURE.md).
 //
-// Weapon test-fires reuse the exact match-time animation path (botAnimation's
+// Motion goes through the exact match-time animation path (botAnimation's
 // syncBotVisual over a synthesized render state), so the flip you try here is
 // the flip you get in the arena. The per-frame pane-rect reads are deliberate
 // and contained: this loop only does real work on the botSelect screen, never
@@ -25,6 +33,8 @@
 import * as THREE from "three";
 import { loadBotModel } from "../assets/models.js";
 import { syncBotVisual, updateWeaponSub } from "./botAnimation.js";
+import { createPreviewWeapon } from "./previewWeapon.js";
+import { createWeaponInputShaper, describeWeaponControls } from "../game/weaponControls.js";
 
 const BAY_SPACING = 30; // ft between the two bays; far enough that neither bot ever shows in the other's window
 const PLINTH_RADIUS = 3.1;
@@ -38,26 +48,19 @@ const ZOOM_MIN = 0.55;
 const ZOOM_MAX = 1.9;
 const AUTO_SPIN_AFTER = 2.5; // s of no camera input before the turntable drift resumes
 const AUTO_SPIN_SPEED = 0.22; // rad/s
-const SPINNER_VISUAL_OMEGA = 34; // rad/s cap — faster is just shimmer at 60fps
-// One-shot pulse lengths (pad A / keyboard on the TEST button): a spinner
-// needs time to visibly wind up and coast; an arm just fires and returns.
-const PULSE_SPINNER_S = 2.8;
-const PULSE_ARM_S = 1.0;
+// A click (pad A / keyboard Enter) with no pointer hold behind it still has to
+// produce a real button press, so it is replayed as a short raw pulse. On a
+// LATCHING channel one pulse is one edge, which is exactly one toggle; on a
+// momentary one it is a tap of the trigger.
+// Minimum press length, counted in FRAMES rather than seconds. A press has to
+// be observed by the loop to become a rising edge, and on a latching channel a
+// missed edge is a button that silently does nothing; a seconds-based floor
+// loses that race whenever a frame runs long. Two frames is always enough and
+// is never perceptible.
+const MIN_PRESS_FRAMES = 2;
+const CLICK_PRESS_FRAMES = 4; // a synthetic click (pad A / keyboard) has no hold behind it
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-
-const SPINNER_TYPES = new Set(["bar", "drum"]);
-
-/** Per-type stroke rates (1/s): how fast the arm goes up while held / returns. */
-function strokeRates(type) {
-  switch (type) {
-    case "flipper": return { up: 13, down: 2.8 }; // snap out, pneumatic return
-    case "hammer": return { up: 9, down: 2.0 };
-    case "hammerSaw": return { up: 3.4, down: 2.2 };
-    case "crusher": return { up: 2.4, down: 1.6 };
-    default: return { up: 2.4, down: 1.8 }; // lifters, grapplers
-  }
-}
 
 function disposeObject(root) {
   root.traverse((node) => {
@@ -161,27 +164,47 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       spec: null,
       token: 0,
       viewEl: pods[slot]?.view || null,
-      testEl: pods[slot]?.test || null,
+      // Two channels, matching the pad: primary is RT, secondary is RB.
+      buttons: {
+        primary: pods[slot]?.primary || null,
+        secondary: pods[slot]?.secondary || null,
+      },
+      meters: {
+        primary: pods[slot]?.primaryMeter || null,
+        secondary: pods[slot]?.secondaryMeter || null,
+      },
       loadingEl: pods[slot]?.view?.querySelector?.(".pod-loading") || null,
       // Orbit state: yaw mirrored so both bots open on a facing 3/4 view.
       orbit: { yaw: slot === 0 ? 0.7 : -0.7, pitch: 0.4, zoom: 1, dist: 9, targetY: 1.1, lean: 0, idleFor: 99 },
-      // Synthesized render state fed through the match animation path.
-      anim: { spinAngle: 0, spinSpeed: 0, stroke: 0, subPulse: 0 },
+      /** Mirrors the sim's weapon stroke machine for this bot. */
+      weapon: null,
+      controls: { primary: null, secondary: null },
       state: {
         position: new THREE.Vector3(x, PLINTH_HEIGHT, 0),
         quaternion: new THREE.Quaternion(),
         weaponAngle: 0,
         weaponSubAngle: 0,
       },
-      weaponHeld: false, // pointer hold on the TEST button
-      weaponPadHeld: false, // RT on the owning pad
-      pulseUntil: 0,
+      // RAW (pre-latch) button state per channel, from pointer holds, click
+      // pulses and the pad. The shaper turns these into shaped weapon input.
+      raw: {
+        primaryHeld: false,
+        secondaryHeld: false,
+        primaryFrames: 0, // frames this press must still be reported for
+        secondaryFrames: 0,
+        primaryPad: false,
+        secondaryPad: false,
+      },
       cleanups: /** @type {Function[]} */ ([]),
     };
   }
 
   const bays = [buildBay(0), buildBay(1)];
   const control = { duo: false, focusSlot: 0 };
+  // Same shaper the match loop runs, so the latches behave identically. It is
+  // this viewer's OWN instance — the match keeps its own, and neither should
+  // inherit the other's toggle state.
+  const shaper = createWeaponInputShaper();
 
   // ------------------------------------------------------------ DOM wiring
   const now = () => performance.now();
@@ -229,37 +252,47 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       });
     }
 
-    const test = bay.testEl;
-    if (test) {
-      // Hold to run the weapon; a plain click (pad A / keyboard Enter on the
-      // focused button) fires a one-shot pulse long enough to see a spinner
-      // wind up. The click that follows a real hold is swallowed.
-      let heldAt = 0;
+    // Each weapon button reports a RAW press — held while the pointer is down,
+    // a short pulse for a click with no hold behind it (pad A / keyboard).
+    // Everything about latch-vs-momentary is decided downstream by the shared
+    // shaper, so these two handlers are identical for every weapon in the game.
+    const wireButton = (el, heldKey, framesKey) => {
+      if (!el) return;
+      // A pointer sequence sets the hold plus a two-frame floor, so even a tap
+      // shorter than a frame still shows the loop a rising edge. A bare click
+      // event — keyboard Enter, or gamepadNav's A -> el.click() — has no
+      // pointer behind it and is replayed as the floor alone.
+      let fromPointer = false;
       const onDown = () => {
-        heldAt = now();
-        bay.weaponHeld = true;
+        fromPointer = true;
+        bay.raw[heldKey] = true;
+        bay.raw[framesKey] = Math.max(bay.raw[framesKey], MIN_PRESS_FRAMES);
       };
       const release = () => {
-        bay.weaponHeld = false;
+        bay.raw[heldKey] = false;
       };
       const onClick = () => {
-        if (heldAt && now() - heldAt > 300) return; // was a hold, not a tap
-        const isSpinner = SPINNER_TYPES.has(bay.spec?.weapon?.type);
-        bay.pulseUntil = now() + (isSpinner ? PULSE_SPINNER_S : PULSE_ARM_S) * 1000;
+        if (fromPointer) {
+          fromPointer = false;
+          return; // the pointer press already delivered the edge
+        }
+        bay.raw[framesKey] = CLICK_PRESS_FRAMES;
       };
-      test.addEventListener("pointerdown", onDown);
-      test.addEventListener("pointerup", release);
-      test.addEventListener("pointerleave", release);
-      test.addEventListener("pointercancel", release);
-      test.addEventListener("click", onClick);
+      el.addEventListener("pointerdown", onDown);
+      el.addEventListener("pointerup", release);
+      el.addEventListener("pointerleave", release);
+      el.addEventListener("pointercancel", release);
+      el.addEventListener("click", onClick);
       bay.cleanups.push(() => {
-        test.removeEventListener("pointerdown", onDown);
-        test.removeEventListener("pointerup", release);
-        test.removeEventListener("pointerleave", release);
-        test.removeEventListener("pointercancel", release);
-        test.removeEventListener("click", onClick);
+        el.removeEventListener("pointerdown", onDown);
+        el.removeEventListener("pointerup", release);
+        el.removeEventListener("pointerleave", release);
+        el.removeEventListener("pointercancel", release);
+        el.removeEventListener("click", onClick);
       });
-    }
+    };
+    wireButton(bay.buttons.primary, "primaryHeld", "primaryFrames");
+    wireButton(bay.buttons.secondary, "secondaryHeld", "secondaryFrames");
   });
 
   // ------------------------------------------------------------- gamepads
@@ -268,11 +301,13 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     return [...navigator.getGamepads()].filter(Boolean);
   }
 
-  /** Route pad camera/weapon input to the pod each pad owns. */
+  /** Route pad camera/weapon input to the pod each pad owns. RT/RB are the
+   *  same two weapon channels game/input.js reads during a match. */
   function readPads(dt) {
     const pads = connectedPads();
     bays.forEach((bay) => {
-      bay.weaponPadHeld = false;
+      bay.raw.primaryPad = false;
+      bay.raw.secondaryPad = false;
       bay.orbit.lean = 0;
     });
     const feed = (bay, pad) => {
@@ -289,8 +324,11 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       }
       const lt = pad.buttons?.[6]?.value ?? (pad.buttons?.[6]?.pressed ? 1 : 0);
       bay.orbit.lean = Math.max(bay.orbit.lean, lt);
+      // Same buttons as game/input.js: RT (7) weapon, RB (5) secondary.
       const rt = (pad.buttons?.[7]?.value ?? 0) > 0.2 || Boolean(pad.buttons?.[7]?.pressed);
-      bay.weaponPadHeld = bay.weaponPadHeld || rt;
+      const rb = Boolean(pad.buttons?.[5]?.pressed) || (pad.buttons?.[5]?.value ?? 0) > 0.5;
+      bay.raw.primaryPad = bay.raw.primaryPad || rt;
+      bay.raw.secondaryPad = bay.raw.secondaryPad || rb;
     };
     if (control.duo) {
       // Pad slot i owns pod i — same dense order as game/input.js.
@@ -303,33 +341,45 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     }
   }
 
-  // ------------------------------------------------------ weapon animation
+  // ------------------------------------------------------ weapon behaviour
+  /** Collapse this frame's raw button sources into one press per channel. */
+  function readRawButtons(bay) {
+    const raw = bay.raw;
+    const press = {
+      leftDrive: 0,
+      rightDrive: 0,
+      brake: false,
+      weapon: raw.primaryHeld || raw.primaryPad || raw.primaryFrames > 0,
+      weaponAlt: raw.secondaryHeld || raw.secondaryPad || raw.secondaryFrames > 0,
+    };
+    // Consumed only once this frame has actually reported it.
+    raw.primaryFrames = Math.max(0, raw.primaryFrames - 1);
+    raw.secondaryFrames = Math.max(0, raw.secondaryFrames - 1);
+    return press;
+  }
+
   function updateWeaponAnim(bay, dt) {
-    const spec = bay.spec;
-    const type = spec?.weapon?.type;
-    if (!type) return;
-    const active = bay.weaponHeld || bay.weaponPadHeld || now() < bay.pulseUntil;
-    bay.testEl?.classList.toggle("is-live", active);
-    const anim = bay.anim;
-    if (SPINNER_TYPES.has(type)) {
-      // Spin-up toward the visual cap while active, long coast-down after.
-      anim.spinSpeed += ((active ? SPINNER_VISUAL_OMEGA : 0) - anim.spinSpeed) * Math.min(1, dt * (active ? 1.1 : 0.45));
-      anim.spinAngle += anim.spinSpeed * dt;
-      bay.state.weaponAngle = anim.spinAngle;
-      // Tantrum: rhythmic punches ride on top while the drum runs.
-      if (spec.weapon.fists) {
-        anim.subPulse = active ? anim.subPulse + dt : 0;
-        bay.state.weaponSubAngle = active ? Math.abs(Math.sin(anim.subPulse * 3.2)) : Math.max(0, (bay.state.weaponSubAngle || 0) - dt * 3);
-      }
-    } else {
-      const rates = strokeRates(type);
-      anim.stroke = clamp(anim.stroke + (active ? rates.up : -rates.down) * dt, 0, 1);
-      bay.state.weaponAngle = anim.stroke;
-      // Grappler jaw / any sub that rides the stroke closes with the arm.
-      bay.state.weaponSubAngle = anim.stroke;
-    }
-    // Sawblaze's saw / Whiplash's disc spin whenever the arm test is live.
-    updateWeaponSub(bay.visual, spec, dt, active);
+    if (!bay.spec?.weapon || !bay.weapon) return;
+    // RAW press -> the game's own latch rules -> the sim's own stroke machine.
+    // Nothing here knows whether a given weapon toggles or is held; that lives
+    // in one place and the arena reads it from the same place.
+    const shaped = shaper.shape(readRawButtons(bay), bay.spec, bay.slot);
+    bay.weapon.update(dt, shaped);
+    bay.state.weaponAngle = bay.weapon.state.weaponAngle;
+    bay.state.weaponSubAngle = bay.weapon.state.weaponSubAngle;
+    // Sawblaze's saw / Whiplash's disc: the visual sub-spinner rides the same
+    // sawActive channel it does in the match.
+    updateWeaponSub(bay.visual, bay.spec, dt, Boolean(shaped.sawActive));
+
+    // Button + meter feedback. On a latching channel "live" means latched, so
+    // the button stays lit after you let go — which is the thing the player
+    // most needs to see about a spinner.
+    const primaryLive = Boolean(shaped.weapon);
+    const secondaryLive = Boolean(shaped.sawActive);
+    bay.buttons.primary?.classList.toggle("is-live", primaryLive);
+    bay.buttons.secondary?.classList.toggle("is-live", secondaryLive);
+    if (bay.meters.primary) bay.meters.primary.style.transform = `scaleX(${bay.weapon.ratio().toFixed(3)})`;
+    if (bay.meters.secondary) bay.meters.secondary.style.transform = `scaleX(${bay.weapon.subRatio().toFixed(3)})`;
   }
 
   // --------------------------------------------------------------- camera
@@ -376,6 +426,23 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     return document.body.dataset.screen === "botSelect";
   }
 
+  /** Hide every bay but this one for the duration of its render pass. */
+  function showOnly(active) {
+    for (const bay of bays) {
+      const mine = bay === active;
+      bay.deco.visible = mine && Boolean(bay.visual);
+      if (bay.visual) bay.visual.group.visible = mine;
+    }
+  }
+
+  /** Put the scene back the way the rest of the module expects to find it. */
+  function restoreBays() {
+    for (const bay of bays) {
+      bay.deco.visible = Boolean(bay.visual);
+      if (bay.visual) bay.visual.group.visible = true;
+    }
+  }
+
   function resizeToDisplay() {
     const width = canvas.clientWidth || window.innerWidth;
     const height = canvas.clientHeight || window.innerHeight;
@@ -406,31 +473,54 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       return;
     }
 
-    const { height: canvasHeight } = resizeToDisplay();
+    resizeToDisplay();
     readPads(dt);
+
+    // Weapons advance for every staged bot, whether or not its pod is on
+    // screen: a press consumed here must never depend on scroll position, and
+    // a latched rotor has to keep spinning while you scroll down the roster.
+    for (const bay of bays) {
+      if (!bay.visual) continue;
+      updateWeaponAnim(bay, dt);
+      syncBotVisual(bay.visual, bay.spec, bay.state);
+    }
 
     renderer.setScissorTest(false);
     renderer.clear();
     canvasClean = false;
 
+    // Rects are measured against the CANVAS, not the viewport: the screen is
+    // scrollable and slides during its enter transition, and a transformed
+    // ancestor would break viewport-absolute maths. This loop never runs during
+    // a match, where the no-DOM-reads-in-the-frame-loop rule matters.
+    const canvasRect = canvas.getBoundingClientRect();
+
     for (const bay of bays) {
       if (!bay.visual || !bay.viewEl) continue;
-      // The screen slides during its enter transition, so the window's rect is
-      // read fresh each frame — this loop never runs during a match, where the
-      // no-DOM-reads rule matters.
       const rect = bay.viewEl.getBoundingClientRect();
-      if (rect.width < 12 || rect.height < 12) continue;
-      updateWeaponAnim(bay, dt);
-      syncBotVisual(bay.visual, bay.spec, bay.state);
+      // Clip to the canvas: a pod scrolled half off-screen must not hand GL a
+      // rect that runs past the framebuffer.
+      const left = Math.max(rect.left, canvasRect.left);
+      const right = Math.min(rect.right, canvasRect.right);
+      const top = Math.max(rect.top, canvasRect.top);
+      const bottom = Math.min(rect.bottom, canvasRect.bottom);
+      if (right - left < 12 || bottom - top < 12) continue; // fully or nearly scrolled away
       updateCamera(bay, dt, rect);
-      const x = rect.left;
-      const y = canvasHeight - rect.bottom; // GL origin is bottom-left
-      renderer.setViewport(x, y, rect.width, rect.height);
-      renderer.setScissor(x, y, rect.width, rect.height);
+      // Viewport spans the pod's FULL rect (so the projection is unchanged by
+      // clipping) while the scissor is the visible part of it.
+      const vx = rect.left - canvasRect.left;
+      const vy = canvasRect.bottom - rect.bottom; // GL origin is bottom-left
+      renderer.setViewport(vx, vy, rect.width, rect.height);
+      renderer.setScissor(left - canvasRect.left, canvasRect.bottom - bottom, right - left, bottom - top);
       renderer.setScissorTest(true);
+      // Only this bay exists for its own camera. Both bots live in one scene
+      // (one context, one set of lights), and 30ft apart the far one was
+      // showing up in the back of the near one's window at some orbit angles.
+      showOnly(bay);
       renderer.render(scene, bay.camera);
     }
     renderer.setScissorTest(false);
+    restoreBays();
   }
   raf = requestAnimationFrame(frame);
 
@@ -449,16 +539,39 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   }
 
   function resetBayState(bay) {
-    bay.anim.spinAngle = 0;
-    bay.anim.spinSpeed = 0;
-    bay.anim.stroke = 0;
-    bay.anim.subPulse = 0;
+    bay.weapon?.reset();
+    shaper.reset(bay.slot); // a fresh bot arrives with its rotor off
     bay.state.weaponAngle = 0;
     bay.state.weaponSubAngle = 0;
-    bay.pulseUntil = 0;
+    bay.raw.primaryHeld = false;
+    bay.raw.secondaryHeld = false;
+    bay.raw.primaryFrames = 0;
+    bay.raw.secondaryFrames = 0;
     bay.orbit.yaw = bay.slot === 0 ? 0.7 : -0.7;
     bay.orbit.pitch = 0.4;
     bay.orbit.idleFor = 99; // start on the slow showcase drift
+    bay.buttons.primary?.classList.remove("is-live");
+    bay.buttons.secondary?.classList.remove("is-live");
+  }
+
+  /** Label the two channel buttons for this bot and hide the one it lacks. */
+  function applyControls(bay, spec) {
+    const controls = describeWeaponControls(spec);
+    bay.controls = controls;
+    const dress = (el, meterEl, channel) => {
+      if (!el) return;
+      el.hidden = !channel;
+      if (meterEl?.parentElement) meterEl.parentElement.hidden = !channel;
+      if (!channel) return;
+      const labelEl = el.querySelector("[data-control-label]") || el;
+      labelEl.textContent = channel.label;
+      // Toggle vs hold is the single most useful thing to tell the player here.
+      el.dataset.mode = channel.toggle ? "toggle" : "hold";
+      el.setAttribute("aria-label", `${channel.label} — ${channel.toggle ? "toggles on and off" : "hold"}`);
+      if (meterEl) meterEl.style.transform = "scaleX(0)";
+    };
+    dress(bay.buttons.primary, bay.meters.primary, controls.primary);
+    dress(bay.buttons.secondary, bay.meters.secondary, controls.secondary);
   }
 
   /** Load spec's model into the slot's bay (no-op if it is already showing). */
@@ -489,6 +602,8 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     bay.deco.visible = true;
     bay.ringMaterial.color.set(spec.accent || "#888c94");
     bay.ringMaterial.emissive.set(spec.accent || "#888c94");
+    bay.weapon = createPreviewWeapon(spec);
+    applyControls(bay, spec);
     resetBayState(bay);
     frameModel(bay);
   }
@@ -498,7 +613,9 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     if (!bay) return;
     bay.token += 1; // cancels an in-flight load
     bay.spec = null;
+    bay.weapon = null;
     setLoading(bay, false);
+    applyControls(bay, null);
     removeVisual(bay);
   }
 
@@ -525,5 +642,21 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
 
   // _debug: read-only inspection surface for tooling (mirrors gamepadNav's
   // debug exports); nothing in the app reads it.
-  return { showBot, clearBot, unload, setControl, dispose, _debug: { bays, control } };
+  return {
+    showBot,
+    clearBot,
+    unload,
+    setControl,
+    dispose,
+    _debug: {
+      bays,
+      control,
+      get shaperState() {
+        return [0, 1].map((slot) => ({
+          weapon: shaper.isWeaponLatched(slot),
+          alt: shaper.isAltLatched(slot),
+        }));
+      },
+    },
+  };
 }

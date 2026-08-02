@@ -180,22 +180,36 @@
 .screen-select {
   padding: clamp(12px, 2vh, 26px) clamp(16px, 3vw, 40px);
   gap: clamp(10px, 1.6vh, 18px);
+  /* The roster is a full grid, so the screen scrolls rather than squeezing the
+     cards. The pods shrink until both are picked (see --stage-h) so the first
+     view still fits without scrolling on a normal display. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-behavior: smooth;
 }
 
-/* The live showcase canvas spans the screen UNDER the pods; each pod's view
-   window is a transparent rect the previewer scissors a 3D viewport into. */
+/* The live showcase canvas is FIXED to the viewport, not to the scrolling
+   content: the previewer positions its viewports by measuring each pod against
+   the canvas rect every frame, so a pod that scrolls simply scissors smaller.
+   The header stays put over it while the grid scrolls beneath. */
 #preview-canvas {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
   z-index: 0;
   pointer-events: none;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .screen-select {
+    scroll-behavior: auto;
+  }
+}
+
 .screen-select > .select-head,
 .screen-select > .select-stage,
-.screen-select > .bot-dock {
+.screen-select > .bot-grid {
   position: relative;
   z-index: 1;
 }
@@ -205,6 +219,7 @@
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 16px;
+  flex: 0 0 auto; /* the screen scrolls; nothing in it may be squeezed */
 }
 
 .select-head > :last-child {
@@ -284,13 +299,29 @@
    3D view window in the middle (transparent — the canvas draws behind it),
    and a foot row with weapon badge, stat pips and the TEST WEAPON trigger. */
 
+/* Stage height is the whole layout trick. COMPACT while the player is still
+   choosing, so the roster grid fits on screen under it; FULL once both bays
+   are filled, which pushes the grid below the fold and hands the screen over
+   to the viewers (ui.js scrolls back to the top at that moment). */
 .select-stage {
-  flex: 1;
-  min-height: 0;
+  --stage-h: clamp(178px, 25vh, 244px);
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: clamp(14px, 2.2vw, 34px);
   align-items: stretch;
+  transition: min-height 0.35s ease;
+  min-height: var(--stage-h);
+}
+
+.screen-select.is-ready .select-stage {
+  --stage-h: clamp(300px, 56vh, 620px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .select-stage {
+    transition: none;
+  }
 }
 
 .preview-pod {
@@ -305,7 +336,8 @@
 .pod-plate {
   position: relative;
   display: flex;
-  min-height: 64px;
+  flex: 0 0 auto;
+  min-height: 58px;
   padding: 0;
   border: 1px solid var(--line);
   background:
@@ -362,7 +394,7 @@
   gap: 2px;
   width: 100%;
   min-width: 0;
-  padding: 20px 18px 10px;
+  padding: 19px 18px 8px;
 }
 
 .pod-rival .pod-plate-body {
@@ -405,7 +437,7 @@
 .pod-view {
   position: relative;
   flex: 1;
-  min-height: 120px;
+  min-height: 84px; /* compact stage still has to leave a usable window */
   margin-top: 8px;
   border: 1px solid var(--line);
   background: transparent;
@@ -503,9 +535,10 @@
 
 .pod-foot {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 12px;
-  min-height: 46px;
+  min-height: 44px;
   padding: 8px 2px 0;
 }
 
@@ -514,7 +547,14 @@
 }
 
 .pod-badge {
-  flex: 0 0 auto;
+  /* Shrinkable, unlike the stats: a long badge ("DRUM + PUNCH ARMS") is the
+     one thing in the foot that can give way, and unshrinkable it overlapped
+     the ARM pips. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   padding: 3px 10px 2px;
   font-size: 0.62rem;
   font-weight: 800;
@@ -528,16 +568,73 @@
   display: none;
 }
 
+/* One row, never wrapped: a wrapped row put PWR beside SPD with ARM alone
+   underneath, which reads as a different set of stats. Slimmer pips than the
+   roster cards buy the room. */
 .pod-stats {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-  min-width: 0;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  gap: 12px;
+}
+
+.pod-stats .pip {
+  width: 11px;
+}
+
+.pod-stats .stat {
+  gap: 5px;
+}
+
+.pod-stats .stat-label {
+  width: 26px;
+}
+
+/* Two weapon channels, matching the pad: primary is RT, secondary is RB.
+   Each gets a readiness meter — with a LATCHING weapon (every spinner) the
+   button alone cannot show that the rotor is still winding up, and the
+   spin-up is the thing the practice viewer exists to teach. */
+.pod-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.pod-rival .pod-controls {
+  margin-left: 0;
+  margin-right: auto;
+  flex-direction: row-reverse;
+}
+
+.pod-control {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pod-control:has(> .pod-test[hidden]) {
+  display: none;
+}
+
+.pod-meter {
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.pod-meter > i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--accent, var(--amber)), var(--yellow));
 }
 
 .pod-test {
   flex: 0 0 auto;
-  margin-left: auto;
   padding: 9px 16px 8px;
   border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line-strong));
   background: linear-gradient(180deg, var(--steel-600), var(--steel-800));
@@ -553,9 +650,18 @@
   touch-action: none;
 }
 
-.pod-rival .pod-test {
-  margin-left: 0;
-  margin-right: auto;
+.pod-test-alt {
+  font-size: 0.72rem;
+  padding: 8px 12px 7px;
+  opacity: 0.9;
+}
+
+/* A latching channel says so, so the player knows a press sticks. */
+.pod-test[data-mode="toggle"]::after {
+  content: "⏻";
+  margin-left: 7px;
+  font-size: 0.7em;
+  opacity: 0.75;
 }
 
 .pod-test:hover {
@@ -567,7 +673,8 @@
   outline-offset: 2px;
 }
 
-/* Weapon running (held / RT / pulse): the trigger reads hot. */
+/* Channel running — held, latched on, or the trigger down. On a toggle this
+   stays lit after the press, which is the point. */
 .pod-test.is-live {
   background: linear-gradient(180deg, var(--red-hot), var(--red) 48%, var(--red-deep));
   border-color: rgba(255, 130, 110, 0.7);
@@ -605,18 +712,32 @@
   filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.5));
 }
 
-/* ---------------------------------------------------------------- bot dock
-   The roster is a horizontally scrolling strip of compact cards along the
-   bottom — the stage above is where a bot gets its full presentation. */
+/* ---------------------------------------------------------------- bot grid
+   The full roster, laid out as a grid that reflows to the viewport. The screen
+   scrolls when it has to; the pods above shrink to keep that rare. */
 
-.bot-dock {
-  display: flex;
+.bot-grid {
+  --card-min: clamp(104px, 11vw, 150px);
+  display: grid;
   flex: 0 0 auto;
-  gap: clamp(8px, 1vw, 12px);
-  overflow-x: auto;
-  overflow-y: hidden;
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-min), 1fr));
+  gap: clamp(8px, 1vw, 13px);
   padding: 4px 2px 10px;
-  scrollbar-width: thin;
+}
+
+/* The roster's cost is ROWS, not columns, so on a short viewport the cards get
+   narrower — more per row, fewer rows, and the whole roster stays in one view
+   instead of pushing the pods off the top. 1366x768 goes 4 rows -> 2. */
+@media (max-height: 860px) {
+  .bot-grid {
+    --card-min: clamp(92px, 7.5vw, 116px);
+  }
+}
+
+@media (max-height: 720px) {
+  .bot-grid {
+    --card-min: clamp(84px, 6.5vw, 104px);
+  }
 }
 
 .bot-card {
@@ -624,8 +745,6 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  flex: 0 0 clamp(104px, 10vw, 140px);
-  width: clamp(104px, 10vw, 140px);
   min-height: 0;
   padding: 0 0 8px;
   border: 1px solid var(--line);
