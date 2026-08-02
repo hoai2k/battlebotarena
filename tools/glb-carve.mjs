@@ -12,6 +12,8 @@
 //              the good half (writes new vertices)
 //   clone    — duplicate a part rotated half a turn about an axis, for a bar
 //              spinner whose second end the scan never resolved
+//   paint    — move matching triangles onto a new plain material, for surface
+//              the scan textured wrong (blank atlas corners read as pale patches)
 //   islands  — MOVE every connected component below `minTris` into a new part.
 //              A region carved out of a scan shell drags loose specks of the
 //              donor along its cut line; they are not describable by position
@@ -145,6 +147,12 @@ function sampleTexel(texture, u, v) {
   return [texture.data[i], texture.data[i + 1], texture.data[i + 2]];
 }
 
+function regionUsesColour(region) {
+  if (!region) return false;
+  if (region.type === "colour") return true;
+  return (region.regions || []).some(regionUsesColour);
+}
+
 function inRegion(point, region, sample = null) {
   if (region.type === "sphere") {
     const [cx, cy, cz] = region.center;
@@ -246,6 +254,66 @@ for (const op of ops) {
     const node = json.nodes[nodeIndexByName(op.node)];
     node.extras = { ...(node.extras || {}), pivotLocal: op.pivotLocal };
     console.log(`${op.node} [pivot]: pivotLocal = [${op.pivotLocal.join(", ")}]`);
+    continue;
+  }
+  if (op.mode === "paint") {
+    // Move a part's triangles matching a region onto a NEW plain material.
+    // Some scan damage is not shape at all: the surface is there and solid, its
+    // UVs just point at a blank corner of the atlas, and it renders as a pale
+    // patch that no amount of geometry surgery can reach. Deleting it opens a
+    // hole; a panel behind it is hidden by it. The only thing that works is to
+    // stop it sampling the texture.
+    const node = json.nodes[nodeIndexByName(`tripo_part_${op.part}`)];
+    const primitive = json.meshes[node.mesh].primitives[0];
+    const posAccessor = primitive.attributes.POSITION;
+    const uvAccessor = primitive.attributes.TEXCOORD_0;
+    const indices = readIndices(primitive.indices);
+    const translation = node.translation || [0, 0, 0];
+    const texture = op.region?.type === "colour" || regionUsesColour(op.region)
+      ? await loadTexture(primitive.material) : null;
+
+    const kept = [];
+    const painted = [];
+    for (let t = 0; t < indices.length; t += 3) {
+      const world = [0, 0, 0];
+      for (let k = 0; k < 3; k += 1) {
+        const p = readPosition(posAccessor, indices[t + k]);
+        for (let a = 0; a < 3; a += 1) world[a] += (p[a] + translation[a]) / 3;
+      }
+      let sample = null;
+      if (texture && uvAccessor !== undefined) {
+        let u = 0, v = 0;
+        for (let k = 0; k < 3; k += 1) {
+          const uv = readUV(uvAccessor, indices[t + k]);
+          u += uv[0] / 3; v += uv[1] / 3;
+        }
+        sample = sampleTexel(texture, u, v);
+      }
+      const inside = inRegion(world, op.region, sample) !== Boolean(op.invert);
+      (inside ? painted : kept).push(indices[t], indices[t + 1], indices[t + 2]);
+    }
+    if (!painted.length) {
+      if (op.allowEmpty) { console.log(`part ${op.part} [paint]: matched 0 triangles (allowEmpty)`); continue; }
+      throw new Error(`part ${op.part}: paint matched 0 triangles — check the region`);
+    }
+
+    const materialIndex = json.materials.length;
+    json.materials.push({
+      name: op.material?.name || `paint_${op.part}`,
+      pbrMetallicRoughness: {
+        baseColorFactor: op.material?.baseColorFactor || [0.06, 0.06, 0.07, 1],
+        metallicFactor: op.material?.metallicFactor ?? 0.6,
+        roughnessFactor: op.material?.roughnessFactor ?? 0.45,
+      },
+      doubleSided: true,
+    });
+    primitive.indices = appendIndexBuffer(kept);
+    json.meshes[node.mesh].primitives.push({
+      attributes: { ...primitive.attributes },
+      indices: appendIndexBuffer(painted),
+      material: materialIndex,
+    });
+    console.log(`part ${op.part} [paint]: repainted ${painted.length / 3} tris, kept ${kept.length / 3}`);
     continue;
   }
   if (op.mode === "clone") {

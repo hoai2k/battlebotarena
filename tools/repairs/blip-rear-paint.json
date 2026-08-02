@@ -1,0 +1,19 @@
+[
+  {
+    "_comment": "Blip's rear shell reads as a black rim over a pale ragged patch. The patch is not a hole — it is solid surface whose UVs land in a blank corner of the atlas, so no panel behind it and no deletion can help. Repaint the near-white texels in the rear box with the same dark the surrounding shell carries.",
+    "part": 14, "mode": "paint", "allowEmpty": true,
+    "material": { "name": "BlipRearShell", "baseColorFactor": [0.055, 0.058, 0.066, 1], "metallicFactor": 0.55, "roughnessFactor": 0.45 },
+    "region": { "type": "intersect", "regions": [
+      { "type": "box", "min": [-0.34, -0.20, -0.56], "max": [0.34, 0.14, -0.26] },
+      { "type": "colour", "rgb": [205, 208, 214], "tolerance": 96 }
+    ] }
+  },
+  {
+    "part": 8, "mode": "paint", "allowEmpty": true,
+    "material": { "name": "BlipRearShell", "baseColorFactor": [0.055, 0.058, 0.066, 1], "metallicFactor": 0.55, "roughnessFactor": 0.45 },
+    "region": { "type": "intersect", "regions": [
+      { "type": "box", "min": [-0.34, -0.20, -0.56], "max": [0.34, 0.14, -0.26] },
+      { "type": "colour", "rgb": [205, 208, 214], "tolerance": 96 }
+    ] }
+  }
+]

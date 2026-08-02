@@ -17,13 +17,13 @@
 import { resolveWeaponTuning } from "../sim/weaponTuning.js";
 import { SPINNER_TYPES } from "../game/weaponControls.js";
 
-// weapons.js TU.spinDownFactor: coast-down takes this many spin-up times.
-const SPIN_DOWN_FACTOR = 2.5;
-// A real rotor runs 300-1200 rad/s, which at 60fps is pure aliasing — the mesh
-// would look stationary or crawl backwards. The RATIO (and therefore the
-// spin-up TIME the player has to learn) is exact; only the drawn rate is
-// capped, and it scales with ratio so winding up still reads as winding up.
-const VISUAL_OMEGA_CAP = 34; // rad/s
+// Both of these belong to the sim and the shared animation module; importing
+// them rather than restating them is what keeps the showcase and the arena
+// showing the same weapon at the same speed.
+import { WEAPON_TUNING } from "../sim/weapons.js";
+import { SPIN_VISUAL_MAX_OMEGA } from "./botAnimation.js";
+
+const VISUAL_OMEGA_CAP = SPIN_VISUAL_MAX_OMEGA;
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
@@ -60,7 +60,7 @@ export function createPreviewWeapon(spec) {
   const maxOmega = w.maxOmega || 1;
   const spinUpSeconds = Math.max(0.05, w.spinUpSeconds || 1);
   const spinUpRate = maxOmega / spinUpSeconds;
-  const spinDownRate = maxOmega / (spinUpSeconds * SPIN_DOWN_FACTOR);
+  const spinDownRate = maxOmega / (w.spinDownSeconds ?? WEAPON_TUNING.spinDownSeconds);
 
   const disc = w.disc || null;
   const discMaxOmega = disc?.maxOmega ?? 380;
@@ -156,7 +156,7 @@ export function createPreviewWeapon(spec) {
     state.weaponAngle = stroke;
     if (disc) {
       const up = discMaxOmega / discSpinUp;
-      const down = discMaxOmega / (discSpinUp * SPIN_DOWN_FACTOR);
+      const down = discMaxOmega / (disc.spinDownSeconds ?? WEAPON_TUNING.spinDownSeconds);
       subOmega = alt
         ? Math.min(discMaxOmega, subOmega + up * dt)
         : Math.max(0, subOmega - down * dt);

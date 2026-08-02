@@ -10,7 +10,19 @@ import { createSpinnerModel, resolveWeaponTuning, damageImpulseForRate } from ".
 import * as m from "./math.js";
 
 export const WEAPON_TUNING = Object.freeze({
-  spinDownFactor: 2.5, // spin-down time = spinUpSeconds * this
+  // Coast-down, in seconds from full speed to stopped. This is v1's number.
+  //
+  // v1 gave every spinner its own wind-up but shared one coast: 1.1s across the
+  // whole six-bot roster, with HUGE the single exception at 0.8s. That is not
+  // physics — spin-up is set by motor power and coast-down by bearing friction
+  // and windage, and real bar spinners genuinely coast for tens of seconds,
+  // which is why teams fit brakes. It is a control decision. The wind-up is the
+  // commitment the player is buying; making them wait through a proportional
+  // coast just taxes them twice for the same choice, and a rotor that stays
+  // live for ten seconds after the trigger comes off is not something anyone
+  // can plan around. So spin-up varies per bot and spin-down does not, unless
+  // a weapon states its own with weapon.spinDownSeconds.
+  spinDownSeconds: 1.1,
   minHitRatio: 0.12, // below this spin ratio the blade is harmless
   hitCooldownSeconds: 0.18, // per target pair (v1's rate; the spin ramp doubles hits without it)
   wallHitCooldownSeconds: 0.16,
@@ -154,6 +166,8 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
     .setContactForceEventThreshold(120);
   const collider = world.createCollider(desc, vehicle.body);
   tagCollider(meta, collider, { kind: "weapon", botIndex: index, surface: "bot" });
+
+  const coastSeconds = w.spinDownSeconds ?? TU.spinDownSeconds;
 
   let omega = 0;
   let angle = 0;
@@ -321,7 +335,7 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
     type: w.type,
     update(dt, fire, ctx) {
       const spinUpRate = w.maxOmega / Math.max(0.05, w.spinUpSeconds);
-      const spinDownRate = w.maxOmega / Math.max(0.05, w.spinUpSeconds * TU.spinDownFactor);
+      const spinDownRate = w.maxOmega / Math.max(0.05, coastSeconds);
       if (fire) omega = Math.min(w.maxOmega, omega + spinUpRate * dt);
       else omega = Math.max(0, omega - spinDownRate * dt);
       angle += omega * dt;
@@ -927,7 +941,7 @@ function createLifterDisc({ vehicle, index, emit }) {
       // Disc: its own toggle, spinning whatever the arm is doing.
       const spinning = Boolean(ctx.input?.sawActive);
       const spinUp = discMaxOmega / Math.max(0.05, disc.spinUpSeconds ?? 1.4);
-      const spinDown = discMaxOmega / Math.max(0.05, (disc.spinUpSeconds ?? 1.4) * TU.spinDownFactor);
+      const spinDown = discMaxOmega / Math.max(0.05, disc.spinDownSeconds ?? TU.spinDownSeconds);
       omega = spinning
         ? Math.min(discMaxOmega, omega + spinUp * dt)
         : Math.max(0, omega - spinDown * dt);

@@ -10,28 +10,27 @@ import { weaponVisualAngle } from "../assets/models.js";
 const scratchAxis = new THREE.Vector3();
 
 // --- spinner visuals ---------------------------------------------------------
-// A rotor's DISPLAYED speed is not its physical speed and must not be. At 600
-// rad/s a blade turns ~10 radians between frames, and what you see is not a
-// blur — it is the wagon-wheel effect: the blade lands near the same place each
-// frame and reads as stationary, slow, or backwards depending on where the beat
-// falls. The physics keeps its real omega (every impulse, every hit, the whole
-// energy budget); only the picture is redrawn.
+// A rotor's DISPLAYED speed is not its physical speed and must not be. A real
+// one runs 300-1200 rad/s; at 60fps that is several radians between frames, and
+// what you see is not a blur but the wagon-wheel effect — the blade lands near
+// the same place each frame and reads as stationary, crawling, or running
+// backwards depending on where the beat falls. The physics keeps its real omega
+// (every impulse, every hit, the whole energy budget) and only the picture is
+// redrawn. The RATIO is exact either way, so spin-up still takes exactly as
+// long as the driver has to learn it takes.
 //
-// So the visual advances by a step chosen in FRAMES, not in seconds: at full
-// spin it turns SPIN_MAX_STEP radians per rendered frame whatever the frame
-// rate, which is the speed that looks fastest without ever reaching an alias.
-// 1.1 rad is a third of a 2-fold blade's period and a sixth of a 1-fold drum's,
-// so neither symmetry can strobe, and it reads at about ten revolutions a
-// second — as fast as an eye resolves before it gives up and sees a disc.
-const SPIN_MAX_STEP = 1.1;
+// The cap is in rad/s rather than per frame so the weapon does not visibly slow
+// down on a slower machine. 34 rad/s is ~5.4 rev/s: at 60fps that is 18% of a
+// two-fold blade's half-turn period and at 30fps it is 36%, so it cannot alias
+// anywhere near the frame rates this game runs at, and it is about as fast as
+// an eye resolves before it gives up and sees a disc.
+export const SPIN_VISUAL_MAX_OMEGA = 34;
 const SPIN_BLUR_FROM = 0.45; // ratio at which the swept disc starts to show
 
 function spinnerAngle(visual, state, dt) {
   const spin = (visual.__spin ||= { angle: 0 });
   const ratio = THREE.MathUtils.clamp(state.weaponRatio ?? 0, 0, 1);
-  // Below a quarter speed the real rate is slow enough to read honestly, and
-  // showing it matters: spin-up is information the driver acts on.
-  spin.angle += ratio * SPIN_MAX_STEP;
+  spin.angle += ratio * SPIN_VISUAL_MAX_OMEGA * dt;
   return spin.angle;
 }
 

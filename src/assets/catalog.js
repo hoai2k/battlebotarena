@@ -68,7 +68,8 @@
   maxSpeedFps: number, accel: number, turnRate: number,
   accent: string, accentDark: string,
   weapon: { type: 'bar'|'drum'|'flipper'|'crusher'|'hammerSaw'|'hammer'|'lifterDisc'|'grappler',
-            spinUpSeconds?: number, inertia?: number, maxOmega?: number,
+            spinUpSeconds?: number, spinDownSeconds?: number,
+            inertia?: number, maxOmega?: number,
             budgetCap?: number, radius?: number,
             dims: {x:number,y:number,z:number},
             pivot: {x:number,y:number,z:number},
@@ -247,6 +248,11 @@ export const CATALOG = {
     weapon: {
       type: "bar",
       spinUpSeconds: 5,
+      // v1 gave HUGE, and only HUGE, its own coast — 0.8s against the roster's
+      // 1.1s. The longest wind-up in the game paired with the shortest stop.
+      // It reads as deliberate: the bot you wait five seconds for is the one
+      // you least want still live once you have let go.
+      spinDownSeconds: 0.8,
       inertia: 0.75,
       maxOmega: 352,
       budgetCap: 280,
@@ -821,6 +827,7 @@ export const CATALOG = {
       pivot: { x: 0.0889, y: 1.8, z: -0.0222 }, // MEASURED hub, game space
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 4.5, // enormous inertia: slow, dramatic spool-up
+      spinDownSeconds: 0.8, // the new roster's HUGE — v1's rule for that bot
       inertia: 1.9,
       maxOmega: 420,
       budgetCap: 620, // the hardest hit in the game
@@ -1168,7 +1175,10 @@ export const CATALOG = {
       pivotFromCatalog: true,
       pivot: { x: 0.006, y: 0.912, z: -0.268 },
       axis: { x: 1, y: 0, z: 0 },
-      spinUpSeconds: 0.9,
+      // v1's quickest wind-up was 1.8s. 0.9 sat so far under that the ramp was
+      // over before the sound had finished; 1.4 keeps Endgame the fastest bot
+      // on the roster without leaving v1's band.
+      spinUpSeconds: 1.4,
       inertia: 1.4,
       maxOmega: 640,
       budgetCap: 400,
@@ -1313,6 +1323,7 @@ export const CATALOG = {
       pivot: { x: -0.02, y: 3.317, z: -0.912 },
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 2.4,
+      spinDownSeconds: 0.9, // giant slow bar, so short of the 1.1s default
       inertia: 1.0,
       maxOmega: 300,
       budgetCap: 90,
@@ -1520,7 +1531,7 @@ export const CATALOG = {
       type: "drum",
       pivot: { x: 0.0214, y: 0.7917, z: -1.5086 }, // MEASURED axle, game space
       axis: { x: 1, y: 0, z: 0 },
-      spinUpSeconds: 1.1,
+      spinUpSeconds: 1.3, // second-quickest, just inside v1's band (see Endgame)
       inertia: 1.0,
       maxOmega: 600,
       budgetCap: 300,
