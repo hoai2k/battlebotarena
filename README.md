@@ -93,6 +93,21 @@ node tools/rig-inspect.mjs duck /tmp/shots side,iso --tint --colliders
 node tools/rig-inspect.mjs shatter --arc -2.6,-2.3,0.1   # pick a fireAngle
 ```
 
+### Bot sizing and real-machine data
+
+Every catalog entry carries a `realWorld` block — the team, the machine's
+weight and top speed, its weapon's weight and tip speed, its drive and battery
+pack — gathered from the [BattleBots Wiki](https://battlebots.fandom.com) and
+team sites. Each bot's GLB is then scaled so its **measured width in game
+space** equals `realWorld.size.widthFt`; length is a sanity check on that, not
+a second target, because a uniform scale cannot satisfy both.
+
+Real BattleBots almost never publish overall dimensions. `size.source` says
+which grade each figure is: `published` (Mammoth, Deep Six), `wheel-calibrated`
+(HUGE, off its 40in wheels) or `class-estimate` (everything else, placed inside
+the envelope a 250lb machine occupies). See the SIZING header in
+`src/assets/catalog.js`.
+
 ### Bot models
 
 Models are generated with [Tripo](https://www.tripo3d.ai) image-to-3D and then

@@ -20,6 +20,34 @@
 //   slightly below it — the sim should ground the assembled collider stack
 //   (lowest point -> floor) when spawning.
 //
+// SIZING (how every length in this file got its absolute value)
+// Each bot's GLB is scaled so that its MEASURED WIDTH in game space equals
+// realWorld.size.widthFt. Width is the axis to match on: it is the one
+// dimension no arm, fork or wedge can extend, so it means the same thing on
+// every machine whatever pose its weapon is baked in. Length is then a CHECK,
+// not a second target — a uniform scale cannot hit both, and a model whose
+// length lands outside the class band is a model whose proportions are wrong
+// (see HyperShock, which is scaled between the two instead).
+//
+// Real BattleBots do not publish overall dimensions, so size.source says where
+// each number came from and there are only three grades:
+//   published        off a source. Mammoth (8'9" x 5'4" x 6'3") and Deep Six
+//                    (4ft span) are the only two.
+//   wheel-calibrated HUGE, whose 40in wheels are published and are most of its
+//                    outline. The GLB measured 3.367ft at the wheel against a
+//                    real 3.333ft, i.e. it was already within 1% — which is the
+//                    only independent check this whole pass has, and it passed.
+//   class-estimate   everything else: placed inside the 2.4-4.0ft envelope that
+//                    a 250lb machine built to the 8'x8' start box occupies,
+//                    ranked by archetype against the three anchors above.
+// Treat class-estimate widths as game balance, not as fact about the robot.
+//
+// Everything with units of length in an entry — bodyDims, collider extents and
+// offsets, weapon pivots and radii, reach, gripReach — carries its bot's scale
+// factor. wheelAnchors.y does NOT: it is a suspension probe origin measured
+// against the fixed 0.45ft ray travel in sim/vehicle.js, and scaling it sinks
+// the chassis to the floor and takes the wheels off the ground.
+//
 // EXTENSIONS beyond the ARCHITECTURE.md typedef (all optional, documented):
 // - accent / accentDark: hex colors for placeholder models + UI.
 // - weapon.dims: half extents {x,y,z} of the weapon volume around the pivot
@@ -46,7 +74,14 @@
             pivot: {x:number,y:number,z:number},
             axis: {x:number,y:number,z:number},
             tuning?: object },
-  colliders: {shape:'box'|'cylinder'|'hull', offset:{x:number,y:number,z:number}}[],
+  colliders: {shape:'box'|'cylinder'|'hull'|'wedge', offset:{x:number,y:number,z:number}}[],
+  realWorld: {                             // the machine this bot is modelled on
+    team: string, from: string,
+    weightLbs: number, topSpeedMph: number|null,
+    size: {widthFt:number, lengthFt:number, heightFt:number, source:string},
+    weapon: {name:string, weightLbs:number|null, tipSpeedMph:number|null, rpm:number|null},
+    drive: string|null, power: string|null,
+  },
 }} BotSpec */
 
 const FEET_PER_SECOND_PER_MPH = 22 / 15;
@@ -61,14 +96,25 @@ export const CATALOG = {
     referenceImage: "./public/reference/biteforce.png",
     modelPath: "./public/models/biteforce.glb",
     modelYaw: Math.PI / 2, // GLB authoring facing -> game -Z forward
+    // --- the real machine ---------------------------------------------
+    realWorld: {
+      team: "Aptyx Designs", from: "Mountain View, CA",
+      weightLbs: 250,
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 3.05, lengthFt: 2.66, heightFt: 1.43, source: "class-estimate" },
+      weapon: { name: "Vertical bar spinner", weightLbs: 40, tipSpeedMph: null, rpm: null },
+      drive: "2x S28-400 Magmotor (9hp)", power: "10x 5Ah 6S LiPo",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 40,
-    bodyDims: { x: 2.88, y: 1.4, z: 2.39 }, // v1 fit 3.2x1.55x2.65 * scale 0.9
+    bodyDims: { x: 3.1248, y: 1.519, z: 2.5932 }, // scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -1.18, y: 0.3, z: -0.75 },
-      { x: 1.18, y: 0.3, z: -0.75 },
-      { x: -1.18, y: 0.3, z: 0.75 },
-      { x: 1.18, y: 0.3, z: 0.75 },
+      { x: -1.2803, y: 0.3, z: -0.8137 },
+      { x: 1.2803, y: 0.3, z: -0.8137 },
+      { x: -1.2803, y: 0.3, z: 0.8137 },
+      { x: 1.2803, y: 0.3, z: 0.8137 },
     ],
     maxSpeedFps: mph(8.182), // 12.00
     accel: 8.2,
@@ -85,21 +131,21 @@ export const CATALOG = {
       // a LOWER BOUND rather than the truth — but 0.526 still beats the 0.42
       // guess it replaces, and it drops the drum's ground clearance from 0.22ft
       // to 0.11ft, under the nose of every wedge that used to slide beneath it.
-      radius: 0.526,
-      dims: { x: 0.85, y: 0.526, z: 0.526 },
-      pivot: { x: 0, y: 0.64, z: -0.24 },
+      radius: 0.5707,
+      dims: { x: 0.9222, y: 0.5707, z: 0.5707 },
+      pivot: { x: 0, y: 0.6944, z: -0.2604 },
       axis: { x: 1, y: 0, z: 0 },
-      tuning: { efficiency: 0.5, impulseScale: 13.8, liftScale: 32.0, liftVelocity: 4.5, liftClearance: 0.55, gyroScale: 0.75, damageScale: 1.65 },
+      tuning: { efficiency: 0.5, impulseScale: 13.8, liftScale: 32.0, liftVelocity: 4.5, liftClearance: 0.5968, gyroScale: 0.75, damageScale: 1.65 },
     },
     // The fork row is a WEDGE, not a box: opponents ride up it into the drum,
     // which is the whole point of the machine. Squared off into a level box it
     // was a bumper holding every opponent 0.5ft outside the drum.
     colliders: [
-      { shape: "wedge", halfExtents: { x: 1.05, y: 0.21, z: 0.285 }, offset: { x: 0, y: 0.21, z: -0.945 }, tipY: 0.03 }, // front fork wedge (MEASURED slope)
-      { shape: "box", halfExtents: { x: 1.237, y: 0.171, z: 0.873 }, offset: { x: 0.012, y: 0.175, z: 0.301 } },
-      { shape: "box", halfExtents: { x: 0.354, y: 0.16, z: 0.738 }, offset: { x: -0.003, y: 0.495, z: 0.268 } },
-      { shape: "box", halfExtents: { x: 0.198, y: 0.294, z: 0.79 }, offset: { x: -1.185, y: 0.294, z: 0.175 } }, // left pod
-      { shape: "box", halfExtents: { x: 0.198, y: 0.294, z: 0.79 }, offset: { x: 1.184, y: 0.294, z: 0.175 } }, // right pod
+      { shape: "wedge", halfExtents: { x: 1.1393, y: 0.2278, z: 0.3092 }, offset: { x: 0, y: 0.2278, z: -1.0253 }, tipY: 0.0325 }, // front fork wedge (MEASURED slope)
+      { shape: "box", halfExtents: { x: 1.3421, y: 0.1855, z: 0.9472 }, offset: { x: 0.013, y: 0.1899, z: 0.3266 } },
+      { shape: "box", halfExtents: { x: 0.3841, y: 0.1736, z: 0.8007 }, offset: { x: -0.0033, y: 0.5371, z: 0.2908 } },
+      { shape: "box", halfExtents: { x: 0.2148, y: 0.319, z: 0.8571 }, offset: { x: -1.2857, y: 0.319, z: 0.1899 } }, // left pod
+      { shape: "box", halfExtents: { x: 0.2148, y: 0.319, z: 0.8571 }, offset: { x: 1.2846, y: 0.319, z: 0.1899 } }, // right pod
     ],
   },
 
@@ -112,15 +158,26 @@ export const CATALOG = {
     modelYaw: 0, // GLB authored facing -Z already = game forward
     // Auto scale (4.06) makes bronco longer than HUGE; 3.4 keeps the length
     // near bodyDims/colliders (~3.4ft) at the cost of slightly narrow width.
-    modelScale: 3.4,
+    modelScale: 4.2949,
+    // --- the real machine ---------------------------------------------
+    realWorld: {
+      team: "Inertia Labs", from: "Sausalito, CA",
+      weightLbs: 250,
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 3, lengthFt: 4.3, heightFt: 2.01, source: "class-estimate" },
+      weapon: { name: "Pneumatic flipping arm", weightLbs: null, tipSpeedMph: null, rpm: null },
+      drive: "4x brushed motors", power: null,
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 80,
-    bodyDims: { x: 3.34, y: 1.67, z: 3.34 }, // v1 fit 2.9x1.45x2.9 * scale 1.15
+    bodyDims: { x: 4.2191, y: 2.1095, z: 4.2191 }, // scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -0.94, y: 0.29, z: -0.59 },
-      { x: 0.94, y: 0.29, z: -0.59 },
-      { x: -0.94, y: 0.29, z: 1.01 },
-      { x: 0.94, y: 0.29, z: 1.01 },
+      { x: -1.1874, y: 0.29, z: -0.7453 },
+      { x: 1.1874, y: 0.29, z: -0.7453 },
+      { x: -1.1874, y: 0.29, z: 1.2758 },
+      { x: 1.1874, y: 0.29, z: 1.2758 },
     ],
     maxSpeedFps: mph(7.5), // 11.00
     accel: 6.7,
@@ -133,17 +190,17 @@ export const CATALOG = {
       fireAngle: 0.16, // apex carries PAST the baked pose so the plate snaps over vertical
       spinUpSeconds: 0.2, // stroke arming time (v1 weaponSpinUpSeconds)
       budgetCap: 180, // ~ (250 lb / 32.174) slugs * 23 ft/s target lift velocity
-      dims: { x: 0.9, y: 0.11, z: 1.25 },
-      pivot: { x: 0, y: 0.48, z: 0.6 }, // hinge at rear of flipper plate
+      dims: { x: 1.1369, y: 0.139, z: 1.579 },
+      pivot: { x: 0, y: 0.6063, z: 0.7579 }, // hinge at rear of flipper plate
       axis: { x: 1, y: 0, z: 0 },
       tuning: { strokeSeconds: 0.18, returnSeconds: 2, liftVelocity: 23.0, pitchVelocity: 10.2 },
     },
     colliders: [
-      { shape: "box", halfExtents: { x: 0.888, y: 0.25, z: 1.237 }, offset: { x: -0.023, y: 0.342, z: 0.167 } },
-      { shape: "box", halfExtents: { x: 1.037, y: 0.141, z: 0.492 }, offset: { x: -0.016, y: 0.447, z: 1.026 } },
-      { shape: "wedge", halfExtents: { x: 0.9, y: 0.29, z: 0.315 }, offset: { x: 0, y: 0.29, z: -1.385 }, tipY: 0.03 }, // front wedge (MEASURED slope)
-      { shape: "box", halfExtents: { x: 0.577, y: 0.137, z: 0.523 }, offset: { x: -0.57, y: 0.163, z: 1.145 } },
-      { shape: "box", halfExtents: { x: 0.57, y: 0.136, z: 0.605 }, offset: { x: 0.578, y: 0.163, z: 1.062 } },
+      { shape: "box", halfExtents: { x: 1.1217, y: 0.3158, z: 1.5626 }, offset: { x: -0.0291, y: 0.432, z: 0.211 } },
+      { shape: "box", halfExtents: { x: 1.3099, y: 0.1781, z: 0.6215 }, offset: { x: -0.0202, y: 0.5647, z: 1.296 } },
+      { shape: "wedge", halfExtents: { x: 1.1369, y: 0.3663, z: 0.3979 }, offset: { x: 0, y: 0.3663, z: -1.7495 }, tipY: 0.0379 }, // front wedge (MEASURED slope)
+      { shape: "box", halfExtents: { x: 0.7289, y: 0.1731, z: 0.6607 }, offset: { x: -0.72, y: 0.2059, z: 1.4464 } },
+      { shape: "box", halfExtents: { x: 0.72, y: 0.1718, z: 0.7642 }, offset: { x: 0.7301, y: 0.2059, z: 1.3415 } },
     ],
   },
 
@@ -155,15 +212,28 @@ export const CATALOG = {
     modelPath: "./public/models/huge.glb",
     wheelRadius: 1.7, // ft — giant wheels; visual roll rate must match ground speed
     modelYaw: Math.PI / 2, // GLB authoring facing -> game -Z forward
+    // --- the real machine ---------------------------------------------
+    // 40in UHMW/Tegris wheels, ~30lb each — the published dimension the game
+    // model is calibrated on.
+    realWorld: {
+      team: "Team HUGE", from: "South Windsor, CT",
+      weightLbs: 250,
+      topSpeedMph: 15,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 5.69, lengthFt: 3.34, heightFt: 3.34, source: "wheel-calibrated" },
+      weapon: { name: "Vertical bar spinner", weightLbs: 35, tipSpeedMph: 180, rpm: null },
+      drive: "2x Maytech 8085 brushless", power: "12x 6S 2.8Ah LiPo",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 30,
-    bodyDims: { x: 5.07, y: 2.86, z: 3.77 }, // v1 fit 3.9x2.2x2.9 * scale 1.3
+    bodyDims: { x: 5.0208, y: 2.8323, z: 3.7334 }, // scaled to realWorld.size.widthFt
     // Two real wheels; probes doubled front/rear inside each wheel footprint.
     wheelAnchors: [
-      { x: -1.78, y: 0.5, z: -0.9 },
-      { x: 1.78, y: 0.5, z: -0.9 },
-      { x: -1.78, y: 0.5, z: 0.9 },
-      { x: 1.78, y: 0.5, z: 0.9 },
+      { x: -1.7627, y: 0.5, z: -0.8913 },
+      { x: 1.7627, y: 0.5, z: -0.8913 },
+      { x: -1.7627, y: 0.5, z: 0.8913 },
+      { x: 1.7627, y: 0.5, z: 0.8913 },
     ],
     maxSpeedFps: mph(3.682), // 5.40
     accel: 8.4,
@@ -179,21 +249,21 @@ export const CATALOG = {
       // MEASURED swept radius: max perpendicular distance from the axle over
       // every blade vertex. 1.29 was the bbox guess and left 3in of visible
       // blade outside the collider.
-      radius: 1.539,
-      dims: { x: 0.15, y: 1.539, z: 0.2 }, // vertical bar, disc plane Y-Z
-      pivot: { x: -0.1, y: 1.35, z: -0.04 },
+      radius: 1.5241,
+      dims: { x: 0.1485, y: 1.5241, z: 0.1981 }, // vertical bar, disc plane Y-Z
+      pivot: { x: -0.099, y: 1.3369, z: -0.0396 },
       axis: { x: 1, y: 0, z: 0 },
       tuning: {
-        efficiency: 0.76, impulseScale: 10.0, liftScale: 36.0, liftVelocity: 4.5, liftClearance: 0.55,
+        efficiency: 0.76, impulseScale: 10.0, liftScale: 36.0, liftVelocity: 4.5, liftClearance: 0.5447,
         gyroScale: 0.55, halfSpeedPowerMultiplier: 4.0, fullSpeedPowerMultiplier: 2.15, hapticScale: 2.0,
       damageScale: 1.11,
         impactScale: 1.05,
       },
     },
     colliders: [
-      { shape: "box", halfExtents: { x: 1.898, y: 0.312, z: 0.284 }, offset: { x: -0.005, y: 1.511, z: 0.065 } }, // bridge
-      { shape: "cylinder", axis: "x", radius: 1.462, halfHeight: 0.26, offset: { x: -1.775, y: 1.463, z: 0 } }, // left wheel
-      { shape: "cylinder", axis: "x", radius: 1.422, halfHeight: 0.26, offset: { x: 1.685, y: 1.422, z: 0 } }, // right wheel
+      { shape: "box", halfExtents: { x: 1.8796, y: 0.309, z: 0.2812 }, offset: { x: -0.005, y: 1.4963, z: 0.0644 } }, // bridge
+      { shape: "cylinder", axis: "x", radius: 1.4478, halfHeight: 0.2575, offset: { x: -1.7578, y: 1.4488, z: 0 } }, // left wheel
+      { shape: "cylinder", axis: "x", radius: 1.4082, halfHeight: 0.2575, offset: { x: 1.6687, y: 1.4082, z: 0 } }, // right wheel
     ],
   },
 
@@ -204,14 +274,26 @@ export const CATALOG = {
     referenceImage: "./public/reference/quantum.png",
     modelPath: "./public/models/quantum.glb",
     modelYaw: Math.PI, // GLB authoring facing -> game -Z forward
+    // --- the real machine ---------------------------------------------
+    // Beak quoted at 35,000lb of force, ~50,000lb toward the back.
+    realWorld: {
+      team: "Team Robo Challenge", from: "Birmingham, UK",
+      weightLbs: 250,
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 2.9, lengthFt: 3.36, heightFt: 2.15, source: "class-estimate" },
+      weapon: { name: "Hydraulic crusher", weightLbs: null, tipSpeedMph: null, rpm: null },
+      drive: "4x brushed LEM", power: "14S LiPo",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 250, // v1 value: jaw assembly modeled as massive
-    bodyDims: { x: 3.0, y: 1.65, z: 2.7 }, // v1 fit, scale 1
+    bodyDims: { x: 3.2646, y: 1.7955, z: 2.9381 }, // scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -0.83, y: 0.42, z: -0.49 },
-      { x: 0.83, y: 0.42, z: -0.49 },
-      { x: -0.83, y: 0.42, z: 0.84 },
-      { x: 0.83, y: 0.42, z: 0.84 },
+      { x: -0.9032, y: 0.42, z: -0.5332 },
+      { x: 0.9032, y: 0.42, z: -0.5332 },
+      { x: -0.9032, y: 0.42, z: 0.9141 },
+      { x: 0.9032, y: 0.42, z: 0.9141 },
     ],
     maxSpeedFps: mph(7.5), // 11.00
     accel: 6.2,
@@ -223,8 +305,8 @@ export const CATALOG = {
       spinUpSeconds: 0.2, // jaw close response
       fireAngle: -0.95, // GLB jaw baked OPEN (=rest); full stroke brings the tooth down onto the front wedge palette
       budgetCap: 90,
-      dims: { x: 0.14, y: 0.39, z: 0.78 },
-      pivot: { x: 0, y: 0.95, z: 0.5 }, // jaw hinge, rear-top
+      dims: { x: 0.1523, y: 0.4244, z: 0.8488 },
+      pivot: { x: 0, y: 1.0338, z: 0.5441 }, // jaw hinge, rear-top
       axis: { x: 1, y: 0, z: 0 },
       tuning: { holdDamagePerSecond: 6, holdReach: 1.1, holdStrength: 14, holdDamping: 1, holdImpulseCap: 70 },
     },
@@ -233,9 +315,9 @@ export const CATALOG = {
       // its underside sits 0.035ft off the deck, and dropping it further just
       // parks the chassis on the wedge and unloads the suspension probes
       // (2s of full throttle moved 0.13ft instead of 19ft).
-      { shape: "box", halfExtents: { x: 1.011, y: 0.245, z: 0.747 }, offset: { x: 0, y: 0.352, z: -0.92 } }, // front wedge
-      { shape: "box", halfExtents: { x: 0.921, y: 0.118, z: 0.895 }, offset: { x: 0, y: 0.207, z: 0.455 } },
-      { shape: "box", halfExtents: { x: 0.95, y: 0.22, z: 0.85 }, offset: { x: 0, y: 0.52, z: 0.25 } }, // merged mid+rear decks
+      { shape: "box", halfExtents: { x: 1.1002, y: 0.2666, z: 0.8129 }, offset: { x: 0, y: 0.383, z: -1.0011 } }, // front wedge
+      { shape: "box", halfExtents: { x: 1.0022, y: 0.1284, z: 0.9739 }, offset: { x: 0, y: 0.2253, z: 0.4951 } },
+      { shape: "box", halfExtents: { x: 1.0338, y: 0.2394, z: 0.925 }, offset: { x: 0, y: 0.5659, z: 0.2721 } }, // merged mid+rear decks
     ],
   },
 
@@ -250,7 +332,21 @@ export const CATALOG = {
     // Auto footprint scale distorts badly here (Tripo model is long+narrow,
     // v1 bodyDims wide+short: auto -> 4.6ft long vs 2.26ft collider). Match
     // the collider footprint instead: 2.35 -> ~1.4ft x 2.35ft.
-    modelScale: 2.35,
+    modelScale: 3.76,
+    // --- the real machine ---------------------------------------------
+    // Single 2.5in S7 disk 39.7lb; dual-disk options 40lb and 46lb. The GLB is
+    // proportionally too narrow, so this one is scaled between its width and
+    // its length rather than on width alone.
+    realWorld: {
+      team: "Team HyperShock", from: "Miami, FL",
+      weightLbs: 250, // 238-250lbs
+      topSpeedMph: 28,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 2.28, lengthFt: 3.76, heightFt: 1.04, source: "class-estimate" },
+      weapon: { name: "Vertical spinner", weightLbs: 40, tipSpeedMph: null, rpm: null },
+      drive: "2x NeuMotor 8038", power: "6x 8S 3Ah LiPo",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 43,
     // The v1 fit (3.25x1.55x2.35 * 1.2 = 3.9x1.86x2.82) does not describe THIS
@@ -259,15 +355,15 @@ export const CATALOG = {
     // zones and placeholders, so the stale figure showed up as roll inertia
     // ~7x too high on a 1.28ft track — a slow underdamped wallow every time you
     // turned. Matched to the collider shell instead.
-    bodyDims: { x: 1.5, y: 0.85, z: 2.5 },
+    bodyDims: { x: 2.4, y: 1.36, z: 4 },
     // Four equal wheels sit at one height; the 0.15/0.18 split was fit noise
     // and left the rear springs statically under-compressed, adding a pitch
     // bias on top of the roll.
     wheelAnchors: [
-      { x: -0.64, y: 0.17, z: -0.4 },
-      { x: 0.64, y: 0.17, z: -0.4 },
-      { x: -0.64, y: 0.17, z: 0.8 },
-      { x: 0.64, y: 0.17, z: 0.8 },
+      { x: -1.024, y: 0.17, z: -0.64 },
+      { x: 1.024, y: 0.17, z: -0.64 },
+      { x: -1.024, y: 0.17, z: 1.28 },
+      { x: 1.024, y: 0.17, z: 1.28 },
     ],
     maxSpeedFps: mph(13.636), // 20.00
     accel: 8.6,
@@ -280,16 +376,16 @@ export const CATALOG = {
       inertia: 1.05,
       maxOmega: 650,
       budgetCap: 130,
-      radius: 0.44,
-      dims: { x: 0.5, y: 0.44, z: 0.44 },
-      pivot: { x: 0, y: 0.38, z: -0.69 },
+      radius: 0.704,
+      dims: { x: 0.8, y: 0.704, z: 0.704 },
+      pivot: { x: 0, y: 0.608, z: -1.104 },
       axis: { x: 1, y: 0, z: 0 },
-      tuning: { efficiency: 0.52, impulseScale: 8.5, liftScale: 30.0, liftVelocity: 4.5, liftClearance: 0.55, gyroScale: 0.85, damageScale: 0.87 },
+      tuning: { efficiency: 0.52, impulseScale: 8.5, liftScale: 30.0, liftVelocity: 4.5, liftClearance: 0.88, gyroScale: 0.85, damageScale: 0.87 },
     },
     colliders: [
-      { shape: "box", halfExtents: { x: 0.691, y: 0.213, z: 0.943 }, offset: { x: -0.001, y: 0.304, z: 0.252 } },
-      { shape: "wedge", halfExtents: { x: 0.691, y: 0.21, z: 0.18 }, offset: { x: -0.001, y: 0.21, z: -1.0 }, tipY: 0.03 }, // front wedge (MEASURED slope)
-      { shape: "box", halfExtents: { x: 0.691, y: 0.133, z: 0.133 }, offset: { x: -0.001, y: 0.651, z: -0.32 } }, // fin rail
+      { shape: "box", halfExtents: { x: 1.1056, y: 0.3408, z: 1.5088 }, offset: { x: -0.0016, y: 0.4864, z: 0.4032 } },
+      { shape: "wedge", halfExtents: { x: 1.1056, y: 0.336, z: 0.288 }, offset: { x: -0.0016, y: 0.336, z: -1.6 }, tipY: 0.048 }, // front wedge (MEASURED slope)
+      { shape: "box", halfExtents: { x: 1.1056, y: 0.2128, z: 0.2128 }, offset: { x: -0.0016, y: 1.0416, z: -0.512 } }, // fin rail
     ],
   },
 
@@ -303,14 +399,27 @@ export const CATALOG = {
     referenceImage: "./public/reference/minotaur.png",
     modelPath: "./public/models/minotaur.glb",
     modelYaw: Math.PI / 2, // GLB authoring facing -> game -Z forward
+    // --- the real machine ---------------------------------------------
+    // Drum 60-70lb depending on configuration; 12,000rpm originally, cut to
+    // 11,000 and later 9,000 to stay under the 250mph tip-speed limit.
+    realWorld: {
+      team: "Team RioBotz", from: "Rio de Janeiro, Brazil",
+      weightLbs: 250, // 230-250lbs
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 3, lengthFt: 3.21, heightFt: 1.03, source: "class-estimate" },
+      weapon: { name: "Drum spinner", weightLbs: 70, tipSpeedMph: 250, rpm: 12000 },
+      drive: "2x Scorpion outrunner (weapon)", power: "MaxAmps LiPo",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 70,
-    bodyDims: { x: 2.1, y: 0.81, z: 1.72 }, // v1 fit 3x1.15x2.45 * scale 0.7
+    bodyDims: { x: 3.3999, y: 1.3114, z: 2.7847 }, // scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -0.6, y: 0.26, z: -0.3 },
-      { x: 0.6, y: 0.26, z: -0.3 },
-      { x: -0.6, y: 0.26, z: 0.6 },
-      { x: 0.6, y: 0.26, z: 0.6 },
+      { x: -0.9714, y: 0.26, z: -0.4857 },
+      { x: 0.9714, y: 0.26, z: -0.4857 },
+      { x: -0.9714, y: 0.26, z: 0.9714 },
+      { x: 0.9714, y: 0.26, z: 0.9714 },
     ],
     maxSpeedFps: mph(10.909), // 16.00
     accel: 7.9,
@@ -326,17 +435,17 @@ export const CATALOG = {
       // The drum measures 0.24 through the loader, but the scan smooths off the
       // outward notches that do the real work, so the collider is deliberately
       // generous — 0.34 gives it the bite the teeth should have.
-      radius: 0.34,
-      dims: { x: 0.39, y: 0.34, z: 0.34 },
-      pivot: { x: 0, y: 0.27, z: -0.56 },
+      radius: 0.5505,
+      dims: { x: 0.6314, y: 0.5505, z: 0.5505 },
+      pivot: { x: 0, y: 0.4371, z: -0.9066 },
       axis: { x: 1, y: 0, z: 0 },
-      tuning: { efficiency: 0.26, impulseScale: 4.4, kickbackScale: 0.12, liftScale: 18.0, liftVelocity: 4.0, liftClearance: 0.35, gyroScale: 1.45, damageScale: 0.62 },
+      tuning: { efficiency: 0.26, impulseScale: 4.4, kickbackScale: 0.12, liftScale: 18.0, liftVelocity: 4.0, liftClearance: 0.5666, gyroScale: 1.45, damageScale: 0.62 },
     },
     colliders: [
-      { shape: "box", halfExtents: { x: 0.686, y: 0.163, z: 0.694 }, offset: { x: -0.001, y: 0.271, z: 0.142 } },
-      { shape: "box", halfExtents: { x: 0.162, y: 0.256, z: 0.487 }, offset: { x: -0.6, y: 0.256, z: 0.167 } }, // left pod
-      { shape: "box", halfExtents: { x: 0.162, y: 0.256, z: 0.546 }, offset: { x: 0.599, y: 0.256, z: 0.108 } }, // right pod
-      { shape: "wedge", halfExtents: { x: 0.56, y: 0.15, z: 0.1 }, offset: { x: 0, y: 0.15, z: -0.89 }, tipY: 0.03 }, // fork row (MEASURED slope)
+      { shape: "box", halfExtents: { x: 1.1106, y: 0.2639, z: 1.1236 }, offset: { x: -0.0016, y: 0.4387, z: 0.2299 } },
+      { shape: "box", halfExtents: { x: 0.2623, y: 0.4145, z: 0.7885 }, offset: { x: -0.9714, y: 0.4145, z: 0.2704 } }, // left pod
+      { shape: "box", halfExtents: { x: 0.2623, y: 0.4145, z: 0.884 }, offset: { x: 0.9698, y: 0.4145, z: 0.1749 } }, // right pod
+      { shape: "wedge", halfExtents: { x: 0.9066, y: 0.2428, z: 0.1619 }, offset: { x: 0, y: 0.2428, z: -1.4409 }, tipY: 0.0486 }, // fork row (MEASURED slope)
     ],
   },
 
@@ -347,14 +456,25 @@ export const CATALOG = {
     referenceImage: "./public/reference/sawblaze.png",
     modelPath: "./public/models/sawblaze.glb",
     modelYaw: Math.PI / 2, // GLB authoring facing -> game -Z forward
+    // --- the real machine ---------------------------------------------
+    realWorld: {
+      team: "Team SawBlaze", from: "Cambridge, MA",
+      weightLbs: 250,
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 2.8, lengthFt: 2.71, heightFt: 2.03, source: "class-estimate" },
+      weapon: { name: "Hammer saw + flamethrower", weightLbs: null, tipSpeedMph: null, rpm: null },
+      drive: "2x T&P brushless", power: "MaxAmps 14.4v 13.5Ah LiPo",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 30,
-    bodyDims: { x: 2.6, y: 1.8, z: 2.0 }, // v1 fit 3.25x2.25x2.5 * scale 0.8
+    bodyDims: { x: 3.1218, y: 2.1613, z: 2.4014 }, // scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -0.55, y: 0.2, z: -0.75 }, // front skids under the pan
-      { x: 0.55, y: 0.2, z: -0.75 },
-      { x: -0.95, y: 0.32, z: 0.73 }, // rear drive wheels
-      { x: 0.95, y: 0.32, z: 0.73 },
+      { x: -0.6604, y: 0.2, z: -0.9005 }, // front skids under the pan
+      { x: 0.6604, y: 0.2, z: -0.9005 },
+      { x: -1.1407, y: 0.32, z: 0.8765 }, // rear drive wheels
+      { x: 1.1407, y: 0.32, z: 0.8765 },
     ],
     maxSpeedFps: mph(7.773), // 11.40
     accel: 7.5,
@@ -367,22 +487,22 @@ export const CATALOG = {
       inertia: 0.7,
       maxOmega: 880,
       budgetCap: 60, // swing-impulse cap (v2 estimate; v1 saw-touch cap was 10)
-      radius: 0.46,
+      radius: 0.5523,
       // Whole arc rotated ~18deg back from the v1 numbers (1.7 / -0.85): at the
       // old fireAngle the saw's rim swung to 0.09ft BELOW the floor plane and
       // disappeared into it at the bottom of every chop.
       restAngle: 2.02, // rest: arm raked back past vertical, saw hanging behind (GLB baked pose is mid-swing)
       fireAngle: -0.53, // full stroke chops down-forward into the fork zone, rim stopping just above the floor
-      dims: { x: 0.09, y: 0.46, z: 0.46 }, // saw disc at arm tip
-      pivot: { x: 0, y: 1.1, z: 0.35 }, // arm hinge, rear-top; saw center ~(0,0.93,-0.52)
+      dims: { x: 0.1081, y: 0.5523, z: 0.5523 }, // saw disc at arm tip
+      pivot: { x: 0, y: 1.3208, z: 0.4202 }, // arm hinge, rear-top; saw center ~(0,0.93,-0.52)
       axis: { x: 1, y: 0, z: 0 },
-      tuning: { sawTouchCap: 10, sawCenter: { x: 0, y: 0.935, z: -0.52 }, swingSeconds: 0.35, grindDamagePerSecond: 5, gyroScale: 0.8 },
+      tuning: { sawTouchCap: 10, sawCenter: { x: 0, y: 1.1227, z: -0.6244 }, swingSeconds: 0.35, grindDamagePerSecond: 5, gyroScale: 0.8 },
     },
     colliders: [
-      { shape: "wedge", halfExtents: { x: 1.023, y: 0.185, z: 0.215 }, offset: { x: 0, y: 0.185, z: -0.855 }, tipY: 0.03 }, // front wedge (MEASURED slope)
-      { shape: "box", halfExtents: { x: 1.023, y: 0.143, z: 0.82 }, offset: { x: 0, y: 0.226, z: 0.18 } }, // merged pan floor
-      { shape: "box", halfExtents: { x: 1.009, y: 0.154, z: 0.507 }, offset: { x: 0.005, y: 0.53, z: 0.474 } },
-      { shape: "box", halfExtents: { x: 0.283, y: 0.328, z: 0.471 }, offset: { x: -0.031, y: 1.171, z: -0.164 } }, // tower
+      { shape: "wedge", halfExtents: { x: 1.2283, y: 0.2221, z: 0.2582 }, offset: { x: 0, y: 0.2221, z: -1.0266 }, tipY: 0.036 }, // front wedge (MEASURED slope)
+      { shape: "box", halfExtents: { x: 1.2283, y: 0.1717, z: 0.9846 }, offset: { x: 0, y: 0.2714, z: 0.2161 } }, // merged pan floor
+      { shape: "box", halfExtents: { x: 1.2115, y: 0.1849, z: 0.6088 }, offset: { x: 0.006, y: 0.6364, z: 0.5691 } },
+      { shape: "box", halfExtents: { x: 0.3398, y: 0.3938, z: 0.5655 }, offset: { x: -0.0372, y: 1.406, z: -0.1969 } }, // tower
     ],
   },
 
@@ -394,14 +514,28 @@ export const CATALOG = {
     referenceImage: "./public/reference/tombstone.png",
     modelPath: "./public/models/tombstone.glb",
     modelYaw: Math.PI / 2, // GLB authoring facing -> game -Z forward
+    // --- the real machine ---------------------------------------------
+    // Bar 65-75lb across builds; the 2in aluminium blade is 71lb and was
+    // clocked at 235mph against the 250mph cap. The bar IS the machine's
+    // width, which is what the game scales to.
+    realWorld: {
+      team: "Hardcore Robotics", from: "Placerville, CA",
+      weightLbs: 250,
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 3.9, lengthFt: 2.93, heightFt: 1.29, source: "class-estimate" },
+      weapon: { name: "Horizontal bar spinner", weightLbs: 71, tipSpeedMph: 235, rpm: null },
+      drive: "2x Maytech 8085 brushless outrunner", power: "8S 5.8Ah LiPo",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 80,
-    bodyDims: { x: 2.68, y: 0.98, z: 2.04 }, // v1 fit 3.35x1.22x2.55 * scale 0.8
+    bodyDims: { x: 3.8769, y: 1.4177, z: 2.9511 }, // scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -0.5, y: 0.25, z: -0.55 }, // front blade-support skids
-      { x: 0.5, y: 0.25, z: -0.55 },
-      { x: -1.05, y: 0.39, z: 0.36 }, // rear tires
-      { x: 1.04, y: 0.39, z: 0.36 },
+      { x: -0.7233, y: 0.25, z: -0.7956 }, // front blade-support skids
+      { x: 0.7233, y: 0.25, z: -0.7956 },
+      { x: -1.5189, y: 0.39, z: 0.5208 }, // rear tires
+      { x: 1.5045, y: 0.39, z: 0.5208 },
     ],
     maxSpeedFps: mph(6.545), // 9.60
     accel: 5.8,
@@ -414,21 +548,21 @@ export const CATALOG = {
       inertia: 1.2,
       maxOmega: 338,
       budgetCap: 500,
-      radius: 1.359, // MEASURED swept radius (bbox guess was 1.21)
-      dims: { x: 1.359, y: 0.12, z: 0.3 }, // horizontal bar, spins around Y
-      pivot: { x: 0, y: 0.22, z: -0.72 },
+      radius: 1.9659, // MEASURED swept radius (bbox guess was 1.21)
+      dims: { x: 1.9659, y: 0.1736, z: 0.434 }, // horizontal bar, spins around Y
+      pivot: { x: 0, y: 0.3183, z: -1.0416 },
       axis: { x: 0, y: 1, z: 0 },
       tuning: {
-        efficiency: 0.86, impulseScale: 18.0, kickbackScale: 1.45, liftScale: 7.0, liftVelocity: 4.5, liftClearance: 0.55,
-        gyroScale: 1.35, reach: 2.25, impactScale: 1.55, damageScale: 0.92,
+        efficiency: 0.86, impulseScale: 18.0, kickbackScale: 1.45, liftScale: 7.0, liftVelocity: 4.5, liftClearance: 0.7956,
+        gyroScale: 1.35, reach: 3.2549, impactScale: 1.55, damageScale: 0.92,
         floorLaunch: { enabled: true, angleDeg: 30, scale: 1.15, cap: 180 },
       },
     },
     colliders: [
-      { shape: "box", halfExtents: { x: 0.708, y: 0.283, z: 0.557 }, offset: { x: -0.025, y: 0.438, z: 0.425 } },
-      { shape: "box", halfExtents: { x: 0.366, y: 0.132, z: 0.6 }, offset: { x: -0.025, y: 0.549, z: -0.348 } }, // front spine
-      { shape: "box", halfExtents: { x: 0.285, y: 0.394, z: 0.48 }, offset: { x: -1.051, y: 0.389, z: 0.363 } }, // left tire block
-      { shape: "box", halfExtents: { x: 0.29, y: 0.395, z: 0.49 }, offset: { x: 1.039, y: 0.385, z: 0.363 } }, // right tire block
+      { shape: "box", halfExtents: { x: 1.0242, y: 0.4094, z: 0.8058 }, offset: { x: -0.0362, y: 0.6336, z: 0.6148 } },
+      { shape: "box", halfExtents: { x: 0.5295, y: 0.191, z: 0.868 }, offset: { x: -0.0362, y: 0.7942, z: -0.5034 } }, // front spine
+      { shape: "box", halfExtents: { x: 0.4123, y: 0.57, z: 0.6944 }, offset: { x: -1.5204, y: 0.5627, z: 0.5251 } }, // left tire block
+      { shape: "box", halfExtents: { x: 0.4195, y: 0.5714, z: 0.7088 }, offset: { x: 1.503, y: 0.5569, z: 0.5251 } }, // right tire block
     ],
   },
 
@@ -441,18 +575,31 @@ export const CATALOG = {
     modelYaw: Math.PI, // MEASURED: model faces +Z, game wants -Z
     // The auto footprint fit is skewed by the hammer overhanging the tail; 2.9
     // sizes the SHELL to the real robot's 82cm x 80cm instead.
-    modelScale: 2.9,
+    modelScale: 3.034,
     // Beta's wheels live inside the shell and did not segment out, so the
     // procedural fallback would poke cylinders through the bodywork.
     hideWheels: true,
+    // --- the real machine ---------------------------------------------
+    // 16lb bladed head; the original alloy head was ~24lb with neodymium
+    // magnets for downforce.
+    realWorld: {
+      team: "Team Hurtz", from: "Oxfordshire, UK",
+      weightLbs: 250,
+      topSpeedMph: 12,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 2.9, lengthFt: 3.03, heightFt: 2.36, source: "class-estimate" },
+      weapon: { name: "Hammer", weightLbs: 16, tipSpeedMph: null, rpm: null },
+      drive: "2x Maytech 6880 brushless", power: "12S LiPo",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 24, // 11 kg head
-    bodyDims: { x: 2.77, y: 1.09, z: 2.49 }, // MEASURED shell at modelScale 2.9
+    bodyDims: { x: 2.898, y: 1.1404, z: 2.605 }, // MEASURED shell, then scaled to realWorld.size.widthFt, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -0.95, y: 0.2, z: -0.85 },
-      { x: 0.95, y: 0.2, z: -0.85 },
-      { x: -0.95, y: 0.2, z: 0.65 },
-      { x: 0.95, y: 0.2, z: 0.65 },
+      { x: -0.9939, y: 0.2, z: -0.8893 },
+      { x: 0.9939, y: 0.2, z: -0.8893 },
+      { x: -0.9939, y: 0.2, z: 0.68 },
+      { x: 0.9939, y: 0.2, z: 0.68 },
     ],
     maxSpeedFps: mph(8), // 11.73
     accel: 7.0,
@@ -461,7 +608,7 @@ export const CATALOG = {
     accentDark: "#17181c",
     weapon: {
       type: "hammer",
-      pivot: { x: 0.04, y: 0.87, z: -0.41 }, // MEASURED gearbox hinge, game space
+      pivot: { x: 0.0418, y: 0.9102, z: -0.4289 }, // MEASURED gearbox hinge, game space
       axis: { x: 1, y: 0, z: 0 },
       restAngle: 0, // GLB is baked cocked: head up and back over the tail
       // MEASURED through the loader (game space, model grounded): at -2.72 the
@@ -470,19 +617,19 @@ export const CATALOG = {
       // lateral axis relative to the catalog's +X convention.
       fireAngle: -2.72,
       budgetCap: 320, // heavy single impact
-      dims: { x: 0.16, y: 0.5, z: 0.16 },
+      dims: { x: 0.1674, y: 0.5231, z: 0.1674 },
       downforce: 120, // lbf of magnet, held on while grounded
       reactionScale: 0.15, // magnets eat the strike reaction
       selfRightRate: 5.5, // rad/s of pitch when fired while inverted
-      tuning: { strokeSeconds: 0.22, returnSeconds: 0.9, reach: 1.8 },
+      tuning: { strokeSeconds: 0.22, returnSeconds: 0.9, reach: 1.8832 },
     },
     colliders: [
       // Truncated pyramid, four stacked slabs (MEASURED y-slices of the shell).
-      { shape: "wedge", halfExtents: { x: 1.3, y: 0.225, z: 0.325 }, offset: { x: 0, y: 0.225, z: -0.925 }, tipY: 0.03 }, // front wedge (MEASURED slope)
-      { shape: "box", halfExtents: { x: 1.3, y: 0.14, z: 0.74 }, offset: { x: 0, y: 0.14, z: 0.14 } },
-      { shape: "box", halfExtents: { x: 0.95, y: 0.16, z: 1.0 }, offset: { x: 0, y: 0.44, z: -0.05 } },
-      { shape: "box", halfExtents: { x: 0.6, y: 0.13, z: 0.7 }, offset: { x: 0, y: 0.73, z: -0.15 } },
-      { shape: "box", halfExtents: { x: 0.25, y: 0.12, z: 0.2 }, offset: { x: 0, y: 0.97, z: -0.3 } }, // hammer gearbox
+      { shape: "wedge", halfExtents: { x: 1.3601, y: 0.2354, z: 0.34 }, offset: { x: 0, y: 0.2354, z: -0.9677 }, tipY: 0.0314 }, // front wedge (MEASURED slope)
+      { shape: "box", halfExtents: { x: 1.3601, y: 0.1465, z: 0.7742 }, offset: { x: 0, y: 0.1465, z: 0.1465 } },
+      { shape: "box", halfExtents: { x: 0.9939, y: 0.1674, z: 1.0462 }, offset: { x: 0, y: 0.4603, z: -0.0523 } },
+      { shape: "box", halfExtents: { x: 0.6277, y: 0.136, z: 0.7323 }, offset: { x: 0, y: 0.7637, z: -0.1569 } },
+      { shape: "box", halfExtents: { x: 0.2616, y: 0.1255, z: 0.2092 }, offset: { x: 0, y: 1.0148, z: -0.3139 } }, // hammer gearbox
     ],
   },
 
@@ -493,17 +640,28 @@ export const CATALOG = {
     referenceImage: "./public/reference/whiplash.png",
     modelPath: "./public/models/whiplash.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X, game wants -Z
-    modelScale: 3.19, // colliders below are authored at this scale
+    modelScale: 3.7696, // colliders below are authored at this scale
+    // --- the real machine ---------------------------------------------
+    realWorld: {
+      team: "Team Fast Electric Robots", from: "Thousand Oaks, CA",
+      weightLbs: 250,
+      topSpeedMph: 15,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 2.9, lengthFt: 3.77, heightFt: 2.24, source: "class-estimate" },
+      weapon: { name: "Lifter + arm-mounted disk", weightLbs: 22, tipSpeedMph: null, rpm: null },
+      drive: "2x Mini Magmotor", power: null,
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 22, // the disc
-    bodyDims: { x: 2.2, y: 1.15, z: 3.1 }, // MEASURED shell at modelScale 3.19
+    bodyDims: { x: 2.5997, y: 1.359, z: 3.6633 }, // MEASURED shell, then scaled to realWorld.size.widthFt, then scaled to realWorld.size.widthFt
     // Four exposed wheels, MEASURED from the GLB wheel pivots. Both pairs sit
     // in the rear half — the front of the chassis is all arm and forks.
     wheelAnchors: [
-      { x: -1.07, y: 0.23, z: -0.14 },
-      { x: 1.07, y: 0.23, z: -0.14 },
-      { x: -1.08, y: 0.23, z: 1.12 },
-      { x: 1.08, y: 0.23, z: 1.12 },
+      { x: -1.2644, y: 0.23, z: -0.1654 },
+      { x: 1.2644, y: 0.23, z: -0.1654 },
+      { x: -1.2762, y: 0.23, z: 1.3235 },
+      { x: 1.2762, y: 0.23, z: 1.3235 },
     ],
     maxSpeedFps: 16.0, // known for its driving
     accel: 8.5,
@@ -512,7 +670,7 @@ export const CATALOG = {
     accentDark: "#141414",
     weapon: {
       type: "lifterDisc",
-      pivot: { x: 0, y: 0.88, z: 1.4 }, // MEASURED rear hinge, game space
+      pivot: { x: 0, y: 1.0399, z: 1.6544 }, // MEASURED rear hinge, game space
       axis: { x: 1, y: 0, z: 0 }, // part-map axis is [0,0,1] pre-yaw
       // MEASURED through the loader (game space, model grounded): at -0.52 the
       // arm's fork plate lies flat on the deck pointing straight ahead, which
@@ -525,7 +683,7 @@ export const CATALOG = {
       lowerSeconds: 0.65,
       liftImpulse: 150, // enough to tip a 250 lb opponent, spread over the stroke
       liftRecoil: 0.5,
-      dims: { x: 0.14, y: 0.42, z: 0.42 },
+      dims: { x: 0.1654, y: 0.4963, z: 0.4963 },
       disc: {
         spinUpSeconds: 1.4,
         maxOmega: 380,
@@ -533,12 +691,12 @@ export const CATALOG = {
         budgetCap: 90, // moderate per-hit; damage comes from repetition
         contactDamagePerSecond: 14,
       },
-      tuning: { strokeSeconds: 0.5, reach: 1.5, hapticScale: 1.2 },
+      tuning: { strokeSeconds: 0.5, reach: 1.7725, hapticScale: 1.2 },
     },
     colliders: [
-      { shape: "box", halfExtents: { x: 1.05, y: 0.285, z: 1.28 }, offset: { x: 0, y: 0.35, z: 0.32 } }, // chassis
-      { shape: "box", halfExtents: { x: 0.53, y: 0.28, z: 0.45 }, offset: { x: 0, y: 0.89, z: 1.05 } }, // arm tower
-      { shape: "wedge", halfExtents: { x: 0.59, y: 0.13, z: 0.345 }, offset: { x: 0, y: 0.13, z: -1.255 }, tipY: 0.03 }, // fork plate (MEASURED slope)
+      { shape: "box", halfExtents: { x: 1.2408, y: 0.3368, z: 1.5126 }, offset: { x: 0, y: 0.4136, z: 0.3781 } }, // chassis
+      { shape: "box", halfExtents: { x: 0.6263, y: 0.3309, z: 0.5318 }, offset: { x: 0, y: 1.0517, z: 1.2408 } }, // arm tower
+      { shape: "wedge", halfExtents: { x: 0.6972, y: 0.1536, z: 0.4077 }, offset: { x: 0, y: 0.1536, z: -1.483 }, tipY: 0.0355 }, // fork plate (MEASURED slope)
     ],
   },
 
@@ -549,16 +707,27 @@ export const CATALOG = {
     referenceImage: "./public/reference/clawviper.png",
     modelPath: "./public/models/clawviper.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X (weaponAxis [0,0,1] pre-yaw)
-    modelScale: 3.2, // colliders below are authored at this scale
+    modelScale: 4.2106, // colliders below are authored at this scale
+    // --- the real machine ---------------------------------------------
+    realWorld: {
+      team: "Team Bad Ideas", from: "Seattle, WA",
+      weightLbs: 250, // ~238lbs in WC V
+      topSpeedMph: 20,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 2.9, lengthFt: 4.21, heightFt: 2.38, source: "class-estimate" },
+      weapon: { name: "Lifter + grappler", weightLbs: null, tipSpeedMph: null, rpm: null },
+      drive: "4x RV-120E brushless", power: null,
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 40,
-    bodyDims: { x: 2.2, y: 0.9, z: 2.9 }, // MEASURED shell
+    bodyDims: { x: 2.8948, y: 1.1842, z: 3.8158 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     // Both wheel pairs sit in the rear half — the front is all forks.
     wheelAnchors: [
-      { x: -0.78, y: 0.22, z: 0.06 },
-      { x: 0.78, y: 0.22, z: 0.06 },
-      { x: -0.78, y: 0.22, z: 1.34 },
-      { x: 0.78, y: 0.22, z: 1.34 },
+      { x: -1.0263, y: 0.22, z: 0.0789 },
+      { x: 1.0263, y: 0.22, z: 0.0789 },
+      { x: -1.0263, y: 0.22, z: 1.7632 },
+      { x: 1.0263, y: 0.22, z: 1.7632 },
     ],
     maxSpeedFps: 17.0, // weapon-class motor on every wheel
     accel: 9.5,
@@ -569,7 +738,7 @@ export const CATALOG = {
       type: "grappler",
       // MEASURED: the lifter's axle is the boss pair at the back of the arm's
       // rear web (raw parts 8/13), not the front of the chassis.
-      pivot: { x: 0, y: 0.581, z: 0.61 }, // game space, via the loader
+      pivot: { x: 0, y: 0.7645, z: 0.8026 }, // game space, via the loader
       axis: { x: 1, y: 0, z: 0 },
       // MEASURED through the loader (game space, model grounded). The baked
       // pose already has the forks flat on the deck, and the arm lifts on
@@ -578,19 +747,19 @@ export const CATALOG = {
       liftAngle: 1.5, // ~86deg: past vertical for the suplex, arm still clear of the floor
       liftSeconds: 0.7,
       lowerSeconds: 0.9,
-      gripReach: 1.6, // where a gripped bot rides: on the fork blades
-      gripHeight: 0.4,
+      gripReach: 2.1053, // where a gripped bot rides: on the fork blades
+      gripHeight: 0.5263,
       gripStrength: 16,
       throwScale: 0.6, // share of the arm's tip speed handed over on release
       downforceLbs: 250, // magnets: very hard to shove or flip
-      dims: { x: 0.2, y: 0.2, z: 0.5 },
+      dims: { x: 0.2632, y: 0.2632, z: 0.6579 },
       // MEASURED: at -0.9 the jaw shuts onto the red fork tip it grips against.
       claw: { openAngle: 0, closedAngle: -0.9, clampSeconds: 0.25 },
-      tuning: { reach: 1.4, holdDamagePerSecond: 3 },
+      tuning: { reach: 1.8421, holdDamagePerSecond: 3 },
     },
     colliders: [
-      { shape: "box", halfExtents: { x: 1.0, y: 0.24, z: 1.32 }, offset: { x: 0, y: 0.27, z: 0.22 } },
-      { shape: "box", halfExtents: { x: 0.6, y: 0.16, z: 0.7 }, offset: { x: 0, y: 0.68, z: 0.6 } },
+      { shape: "box", halfExtents: { x: 1.3158, y: 0.3158, z: 1.7369 }, offset: { x: 0, y: 0.3553, z: 0.2895 } },
+      { shape: "box", halfExtents: { x: 0.7895, y: 0.2105, z: 0.9211 }, offset: { x: 0, y: 0.8947, z: 0.7895 } },
     ],
   },
 
@@ -601,18 +770,32 @@ export const CATALOG = {
     referenceImage: "./public/reference/deepsix.png",
     modelPath: "./public/models/deepsix.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X
-    modelScale: 3.6,
+    modelScale: 4,
     // Splayed forks make it wider than it is long — that is the real machine.
     hideWheels: true, // 2WD tucked inside the shell; nothing segmented out
+    // --- the real machine ---------------------------------------------
+    // Published 4ft span — one of only three dimensions in this roster that
+    // comes off a source rather than off the class. Bar was 110lb on debut,
+    // cut to the 80lb weapon limit.
+    realWorld: {
+      team: "Team Overboard", from: "Norfolk, VA",
+      weightLbs: 250,
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 4, lengthFt: 3.06, heightFt: 3.11, source: "published" },
+      weapon: { name: "Vertical bar spinner", weightLbs: 80, tipSpeedMph: 207, rpm: null },
+      drive: "2x Castle 2028 brushless", power: "3.4Ah 6S LiPo",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 80, // post-rule-change blade
-    bodyDims: { x: 3.6, y: 1.84, z: 2.75 }, // MEASURED shell
+    bodyDims: { x: 4, y: 2.0444, z: 3.0555 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     // The outrigger forks ARE the support base, so the probes ride on them.
     wheelAnchors: [
-      { x: -1.3, y: 0.2, z: -0.9 },
-      { x: 1.3, y: 0.2, z: -0.9 },
-      { x: -1.3, y: 0.2, z: 0.9 },
-      { x: 1.3, y: 0.2, z: 0.9 },
+      { x: -1.4444, y: 0.2, z: -1 },
+      { x: 1.4444, y: 0.2, z: -1 },
+      { x: -1.4444, y: 0.2, z: 1 },
+      { x: 1.4444, y: 0.2, z: 1 },
     ],
     maxSpeedFps: 12.0,
     accel: 7.0,
@@ -621,7 +804,7 @@ export const CATALOG = {
     accentDark: "#141414",
     weapon: {
       type: "bar",
-      pivot: { x: 0.08, y: 1.62, z: -0.02 }, // MEASURED hub, game space
+      pivot: { x: 0.0889, y: 1.8, z: -0.0222 }, // MEASURED hub, game space
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 4.5, // enormous inertia: slow, dramatic spool-up
       inertia: 1.9,
@@ -631,8 +814,8 @@ export const CATALOG = {
       // over every blade vertex, NOT the bbox at the baked pose. The S-blade is
       // asymmetric, so its bbox reads 1.26 and undersized the collider until it
       // sat entirely inside the chassis and could not touch anything.
-      radius: 1.368,
-      dims: { x: 0.06, y: 1.368, z: 1.368 },
+      radius: 1.52,
+      dims: { x: 0.0667, y: 1.52, z: 1.52 },
       tuning: {
         efficiency: 0.62, impulseScale: 9.0, kickbackScale: 1.5, liftScale: 26.0,
         liftVelocity: 5.0, gyroScale: 2.2, impactScale: 1.2, damageScale: 1.16,
@@ -657,8 +840,8 @@ export const CATALOG = {
     // Cost: pitched hard nose-down the wedge plate clips the arena floor. Every
     // camera sits above the floor, so it is occluded.
     colliders: [
-      { shape: "box", halfExtents: { x: 1.8, y: 0.25, z: 0.79 }, offset: { x: 0, y: 0.25, z: 0.59 } }, // chassis pan
-      { shape: "box", halfExtents: { x: 0.46, y: 0.68, z: 0.33 }, offset: { x: 0, y: 1.18, z: 0.23 } }, // blade tower
+      { shape: "box", halfExtents: { x: 2, y: 0.2778, z: 0.8778 }, offset: { x: 0, y: 0.2778, z: 0.6555 } }, // chassis pan
+      { shape: "box", halfExtents: { x: 0.5111, y: 0.7555, z: 0.3667 }, offset: { x: 0, y: 1.3111, z: 0.2556 } }, // blade tower
     ],
   },
 
@@ -669,16 +852,27 @@ export const CATALOG = {
     referenceImage: "./public/reference/hydra.png",
     modelPath: "./public/models/hydra.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X
-    modelScale: 3.3,
+    modelScale: 3.7544,
     hideWheels: true, // drive is enclosed under a very low chassis
+    // --- the real machine ---------------------------------------------
+    realWorld: {
+      team: "Team Whyachi", from: "Dorchester, WI",
+      weightLbs: 250,
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 3, lengthFt: 3.75, heightFt: 1.6, source: "class-estimate" },
+      weapon: { name: "Hydraulic flipper", weightLbs: null, tipSpeedMph: null, rpm: null },
+      drive: "4x brushless", power: "LiPo",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 45,
-    bodyDims: { x: 2.65, y: 0.92, z: 3.15 }, // MEASURED shell — very low and flat
+    bodyDims: { x: 3.0149, y: 1.0467, z: 3.5838 }, // MEASURED shell, then scaled to realWorld.size.widthFt — very low and flat
     wheelAnchors: [
-      { x: -1.0, y: 0.2, z: -1.0 },
-      { x: 1.0, y: 0.2, z: -1.0 },
-      { x: -1.0, y: 0.2, z: 1.0 },
-      { x: 1.0, y: 0.2, z: 1.0 },
+      { x: -1.1377, y: 0.2, z: -1.1377 },
+      { x: 1.1377, y: 0.2, z: -1.1377 },
+      { x: -1.1377, y: 0.2, z: 1.1377 },
+      { x: 1.1377, y: 0.2, z: 1.1377 },
     ],
     maxSpeedFps: 16.5,
     accel: 9.0,
@@ -687,7 +881,7 @@ export const CATALOG = {
     accentDark: "#12141a",
     weapon: {
       type: "flipper",
-      pivot: { x: 0, y: 0.64, z: 0.79 }, // MEASURED rear hinge, game space
+      pivot: { x: 0, y: 0.7281, z: 0.8988 }, // MEASURED rear hinge, game space
       axis: { x: 1, y: 0, z: 0 },
       // MEASURED through the loader (game space, model grounded): -0.55 is
       // where the plate's lip reaches the floor (arm low point -0.003), so it
@@ -695,14 +889,14 @@ export const CATALOG = {
       restAngle: -0.55,
       fireAngle: 0,
       budgetCap: 520, // 450+ lb of flip
-      dims: { x: 1.1, y: 0.09, z: 1.5 },
+      dims: { x: 1.2515, y: 0.1024, z: 1.7066 },
       selfRight: true, // hydraulics only right it by firing against the floor
-      tuning: { strokeSeconds: 0.1, returnSeconds: 4.0, reach: 1.9, liftVelocity: 30.0 },
+      tuning: { strokeSeconds: 0.1, returnSeconds: 4.0, reach: 2.1616, liftVelocity: 30.0 },
     },
     colliders: [
-      { shape: "wedge", halfExtents: { x: 1.25, y: 0.12, z: 0.23 }, offset: { x: 0, y: 0.12, z: -1.33 }, tipY: 0.03 }, // front wedge (MEASURED slope)
-      { shape: "box", halfExtents: { x: 1.25, y: 0.2, z: 1.35 }, offset: { x: 0, y: 0.2, z: 0.25 } },
-      { shape: "box", halfExtents: { x: 1.0, y: 0.26, z: 1.0 }, offset: { x: 0, y: 0.66, z: 0.6 } },
+      { shape: "wedge", halfExtents: { x: 1.4221, y: 0.1365, z: 0.2617 }, offset: { x: 0, y: 0.1365, z: -1.5131 }, tipY: 0.0341 }, // front wedge (MEASURED slope)
+      { shape: "box", halfExtents: { x: 1.4221, y: 0.2275, z: 1.5359 }, offset: { x: 0, y: 0.2275, z: 0.2844 } },
+      { shape: "box", halfExtents: { x: 1.1377, y: 0.2958, z: 1.1377 }, offset: { x: 0, y: 0.7509, z: 0.6826 } },
     ],
   },
 
@@ -718,16 +912,29 @@ export const CATALOG = {
     referenceImage: "./public/reference/blip.png",
     modelPath: "./public/models/blip.glb",
     modelYaw: Math.PI, // MEASURED: forks came out at +Z, so +Z is the nose
-    modelScale: 3.2,
+    modelScale: 3.6461,
+    // --- the real machine ---------------------------------------------
+    // A 16lb flywheel at ~9,000rpm stores the energy the flip spends. Heaviest
+    // mass flipped: 946lb.
+    realWorld: {
+      team: "Seems Reasonable Robotics", from: "Mountain View, CA",
+      weightLbs: 250,
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 2.95, lengthFt: 3.65, heightFt: 1.53, source: "class-estimate" },
+      weapon: { name: "Flywheel flipper", weightLbs: 16, tipSpeedMph: null, rpm: 9000 },
+      drive: "2x TP5680 brushless", power: null,
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 40,
-    bodyDims: { x: 2.59, y: 1.34, z: 3.2 }, // MEASURED shell
+    bodyDims: { x: 2.951, y: 1.5268, z: 3.6461 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     // Only the rear pair segmented out; the fronts are inboard under the deck.
     wheelAnchors: [
-      { x: -0.95, y: 0.3, z: -0.85 },
-      { x: 0.95, y: 0.3, z: -0.85 },
-      { x: -0.95, y: 0.3, z: 0.85 },
-      { x: 0.95, y: 0.3, z: 0.85 },
+      { x: -1.0824, y: 0.3, z: -0.9685 },
+      { x: 1.0824, y: 0.3, z: -0.9685 },
+      { x: -1.0824, y: 0.3, z: 0.9685 },
+      { x: 1.0824, y: 0.3, z: 0.9685 },
     ],
     maxSpeedFps: 17.0,
     accel: 9.5,
@@ -736,7 +943,7 @@ export const CATALOG = {
     accentDark: "#14161b",
     weapon: {
       type: "flipper",
-      pivot: { x: 0, y: 0.61, z: 0.85 }, // MEASURED rear hinge, game space
+      pivot: { x: 0, y: 0.695, z: 0.9685 }, // MEASURED rear hinge, game space
       axis: { x: 1, y: 0, z: 0 },
       // MEASURED through the loader: the plate is baked FLAT in the deck (0)
       // and 1.15 stands it on end. Blip throws straight up off a flywheel, so
@@ -744,19 +951,19 @@ export const CATALOG = {
       restAngle: 0,
       fireAngle: 1.15,
       budgetCap: 200,
-      dims: { x: 0.46, y: 0.1, z: 0.64 },
+      dims: { x: 0.5241, y: 0.1139, z: 0.7292 },
       selfRight: true,
-      tuning: { strokeSeconds: 0.06, returnSeconds: 0.7, reach: 1.5, liftVelocity: 26.0, pitchVelocity: 11.0 },
+      tuning: { strokeSeconds: 0.06, returnSeconds: 0.7, reach: 1.7091, liftVelocity: 26.0, pitchVelocity: 11.0 },
     },
     colliders: [
       // The forks. MEASURED at y 0.17-0.32 in the model, but authored down to
       // the floor: on the real machine they scrape, and a fork a fifth of a foot
       // in the air is a fork nothing can climb.
-      { shape: "wedge", halfExtents: { x: 0.62, y: 0.17, z: 0.44 }, offset: { x: 0, y: 0.17, z: -1.16 }, tipY: 0.03 },
+      { shape: "wedge", halfExtents: { x: 0.7064, y: 0.1937, z: 0.5013 }, offset: { x: 0, y: 0.1937, z: -1.3217 }, tipY: 0.0342 },
       // The whole shell IS a wedge: MEASURED 0.53ft tall at z=-0.6 climbing to
       // 1.34 at the tail.
-      { shape: "wedge", halfExtents: { x: 1.29, y: 0.6, z: 0.8 }, offset: { x: 0, y: 0.6, z: 0.2 }, tipY: 0.3 },
-      { shape: "box", halfExtents: { x: 1.29, y: 0.67, z: 0.3 }, offset: { x: 0, y: 0.67, z: 1.3 } },
+      { shape: "wedge", halfExtents: { x: 1.4698, y: 0.6836, z: 0.9115 }, offset: { x: 0, y: 0.6836, z: 0.2279 }, tipY: 0.3418 },
+      { shape: "box", halfExtents: { x: 1.4698, y: 0.7634, z: 0.3418 }, offset: { x: 0, y: 0.7634, z: 1.4812 } },
     ],
   },
 
@@ -768,18 +975,31 @@ export const CATALOG = {
     modelPath: "./public/models/copperhead.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X
     modelRoll: Math.PI, // MEASURED: Tripo built it upside down (wheels on top)
-    modelScale: 3.3,
+    modelScale: 3.2498,
     canDriveInverted: true, // symmetrical drum bot; it fights either way up
+    // --- the real machine ---------------------------------------------
+    // 50lb single-toothed S7 tool steel drum; 160-180mph originally, dialled
+    // back to 140mph for more bite.
+    realWorld: {
+      team: "Team Copperhead", from: "Denver, CO",
+      weightLbs: 250,
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 3.25, lengthFt: 3.22, heightFt: 2.05, source: "class-estimate" },
+      weapon: { name: "Eggbeater drum spinner", weightLbs: 50, tipSpeedMph: 180, rpm: null },
+      drive: "2x Maytech MTO6365", power: "5Ah 6S LiPo",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 50,
     // MEASURED shell. The two whiskers reaching 2.08 are its antennae, not
     // structure, so the height here is the deck, not the bounding box.
-    bodyDims: { x: 3.17, y: 1.45, z: 3.27 },
+    bodyDims: { x: 3.1218, y: 1.428, z: 3.2203 },
     wheelAnchors: [
-      { x: -1.3, y: 0.5, z: -0.9 },
-      { x: 1.3, y: 0.5, z: -0.9 },
-      { x: -1.3, y: 0.5, z: 0.9 },
-      { x: 1.3, y: 0.5, z: 0.9 },
+      { x: -1.2802, y: 0.5, z: -0.8863 },
+      { x: 1.2802, y: 0.5, z: -0.8863 },
+      { x: -1.2802, y: 0.5, z: 0.8863 },
+      { x: 1.2802, y: 0.5, z: 0.8863 },
     ],
     maxSpeedFps: 14.0,
     accel: 8.0,
@@ -788,14 +1008,14 @@ export const CATALOG = {
     accentDark: "#16181c",
     weapon: {
       type: "drum",
-      pivot: { x: 0.04, y: 0.71, z: -0.96 }, // MEASURED drum axle, game space
+      pivot: { x: 0.0394, y: 0.6992, z: -0.9454 }, // MEASURED drum axle, game space
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 1.6,
       inertia: 1.25,
       maxOmega: 560,
       budgetCap: 340,
-      radius: 0.545, // MEASURED swept radius about the axle
-      dims: { x: 0.9, y: 0.545, z: 0.545 },
+      radius: 0.5367, // MEASURED swept radius about the axle
+      dims: { x: 0.8863, y: 0.5367, z: 0.5367 },
       tuning: { efficiency: 0.58, impulseScale: 10.5, liftScale: 30.0, liftVelocity: 4.5, gyroScale: 1.0 },
     },
     // NOTHING in front of z=-0.36, which is where the drum's sweep ends. The
@@ -804,7 +1024,7 @@ export const CATALOG = {
     // stand-off: opponents would stop on the lip with the drum still a foot
     // short of them. Same call as Deep Six, for the same reason.
     colliders: [
-      { shape: "box", halfExtents: { x: 1.55, y: 0.62, z: 0.98 }, offset: { x: 0, y: 0.65, z: 0.62 } },
+      { shape: "box", halfExtents: { x: 1.5264, y: 0.6106, z: 0.9651 }, offset: { x: 0, y: 0.6401, z: 0.6106 } },
     ],
   },
 
@@ -816,15 +1036,28 @@ export const CATALOG = {
     modelPath: "./public/models/duck.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X
     modelRoll: Math.PI, // MEASURED: Tripo built it upside down (wheels on top)
-    modelScale: 4.2,
+    modelScale: 3.4999,
+    // --- the real machine ---------------------------------------------
+    // The plow is 3/4in steel and weighs 50lb — it is the widest part of the
+    // machine, which is what the game scales to.
+    realWorld: {
+      team: "Team Black and Blue", from: "Palo Alto, CA",
+      weightLbs: 250,
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 3.5, lengthFt: 2.88, heightFt: 0.76, source: "class-estimate" },
+      weapon: { name: "Lifting plow", weightLbs: 50, tipSpeedMph: null, rpm: null },
+      drive: "4x Maytech 65162 brushless", power: null,
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 35,
-    bodyDims: { x: 3.21, y: 0.92, z: 2.75 }, // MEASURED shell — very flat
+    bodyDims: { x: 2.6749, y: 0.7666, z: 2.2916 }, // MEASURED shell, then scaled to realWorld.size.widthFt — very flat
     wheelAnchors: [
-      { x: -1.45, y: 0.3, z: -0.95 },
-      { x: 1.45, y: 0.3, z: -0.95 },
-      { x: -1.45, y: 0.3, z: 1.13 },
-      { x: 1.45, y: 0.3, z: 1.13 },
+      { x: -1.2083, y: 0.3, z: -0.7916 },
+      { x: 1.2083, y: 0.3, z: -0.7916 },
+      { x: -1.2083, y: 0.3, z: 0.9416 },
+      { x: 1.2083, y: 0.3, z: 0.9416 },
     ],
     maxSpeedFps: 13.0,
     accel: 7.5,
@@ -833,7 +1066,7 @@ export const CATALOG = {
     accentDark: "#1a1a1a",
     weapon: {
       type: "lifter",
-      pivot: { x: 0.23, y: 0.88, z: -1.02 }, // MEASURED scoop hinge, game space
+      pivot: { x: 0.1917, y: 0.7333, z: -0.85 }, // MEASURED scoop hinge, game space
       axis: { x: 1, y: 0, z: 0 },
       // MEASURED: the scoop is baked DOWN (0 rests its lip on the floor at
       // y 0.008) and 1.1 stands it up over the nose. That resting pose is why
@@ -843,16 +1076,16 @@ export const CATALOG = {
       liftImpulse: 190,
       liftRecoil: 0.5,
       lowerSeconds: 0.6,
-      dims: { x: 1.4, y: 0.12, z: 0.5 },
+      dims: { x: 1.1666, y: 0.1, z: 0.4167 },
       selfRight: true,
-      tuning: { strokeSeconds: 0.45, reach: 1.7 },
+      tuning: { strokeSeconds: 0.45, reach: 1.4166 },
     },
     colliders: [
       // The scoop at rest. MEASURED z -2.03..-1.03 climbing from the floor to
       // 0.56 — the flattest, longest wedge in the game, which is the whole bot.
-      { shape: "wedge", halfExtents: { x: 1.6, y: 0.28, z: 0.5 }, offset: { x: 0, y: 0.28, z: -1.53 }, tipY: 0.02 },
-      { shape: "box", halfExtents: { x: 1.61, y: 0.28, z: 1.21 }, offset: { x: 0, y: 0.28, z: 0.17 } },
-      { shape: "box", halfExtents: { x: 1.0, y: 0.46, z: 0.18 }, offset: { x: 0, y: 0.46, z: -1.13 } }, // hinge block
+      { shape: "wedge", halfExtents: { x: 1.3333, y: 0.2333, z: 0.4167 }, offset: { x: 0, y: 0.2333, z: -1.2749 }, tipY: 0.0167 },
+      { shape: "box", halfExtents: { x: 1.3416, y: 0.2333, z: 1.0083 }, offset: { x: 0, y: 0.2333, z: 0.1417 } },
+      { shape: "box", halfExtents: { x: 0.8333, y: 0.3833, z: 0.15 }, offset: { x: 0, y: 0.3833, z: -0.9416 } }, // hinge block
     ],
   },
 
@@ -863,16 +1096,28 @@ export const CATALOG = {
     referenceImage: "./public/reference/endgame.png",
     modelPath: "./public/models/endgame.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X
-    modelScale: 3.4,
+    modelScale: 3.3,
     hideWheels: true, // drive is inboard; segmentation never saw a wheel
+    // --- the real machine ---------------------------------------------
+    // Disk options range 40-55lb; reaches 6,000rpm in under five seconds.
+    realWorld: {
+      team: "Team End Game", from: "Auckland, New Zealand",
+      weightLbs: 250,
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 3.3, lengthFt: 2.24, heightFt: 1.71, source: "class-estimate" },
+      weapon: { name: "Vertical spinner", weightLbs: 55, tipSpeedMph: null, rpm: 6000 },
+      drive: "4x 6374-192kV", power: "2x 1.8Ah MaxAmps",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 55,
-    bodyDims: { x: 3.4, y: 1.76, z: 2.31 }, // MEASURED shell
+    bodyDims: { x: 3.3, y: 1.7083, z: 2.2421 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -1.3, y: 0.25, z: -0.7 },
-      { x: 1.3, y: 0.25, z: -0.7 },
-      { x: -1.3, y: 0.25, z: 0.7 },
-      { x: 1.3, y: 0.25, z: 0.7 },
+      { x: -1.2618, y: 0.25, z: -0.6794 },
+      { x: 1.2618, y: 0.25, z: -0.6794 },
+      { x: -1.2618, y: 0.25, z: 0.6794 },
+      { x: 1.2618, y: 0.25, z: 0.6794 },
     ],
     maxSpeedFps: 15.0,
     accel: 8.5,
@@ -881,7 +1126,7 @@ export const CATALOG = {
     accentDark: "#191c24",
     weapon: {
       type: "drum",
-      pivot: { x: 0.07, y: 0.82, z: -0.41 }, // MEASURED disc axle, game space
+      pivot: { x: 0.0679, y: 0.7959, z: -0.3979 }, // MEASURED disc axle, game space
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 0.9,
       inertia: 1.4,
@@ -890,17 +1135,17 @@ export const CATALOG = {
       // MEASURED swept radius. The blade is a TEARDROP: its axle is at the fat
       // end, so the bbox centre is 0.29ft off the real hub and the swept
       // circle is set by the tip, not by half the height.
-      radius: 0.777,
-      dims: { x: 0.36, y: 0.777, z: 0.777 },
+      radius: 0.7542,
+      dims: { x: 0.3494, y: 0.7542, z: 0.7542 },
       tuning: { efficiency: 0.6, impulseScale: 11.5, liftScale: 30.0, liftVelocity: 5.0, gyroScale: 1.1 },
     },
     colliders: [
       // The two lettered forks, LEFT and RIGHT of the disc with a clear gap
       // between them: the disc sweeps down to y 0.04 and out to z -0.91, and
       // anything spanning the centreline there would hold opponents off it.
-      { shape: "wedge", halfExtents: { x: 0.6, y: 0.42, z: 0.4 }, offset: { x: -1.1, y: 0.42, z: -0.75 }, tipY: 0.05 },
-      { shape: "wedge", halfExtents: { x: 0.6, y: 0.42, z: 0.4 }, offset: { x: 1.1, y: 0.42, z: -0.75 }, tipY: 0.05 },
-      { shape: "box", halfExtents: { x: 1.58, y: 0.5, z: 0.75 }, offset: { x: 0, y: 0.5, z: 0.41 } },
+      { shape: "wedge", halfExtents: { x: 0.5824, y: 0.4077, z: 0.3882 }, offset: { x: -1.0677, y: 0.4077, z: -0.7279 }, tipY: 0.0485 },
+      { shape: "wedge", halfExtents: { x: 0.5824, y: 0.4077, z: 0.3882 }, offset: { x: 1.0677, y: 0.4077, z: -0.7279 }, tipY: 0.0485 },
+      { shape: "box", halfExtents: { x: 1.5335, y: 0.4853, z: 0.7279 }, offset: { x: 0, y: 0.4853, z: 0.3979 } },
     ],
   },
 
@@ -911,15 +1156,26 @@ export const CATALOG = {
     referenceImage: "./public/reference/freeshipping.png",
     modelPath: "./public/models/freeshipping.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X
-    modelScale: 3.4,
+    modelScale: 4.1993,
+    // --- the real machine ---------------------------------------------
+    realWorld: {
+      team: "Team Special Delivery", from: "San Leandro, CA",
+      weightLbs: 250, // 210lbs from WC VII
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 2.7, lengthFt: 4.2, heightFt: 1.97, source: "class-estimate" },
+      weapon: { name: "Forklift lifter + flamethrowers", weightLbs: null, tipSpeedMph: null, rpm: null },
+      drive: "brushless", power: null,
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 45,
-    bodyDims: { x: 2.19, y: 0.9, z: 3.25 }, // MEASURED shell
+    bodyDims: { x: 2.7049, y: 1.1116, z: 4.0141 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -0.86, y: 0.3, z: -1.0 },
-      { x: 0.86, y: 0.3, z: -1.0 },
-      { x: -0.8, y: 0.3, z: 1.33 },
-      { x: 0.8, y: 0.3, z: 1.33 },
+      { x: -1.0622, y: 0.3, z: -1.2351 },
+      { x: 1.0622, y: 0.3, z: -1.2351 },
+      { x: -0.9881, y: 0.3, z: 1.6427 },
+      { x: 0.9881, y: 0.3, z: 1.6427 },
     ],
     maxSpeedFps: 14.5,
     accel: 8.0,
@@ -928,7 +1184,7 @@ export const CATALOG = {
     accentDark: "#17181b",
     weapon: {
       type: "lifter",
-      pivot: { x: 0, y: 0.63, z: 0.61 }, // MEASURED mast hinge, game space
+      pivot: { x: 0, y: 0.7781, z: 0.7534 }, // MEASURED mast hinge, game space
       axis: { x: 1, y: 0, z: 0 },
       // MEASURED: the GLB bakes the mast RAISED, so rest is -0.43 (fork tips
       // on the floor at y 0.00) and 0.30 hoists them to about 1.7ft — a
@@ -938,20 +1194,20 @@ export const CATALOG = {
       liftImpulse: 165,
       liftRecoil: 0.5,
       lowerSeconds: 0.7,
-      dims: { x: 0.26, y: 0.12, z: 1.2 },
+      dims: { x: 0.3211, y: 0.1482, z: 1.4821 },
       selfRight: true,
       // The flamethrowers. Static geometry on the model, so they are a damage
       // cone on the alt channel rather than a rigged part: no shove, no
       // knockdown, just a steady burn on whatever is held in front.
-      flame: { damagePerSecond: 9, reach: 3.2 },
-      tuning: { strokeSeconds: 0.5, reach: 1.8 },
+      flame: { damagePerSecond: 9, reach: 3.9523 },
+      tuning: { strokeSeconds: 0.5, reach: 2.2232 },
     },
     colliders: [
       // MEASURED wedge: the nose is on the floor at z=-1.62 and 0.54 tall by
       // z=-0.88. This is the cleanest wedge in the drop.
-      { shape: "wedge", halfExtents: { x: 1.02, y: 0.27, z: 0.37 }, offset: { x: 0, y: 0.27, z: -1.25 }, tipY: 0.02 },
-      { shape: "box", halfExtents: { x: 0.96, y: 0.33, z: 0.64 }, offset: { x: 0, y: 0.33, z: -0.24 } },
-      { shape: "box", halfExtents: { x: 0.93, y: 0.45, z: 0.62 }, offset: { x: 0, y: 0.45, z: 1.01 } },
+      { shape: "wedge", halfExtents: { x: 1.2598, y: 0.3335, z: 0.457 }, offset: { x: 0, y: 0.3335, z: -1.5439 }, tipY: 0.0247 },
+      { shape: "box", halfExtents: { x: 1.1857, y: 0.4076, z: 0.7905 }, offset: { x: 0, y: 0.4076, z: -0.2964 } },
+      { shape: "box", halfExtents: { x: 1.1486, y: 0.5558, z: 0.7658 }, offset: { x: 0, y: 0.5558, z: 1.2475 } },
     ],
   },
 
@@ -967,15 +1223,30 @@ export const CATALOG = {
     // out at y 1.16, which reaches every tall bot in the roster and nothing that
     // is built to go underneath. Bigger and it hits nobody; small enough to hit
     // everybody and it is not Mammoth any more.
-    modelScale: 3.0,
+    modelScale: 6.066,
+    // --- the real machine ---------------------------------------------
+    // The largest BattleBots competitor of the modern era: 8'9" long, 5'4"
+    // wide, 6'3" tall on 13in foam-filled tyres. Scaled on width, the game
+    // model lands at 5.33 x 4.88 x 6.07ft — width and height match, but the
+    // GLB is proportionally far too short to reach 8'9".
+    realWorld: {
+      team: "Team Mammoth", from: "Baltimore, MD",
+      weightLbs: 250,
+      topSpeedMph: 22,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 5.33, lengthFt: 8.75, heightFt: 6.25, source: "published" },
+      weapon: { name: "Rotary lifting trunk", weightLbs: null, tipSpeedMph: null, rpm: null },
+      drive: "2x RV-100", power: "MaxAmps LiPo",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 40,
-    bodyDims: { x: 2.64, y: 3.0, z: 2.42 }, // MEASURED frame
+    bodyDims: { x: 5.3381, y: 6.066, z: 4.8932 }, // MEASURED frame, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -1.2, y: 0.25, z: -0.9 },
-      { x: 1.2, y: 0.25, z: -0.9 },
-      { x: -1.16, y: 0.25, z: 0.57 },
-      { x: 1.16, y: 0.25, z: 0.57 },
+      { x: -2.4264, y: 0.25, z: -1.8198 },
+      { x: 2.4264, y: 0.25, z: -1.8198 },
+      { x: -2.3455, y: 0.25, z: 1.1525 },
+      { x: 2.3455, y: 0.25, z: 1.1525 },
     ],
     maxSpeedFps: 11.0,
     accel: 5.5,
@@ -984,7 +1255,7 @@ export const CATALOG = {
     accentDark: "#1b1c20",
     weapon: {
       type: "bar",
-      pivot: { x: 0, y: 1.59, z: -0.48 }, // MEASURED hub, game space
+      pivot: { x: 0, y: 3.215, z: -0.9706 }, // MEASURED hub, game space
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 2.4,
       inertia: 1.0,
@@ -1002,8 +1273,8 @@ export const CATALOG = {
       // 5 and 1.0 landed 7 — the same band as Beta and Deep Six. Below 1.0
       // Mammoth is a 250lb punching bag. The visual disc is smaller than the
       // hitbox, the same compromise Tantrum and Minotaur already ship.
-      radius: 1.0,
-      dims: { x: 0.3, y: 1.0, z: 1.0 },
+      radius: 2.022,
+      dims: { x: 0.6066, y: 2.022, z: 2.022 },
       // A displacement weapon: it throws opponents rather than cutting them, so
       // the lift is the largest in the game and the damage the smallest.
       tuning: { efficiency: 0.5, impulseScale: 9.0, liftScale: 46.0, liftVelocity: 7.0, gyroScale: 0.9, damageScale: 0.35 },
@@ -1016,12 +1287,12 @@ export const CATALOG = {
       // is authored to the frame rather than to the bottom bar: opponents ride
       // it up INTO the disc, which is the only way this weapon ever connects
       // and is what "drive in if you dare" is supposed to mean.
-      { shape: "wedge", halfExtents: { x: 1.3, y: 0.62, z: 0.5 }, offset: { x: 0, y: 0.62, z: -0.7 }, tipY: 0.05 },
+      { shape: "wedge", halfExtents: { x: 2.6286, y: 1.2536, z: 1.011 }, offset: { x: 0, y: 1.2536, z: -1.4154 }, tipY: 0.1011 },
       // Chassis stops at y 1.04 so the disc's lower sweep is clear.
-      { shape: "box", halfExtents: { x: 1.32, y: 0.52, z: 0.55 }, offset: { x: 0, y: 0.52, z: 0.2 } },
+      { shape: "box", halfExtents: { x: 2.669, y: 1.0514, z: 1.1121 }, offset: { x: 0, y: 1.0514, z: 0.4044 } },
       // Truss, sitting BEHIND the disc so the disc's leading face is exposed.
-      { shape: "box", halfExtents: { x: 0.62, y: 0.98, z: 0.4 }, offset: { x: 0, y: 2.02, z: 0.05 } },
-      { shape: "box", halfExtents: { x: 0.88, y: 0.36, z: 0.23 }, offset: { x: 0, y: 0.83, z: 0.98 } }, // rear outriggers
+      { shape: "box", halfExtents: { x: 1.2536, y: 1.9816, z: 0.8088 }, offset: { x: 0, y: 4.0844, z: 0.1011 } },
+      { shape: "box", halfExtents: { x: 1.7794, y: 0.7279, z: 0.4651 }, offset: { x: 0, y: 1.6783, z: 1.9816 } }, // rear outriggers
     ],
   },
 
@@ -1032,15 +1303,26 @@ export const CATALOG = {
     referenceImage: "./public/reference/overhaul.png",
     modelPath: "./public/models/overhaul.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X
-    modelScale: 3.8,
+    modelScale: 4.0109,
+    // --- the real machine ---------------------------------------------
+    realWorld: {
+      team: "Equals Zero Robotics", from: "Atlanta, GA",
+      weightLbs: 250, // 247lbs in Champions I
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 3.1, lengthFt: 4.01, heightFt: 2.21, source: "class-estimate" },
+      weapon: { name: "Lifter + grabber", weightLbs: null, tipSpeedMph: null, rpm: null },
+      drive: "2x 80mm brushless outrunner", power: "12S 6Ah LiPo",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 45,
-    bodyDims: { x: 2.94, y: 1.48, z: 3.17 }, // MEASURED shell
+    bodyDims: { x: 3.1032, y: 1.5621, z: 3.3459 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -1.14, y: 0.44, z: -0.95 },
-      { x: 1.14, y: 0.44, z: -0.95 },
-      { x: -1.14, y: 0.42, z: 1.07 },
-      { x: 1.14, y: 0.42, z: 1.07 },
+      { x: -1.2033, y: 0.44, z: -1.0027 },
+      { x: 1.2033, y: 0.44, z: -1.0027 },
+      { x: -1.2033, y: 0.42, z: 1.1294 },
+      { x: 1.2033, y: 0.42, z: 1.1294 },
     ],
     maxSpeedFps: 15.5,
     accel: 8.5,
@@ -1049,7 +1331,7 @@ export const CATALOG = {
     accentDark: "#17171a",
     weapon: {
       type: "grappler",
-      pivot: { x: 0, y: 0.9, z: 0.25 }, // MEASURED lift hinge, game space
+      pivot: { x: 0, y: 0.95, z: 0.2639 }, // MEASURED lift hinge, game space
       axis: { x: 1, y: 0, z: 0 },
       // MEASURED: the arm is baked RAISED, so -0.26 drops the fork tips to the
       // floor and 0.55 hoists them. Grabbing needs the forks DOWN, which is why
@@ -1058,22 +1340,22 @@ export const CATALOG = {
       liftAngle: 0.55,
       liftSeconds: 0.6,
       lowerSeconds: 0.8,
-      gripReach: 1.6,
-      gripHeight: 0.4,
+      gripReach: 1.6888,
+      gripHeight: 0.4222,
       gripStrength: 15,
       throwScale: 0.55,
-      dims: { x: 0.2, y: 0.2, z: 0.5 },
+      dims: { x: 0.2111, y: 0.2111, z: 0.5278 },
       selfRight: true,
       claw: { openAngle: 0, closedAngle: -0.9, clampSeconds: 0.3 },
-      tuning: { reach: 1.6, holdDamagePerSecond: 3 },
+      tuning: { reach: 1.6888, holdDamagePerSecond: 3 },
     },
     colliders: [
       // MEASURED front skirt: z -1.58..-0.86 at y 0.20-0.44, authored down to
       // the floor so opponents can climb it into the forks.
-      { shape: "wedge", halfExtents: { x: 1.27, y: 0.22, z: 0.36 }, offset: { x: 0, y: 0.22, z: -1.22 }, tipY: 0.02 },
-      { shape: "box", halfExtents: { x: 1.47, y: 0.52, z: 0.63 }, offset: { x: 0, y: 0.52, z: -0.23 } },
-      { shape: "box", halfExtents: { x: 0.99, y: 0.74, z: 0.63 }, offset: { x: 0, y: 0.74, z: 0.42 } },
-      { shape: "box", halfExtents: { x: 1.01, y: 0.35, z: 0.27 }, offset: { x: 0, y: 0.35, z: 1.31 } },
+      { shape: "wedge", halfExtents: { x: 1.3405, y: 0.2322, z: 0.38 }, offset: { x: 0, y: 0.2322, z: -1.2877 }, tipY: 0.0211 },
+      { shape: "box", halfExtents: { x: 1.5516, y: 0.5489, z: 0.665 }, offset: { x: 0, y: 0.5489, z: -0.2428 } },
+      { shape: "box", halfExtents: { x: 1.0449, y: 0.7811, z: 0.665 }, offset: { x: 0, y: 0.7811, z: 0.4433 } },
+      { shape: "box", halfExtents: { x: 1.0661, y: 0.3694, z: 0.285 }, offset: { x: 0, y: 0.3694, z: 1.3827 } },
     ],
   },
 
@@ -1084,16 +1366,27 @@ export const CATALOG = {
     referenceImage: "./public/reference/shatter.png",
     modelPath: "./public/models/shatter.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X
-    modelScale: 3.2,
+    modelScale: 4.177,
     hideWheels: true, // omni drive enclosed by the side armour
+    // --- the real machine ---------------------------------------------
+    realWorld: {
+      team: "Bots FC", from: "Brooklyn, NY",
+      weightLbs: 250,
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 2.45, lengthFt: 4.18, heightFt: 2.82, source: "class-estimate" },
+      weapon: { name: "Hammer", weightLbs: null, tipSpeedMph: null, rpm: null },
+      drive: "4x Castle 2028 brushless (omni)", power: null,
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 50,
-    bodyDims: { x: 1.88, y: 0.86, z: 3.2 }, // MEASURED shell — long and narrow
+    bodyDims: { x: 2.454, y: 1.1226, z: 4.177 }, // MEASURED shell, then scaled to realWorld.size.widthFt — long and narrow
     wheelAnchors: [
-      { x: -0.75, y: 0.25, z: -0.9 },
-      { x: 0.75, y: 0.25, z: -0.9 },
-      { x: -0.75, y: 0.25, z: 1.1 },
-      { x: 0.75, y: 0.25, z: 1.1 },
+      { x: -0.979, y: 0.25, z: -1.1748 },
+      { x: 0.979, y: 0.25, z: -1.1748 },
+      { x: -0.979, y: 0.25, z: 1.4358 },
+      { x: 0.979, y: 0.25, z: 1.4358 },
     ],
     maxSpeedFps: 14.0,
     accel: 8.0,
@@ -1102,7 +1395,7 @@ export const CATALOG = {
     accentDark: "#141019",
     weapon: {
       type: "hammer",
-      pivot: { x: 0, y: 0.67, z: 0.1 }, // MEASURED gearbox hinge, game space
+      pivot: { x: 0, y: 0.8746, z: 0.1305 }, // MEASURED gearbox hinge, game space
       axis: { x: 1, y: 0, z: 0 },
       // MEASURED: the GLB bakes the hammer COCKED — up and back over the tail —
       // so rest is 0 and -2.45 brings the head over the top and down onto the
@@ -1110,17 +1403,17 @@ export const CATALOG = {
       restAngle: 0,
       fireAngle: -2.45,
       budgetCap: 300,
-      dims: { x: 0.16, y: 0.5, z: 0.16 },
+      dims: { x: 0.2088, y: 0.6526, z: 0.2088 },
       selfRight: true,
-      tuning: { strokeSeconds: 0.2, returnSeconds: 0.85, reach: 1.9 },
+      tuning: { strokeSeconds: 0.2, returnSeconds: 0.85, reach: 2.4801 },
     },
     colliders: [
       // The two front forks — MEASURED thin (|x| <= 0.39) and on the floor.
-      { shape: "wedge", halfExtents: { x: 0.39, y: 0.145, z: 0.5 }, offset: { x: 0, y: 0.145, z: -1.1 }, tipY: 0.02 },
+      { shape: "wedge", halfExtents: { x: 0.5091, y: 0.1893, z: 0.6526 }, offset: { x: 0, y: 0.1893, z: -1.4358 }, tipY: 0.0261 },
       // The body is itself a wedge: 0.28 tall where the forks meet it, 0.86 by
       // the time it reaches the hammer's gearbox.
-      { shape: "wedge", halfExtents: { x: 0.94, y: 0.43, z: 0.4 }, offset: { x: 0, y: 0.43, z: -0.2 }, tipY: 0.28 },
-      { shape: "box", halfExtents: { x: 0.85, y: 0.43, z: 0.7 }, offset: { x: 0, y: 0.43, z: 0.9 } },
+      { shape: "wedge", halfExtents: { x: 1.227, y: 0.5613, z: 0.5221 }, offset: { x: 0, y: 0.5613, z: -0.2611 }, tipY: 0.3655 },
+      { shape: "box", halfExtents: { x: 1.1095, y: 0.5613, z: 0.9137 }, offset: { x: 0, y: 0.5613, z: 1.1748 } },
     ],
   },
 
@@ -1135,16 +1428,29 @@ export const CATALOG = {
     // REFLECTION as geometry; it is carved out in
     // tools/repairs/tantrum-reflection.json. The slant on the side panels is
     // the real robot's wedge skirt, not a tilt, and is left alone.
-    modelScale: 3.4,
+    modelScale: 3.6377,
     hideWheels: true, // drive enclosed by the side pods
+    // --- the real machine ---------------------------------------------
+    // 18lb S7 tool steel drum at up to 8,500rpm, on a carriage, with two
+    // independent punching fist arms.
+    realWorld: {
+      team: "Seems Reasonable Robotics", from: "Mountain View, CA",
+      weightLbs: 250,
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 3, lengthFt: 3.43, heightFt: 1.61, source: "class-estimate" },
+      weapon: { name: "Punching vertical spinner", weightLbs: 18, tipSpeedMph: null, rpm: 8500 },
+      drive: "2x TP5680 brushless", power: "4x 5.4Ah 6S LiPo",
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 40,
-    bodyDims: { x: 2.8, y: 1.01, z: 3.2 }, // MEASURED shell
+    bodyDims: { x: 2.9957, y: 1.0806, z: 3.4237 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -1.1, y: 0.25, z: -0.9 },
-      { x: 1.1, y: 0.25, z: -0.9 },
-      { x: -1.1, y: 0.25, z: 0.9 },
-      { x: 1.1, y: 0.25, z: 0.9 },
+      { x: -1.1769, y: 0.25, z: -0.9629 },
+      { x: 1.1769, y: 0.25, z: -0.9629 },
+      { x: -1.1769, y: 0.25, z: 0.9629 },
+      { x: 1.1769, y: 0.25, z: 0.9629 },
     ],
     maxSpeedFps: 15.0,
     accel: 8.5,
@@ -1153,7 +1459,7 @@ export const CATALOG = {
     accentDark: "#141a1c",
     weapon: {
       type: "drum",
-      pivot: { x: 0.02, y: 0.74, z: -1.41 }, // MEASURED axle, game space
+      pivot: { x: 0.0214, y: 0.7917, z: -1.5086 }, // MEASURED axle, game space
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 1.1,
       inertia: 1.0,
@@ -1164,12 +1470,12 @@ export const CATALOG = {
       // touch anything with 0.6ft of air under the axle. 0.30 is the radius the
       // reference photo's drum actually has. Same call as Minotaur's unmodelled
       // notches — the collider follows the robot, not the segmentation.
-      radius: 0.3,
-      dims: { x: 0.51, y: 0.3, z: 0.3 },
+      radius: 0.321,
+      dims: { x: 0.5456, y: 0.321, z: 0.321 },
       // The fists punch on the alt channel, independent of the drum.
       fists: {
         openAngle: 0, punchAngle: -0.85, punchSeconds: 0.18,
-        impulse: 90, damagePerHit: 2.5, reach: 1.1,
+        impulse: 90, damagePerHit: 2.5, reach: 1.1769,
         axis: { x: 1, y: 0, z: 0 },
       },
       tuning: { efficiency: 0.55, impulseScale: 10.0, liftScale: 28.0, liftVelocity: 4.5, gyroScale: 1.0 },
@@ -1178,8 +1484,8 @@ export const CATALOG = {
     // z -1.71, and the model's nose shroud sits at y 0.50-1.00, right across
     // the sweep. Leaving it out is what lets the drum reach.
     colliders: [
-      { shape: "box", halfExtents: { x: 1.4, y: 0.5, z: 0.98 }, offset: { x: 0, y: 0.5, z: -0.22 } },
-      { shape: "box", halfExtents: { x: 0.68, y: 0.21, z: 0.42 }, offset: { x: 0, y: 0.31, z: 1.18 } },
+      { shape: "box", halfExtents: { x: 1.4979, y: 0.535, z: 1.0485 }, offset: { x: 0, y: 0.535, z: -0.2354 } },
+      { shape: "box", halfExtents: { x: 0.7275, y: 0.2247, z: 0.4494 }, offset: { x: 0, y: 0.3317, z: 1.2625 } },
     ],
   },
 
@@ -1190,17 +1496,30 @@ export const CATALOG = {
     referenceImage: "./public/reference/witchdoctor.png",
     modelPath: "./public/models/witchdoctor.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X
-    modelScale: 3.1,
+    modelScale: 3.3598,
     // "Bunny ear" appendages work either way up, so it keeps driving inverted.
     canDriveInverted: true,
+    // --- the real machine ---------------------------------------------
+    // 45-47lb disk; 200mph at 4,000rpm in WC III, later reworked to the 250mph
+    // cap.
+    realWorld: {
+      team: "Team Witch Doctor", from: "Miami, FL",
+      weightLbs: 250,
+      topSpeedMph: null,
+      // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
+      size: { widthFt: 2.95, lengthFt: 3.36, heightFt: 1.31, source: "class-estimate" },
+      weapon: { name: "Vertical disk spinner + flamethrower", weightLbs: 47, tipSpeedMph: 250, rpm: 4000 },
+      drive: "2x Long Magmotor", power: null,
+    },
+
     weightLbs: 250,
     weaponWeightLbs: 47,
-    bodyDims: { x: 2.7, y: 1.2, z: 3.1 }, // MEASURED shell
+    bodyDims: { x: 2.9263, y: 1.3006, z: 3.3598 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -1.03, y: 0.22, z: -0.31 },
-      { x: 1.03, y: 0.22, z: -0.31 },
-      { x: -1.05, y: 0.22, z: 1.27 },
-      { x: 1.05, y: 0.22, z: 1.27 },
+      { x: -1.1163, y: 0.22, z: -0.336 },
+      { x: 1.1163, y: 0.22, z: -0.336 },
+      { x: -1.138, y: 0.22, z: 1.3764 },
+      { x: 1.138, y: 0.22, z: 1.3764 },
     ],
     maxSpeedFps: 15.0,
     accel: 8.5,
@@ -1209,14 +1528,14 @@ export const CATALOG = {
     accentDark: "#1a1024",
     weapon: {
       type: "drum", // vertical disc: same swept volume, same maths
-      pivot: { x: 0.02, y: 0.56, z: -0.36 }, // MEASURED disc axle, game space
+      pivot: { x: 0.0217, y: 0.6069, z: -0.3902 }, // MEASURED disc axle, game space
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 2.2,
       inertia: 1.1,
       maxOmega: 620,
       budgetCap: 260,
-      radius: 0.772, // MEASURED swept radius (bbox guess was 0.6)
-      dims: { x: 0.1, y: 0.772, z: 0.772 },
+      radius: 0.8367, // MEASURED swept radius (bbox guess was 0.6)
+      dims: { x: 0.1084, y: 0.8367, z: 0.8367 },
       tuning: {
         efficiency: 0.54, impulseScale: 11.0, liftScale: 30.0, liftVelocity: 4.5,
         gyroScale: 0.9, impactScale: 1.1, damageScale: 0.66,
@@ -1224,9 +1543,9 @@ export const CATALOG = {
     },
     // Front wedge is a WEDGE, not a box, so opponents ride up it into the disc.
     colliders: [
-      { shape: "wedge", halfExtents: { x: 0.8, y: 0.15, z: 0.36 }, offset: { x: 0, y: 0.15, z: -1.18 }, tipY: 0.03 }, // front wedge (MEASURED slope)
-      { shape: "box", halfExtents: { x: 1.3, y: 0.16, z: 1.19 }, offset: { x: 0, y: 0.16, z: 0.19 } },
-      { shape: "box", halfExtents: { x: 1.15, y: 0.19, z: 1.15 }, offset: { x: 0, y: 0.51, z: 0.35 } },
+      { shape: "wedge", halfExtents: { x: 0.867, y: 0.1626, z: 0.3902 }, offset: { x: 0, y: 0.1626, z: -1.2789 }, tipY: 0.0325 }, // front wedge (MEASURED slope)
+      { shape: "box", halfExtents: { x: 1.4089, y: 0.1734, z: 1.2897 }, offset: { x: 0, y: 0.1734, z: 0.2059 } },
+      { shape: "box", halfExtents: { x: 1.2464, y: 0.2059, z: 1.2464 }, offset: { x: 0, y: 0.5527, z: 0.3793 } },
     ],
   },
 };
