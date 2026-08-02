@@ -8,5 +8,13 @@
     "_comment": "Part 10 is a ragged strip lying along the lid's right bolt row — scan spill off the seam rather than a component. Nothing of it reads except that strip: the rest is buried inside the shell, and with it gone the bolts on that side render as discrete heads instead of a broken black line. The reference has no raised rail there, only the bolts and the gasket seam the texture already carries.",
     "part": 10, "mode": "delete",
     "region": { "type": "box", "min": [-1, -1, -1], "max": [1, 1, 1] }
+  },
+  {
+    "_comment": "The hinge is the white axle across the top of the bot, which is part 16. The partitioner's pivotOverride had been sitting at [0,-0.02,-0.266] — the lid's own rear edge, and 0.18 BELOW it. Rotating a panel about a point two thirds of a foot under itself does not hinge it, it swings it up and back off the body, which is why firing the flipper opened a hole into Blip's interior. A y-z cross-section of part 16 at |x|<0.03 draws a clean round shell 0.07 across centred on y 0.158, z -0.292; that circle is the shaft.",
+    "mode": "pivot", "node": "modelWeapon", "pivotLocal": [0, 0.158, -0.292]
+  },
+  {
+    "_comment": "And the axle travels with the panel it carries, so part 16 joins modelWeapon. A cylinder turning about its own axis shows nothing, but leaving it behind on the body would part it from the lid the moment the lid moved.",
+    "part": 16, "mode": "reparent", "parent": "modelWeapon"
   }
 ]
