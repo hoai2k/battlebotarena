@@ -30,6 +30,33 @@ function accentMaterial(spec, { dark = false, metal = 0.55 } = {}) {
   });
 }
 
+// Tripo writes no pbrMetallicRoughness block, so glTF's defaults apply and every
+// scanned material arrives at metalness 1 / roughness 1. That pair is the worst
+// case there is: fully metallic means NO diffuse term at all, and fully rough
+// means the specular is smeared to nothing, so the baked albedo is left tinting
+// a reflection nobody can see. The result reads as chalk or matte plastic no
+// matter how good the photograph was.
+//
+// These machines are painted metal. Paint is a dielectric over steel: mostly
+// diffuse, with a tight specular that catches the arena lights. Dropping
+// metalness and roughness to those values is what puts the photograph back on
+// the surface and the highlight back on the edges.
+const SURFACE = { metalness: 0.28, roughness: 0.42 };
+
+function repaintScanned(object, spec) {
+  const surface = { ...SURFACE, ...(spec.surface || {}) };
+  object.traverse((child) => {
+    // Only touch materials that came in from the GLB with a baked texture.
+    // Procedural parts (placeholder bodies, Duck's carrier bars, the spin
+    // ghost) are authored with the values they want.
+    if (!child.isMesh || !child.material?.map) return;
+    child.material.metalness = surface.metalness;
+    child.material.roughness = surface.roughness;
+    child.material.needsUpdate = true;
+  });
+  return object;
+}
+
 function markShadows(object) {
   object.traverse((child) => {
     if (child.isMesh) {
@@ -595,6 +622,7 @@ export async function loadBotModel(spec, { onProgress } = {}) {
     group.add(spinBlur);
   }
 
+  repaintScanned(group, spec);
   markShadows(group);
   if (spinBlur) spinBlur.castShadow = false;
   return {
