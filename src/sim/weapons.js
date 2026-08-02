@@ -893,6 +893,30 @@ function createHammer({ vehicle, index, emit }) {
 function createLifterDisc({ vehicle, index, emit }) {
   const spec = vehicle.spec;
   const w = spec.weapon;
+  // The plow's solid, swung about the arm's own pivot. Duck's plow is drawn on
+  // an arm that reaches over the top of the machine, but its collider used to
+  // sit where the catalog parked it and never move: raise the arm and the plow
+  // became a hologram, so bringing it down on an opponent passed straight
+  // through and the only thing that ever touched them was the lift impulse's
+  // zone test. Marking a collider `ridesArm` in the catalog hands it to this.
+  //
+  // These are colliders on the bot's OWN body, so re-posing them relative to
+  // that body is not a teleport of a dynamic body and the no-setTranslation
+  // rule does not apply. Rapier resolves the new pose on the next step like any
+  // other moving part.
+  const armColliders = vehicle.armColliders ?? [];
+  const armAxis = m.norm(w.axis ?? { x: 1, y: 0, z: 0 }, { x: 1, y: 0, z: 0 });
+  function poseArmColliders(stroke) {
+    if (armColliders.length === 0) return;
+    const angle = (w.restAngle ?? 0) + stroke * ((w.fireAngle ?? 0) - (w.restAngle ?? 0));
+    const turn = m.qFromAxisAngle(armAxis, angle - (w.restAngle ?? 0));
+    for (const ride of armColliders) {
+      ride.collider.setTranslationWrtParent(
+        m.add(w.pivot, m.qRotate(turn, m.sub(ride.offset, w.pivot))),
+      );
+      ride.collider.setRotationWrtParent(m.qMul(turn, ride.rotation));
+    }
+  }
   const tune = resolveWeaponTuning(spec);
   const disc = w.disc ?? null;
   const flame = w.flame ?? null;
@@ -948,6 +972,9 @@ function createLifterDisc({ vehicle, index, emit }) {
       const dir = w.twoWayArm ? (fire ? 1 : 0) - (drop ? 1 : 0) : (fire ? 1 : -1);
       stroke = m.clamp(stroke + (dir > 0 ? dt / raiseSeconds : dir < 0 ? -dt / lowerSeconds : 0), 0, 1);
       const rise = stroke - previous;
+      // Carry the plow's solid with the arm before anything else this step, so
+      // a contact resolving now sees the plow where it is drawn.
+      if (rise !== 0) poseArmColliders(stroke);
       // Upside down, raising the forks drives them into the floor instead —
       // which is how a lifter gets back onto its wheels.
       if (rise > 0) armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
@@ -1060,6 +1087,7 @@ function createLifterDisc({ vehicle, index, emit }) {
       omega = 0;
       carrying = false;
       hooked = false;
+      poseArmColliders(0);
       lastEmittedRatio = -1;
       lastDiscHitAt = -Infinity;
       lastLiftTickAt = -Infinity;

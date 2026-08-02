@@ -1274,7 +1274,16 @@ export const CATALOG = {
       // measures z -1.689..-0.987 climbing from y 0.002 to 0.476, so the wedge
       // (z -1.692..-0.858, y 0..0.467) still wraps it — the flattest, longest
       // wedge in the game, which is the whole bot.
-      { shape: "wedge", halfExtents: { x: 1.3333, y: 0.2333, z: 0.4167 }, offset: { x: 0, y: 0.2333, z: -1.2749 }, tipY: 0.0167 },
+      //
+      // ridesArm: the plow is on the ARM, so its solid has to swing with it.
+      // Without this the collider stayed parked here while the plow was drawn
+      // halfway over the roof, and bringing the arm down on an opponent passed
+      // straight through them — the only thing that ever touched them was the
+      // lift impulse's zone test, which is not something a player can see or
+      // aim. Duck's arm reaches 173 degrees, so this is most of what the bot
+      // does. Authored at REST, which is what the collider invariants in
+      // tools/sim-tests.mjs measure; sim/weapons.js swings it from there.
+      { shape: "wedge", halfExtents: { x: 1.3333, y: 0.2333, z: 0.4167 }, offset: { x: 0, y: 0.2333, z: -1.2749 }, tipY: 0.0167, ridesArm: true },
       // The chassis, MEASURED x -1.312..1.312, y 0.005..0.451, z -1.148..1.148.
       { shape: "box", halfExtents: { x: 1.3416, y: 0.2333, z: 1.0083 }, offset: { x: 0, y: 0.2333, z: 0.1417 } },
       // Hinge block. Its height came down from 0.767 to match the deck: that

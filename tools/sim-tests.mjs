@@ -618,6 +618,67 @@ await test("models: every authored panel is still in the GLB that needs it", asy
   }
 });
 
+await test("lifter: the plow is solid wherever the arm is, and it lifts", async () => {
+  // A lifter has to LIFT AND PUSH other machines. That sounds too obvious to
+  // test, and it is exactly why it went unnoticed for so long: Duck's plow
+  // collider sat where the catalog parked it and never moved, so the moment the
+  // arm came off its rest the plow was drawn halfway over the roof while its
+  // solid stayed on the floor. Bringing the arm down on an opponent went
+  // straight through them. The only thing that ever touched them was the lift
+  // impulse's zone test, which is invisible and unaimable.
+  //
+  // Two things are checked, because either alone can pass while the bot is
+  // broken. The collider must MOVE with the arm — that is the wiring, and it is
+  // what silently regresses. And a foe parked in front must actually come off
+  // the floor — that is the behaviour, and it is what the player sees.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const riders = Object.values(CATALOG).filter((s) => s.colliders?.some((c) => c.ridesArm));
+  check(riders.length > 0, "some bot's plow rides its arm",
+    "no collider in the catalog carries ridesArm — the mechanism is unreachable");
+  for (const spec of riders) {
+    const foe = Object.values(CATALOG).find((s) => s.id !== spec.id);
+    await withSim([spec, foe], async (sim) => {
+      const body = sim._test.body(0);
+      const at = () => {
+        const out = [];
+        for (let i = 0; i < body.numColliders(); i += 1) out.push({ ...body.collider(i).translation() });
+        return out;
+      };
+      sim._test.setPose(0, { x: 0, z: 0 }, 0);
+      sim._test.setPose(1, { x: 0, z: -30 }, 0);
+      frames(sim, 90);
+      const rest = at();
+      // The arm is on the primary channel for every lifter; a two-way arm holds
+      // where it is let go, which is why this drives it and then reads.
+      frames(sim, 150, [{ weapon: true }, {}]);
+      const raised = at();
+      const travel = Math.max(...rest.map((r, i) => Math.hypot(raised[i].y - r.y, raised[i].z - r.z)));
+      check(travel > 0.5, `${spec.id}: the plow's solid swings with the arm`,
+        `every collider moved less than 0.5ft (most was ${travel.toFixed(2)}) — the plow is a hologram once the arm lifts`);
+
+      // Now the behaviour, driven the way a player drives it: arm down, drive
+      // the plow under a parked opponent, then lift. Measured across five very
+      // different foes it is worth 0.47 to 1.19ft with the plow solid, against
+      // 0.28 for this one with it a hologram — the zone impulse alone barely
+      // beats gravity. So 0.3 is a narrow bar, and the check above is the one
+      // that will actually catch the wiring coming undone. This one is here
+      // because the wiring is not the point; lifting other machines is.
+      frames(sim, 150, [{ sawActive: true }, {}]); // arm back down to rest
+      sim._test.setPose(0, { x: 0, z: 0 }, 0);
+      sim._test.setPose(1, { x: 0, z: -2.3 }, 0);
+      frames(sim, 90);
+      frames(sim, 60, [{ leftDrive: 1, rightDrive: 1 }, {}]);
+      const floor = sim._test.body(1).translation().y;
+      let peak = floor;
+      frames(sim, 150, [{ weapon: true, leftDrive: 0.4, rightDrive: 0.4 }, {}], () => {
+        peak = Math.max(peak, sim._test.body(1).translation().y);
+      });
+      check(peak - floor > 0.3, `${spec.id}: driving under a foe and lifting takes it off the floor`,
+        `foe rose ${(peak - floor).toFixed(3)}ft`);
+    });
+  }
+});
+
 // ---------------------------------------------------------------------------
 
 const failed = results.filter((r) => !r.ok);

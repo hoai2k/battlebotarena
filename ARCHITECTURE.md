@@ -386,6 +386,29 @@ per-hit damage identical on the `weapon-tuning-verify` ladder.
 today's sim, the v1 reference, and what the module produces — against the real
 catalog. Re-run it after any tuning edit.
 
+### An arm's collider has to move with the arm (regression-prone)
+
+A lifter must LIFT AND PUSH other machines. That is the entire bot, and it is
+the one thing about it nobody thinks to check. A collider authored in the
+catalog is fixed to the chassis body, so Duck's plow had a solid at its rest
+pose and nothing anywhere else: the moment the arm came off rest the plow was
+drawn halfway over the roof while its collider stayed on the floor, and
+bringing the arm down on an opponent went straight through them. The only thing
+that ever touched them was the lift impulse's zone test, which the player can
+neither see nor aim, and which barely beats gravity on its own — measured, the
+same scoop is worth 0.28ft of lift without the solid and 0.47-1.19ft with it.
+
+Mark such a collider `ridesArm: true` in the catalog. `sim/vehicle.js` collects
+them and `sim/weapons.js` swings each one about `weapon.pivot` by the arm's
+current angle every step. They are colliders on the bot's OWN body, so re-posing
+them relative to that body is not a teleport of a dynamic body and the
+no-`setTranslation` rule does not apply. Author them at REST, which is the pose
+the collider invariants here measure.
+
+`tools/sim-tests.mjs` asserts both halves for every bot that carries one: the
+collider must actually travel when the arm lifts, and driving the plow under a
+parked opponent and raising it must take that opponent off the floor.
+
 ## Model contract (v2/src/assets/models.js — GAME agent)
 
 `loadBotModel(spec, { onProgress } = {})` → `{ group, parts: { body,

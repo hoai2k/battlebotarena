@@ -89,6 +89,14 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
   );
 
   const wedgeColliders = [];
+  // Colliders that RIDE THE ARM rather than the chassis. A lifter's plow is
+  // part of the machine at rest and the collider stack has always covered it
+  // there — but the moment the arm came up, the solid stayed behind and the
+  // plow became a hologram you could drive a bot through. These keep their
+  // authored pose (so the rest-pose invariants in tools/sim-tests.mjs still
+  // measure the real thing) and the weapon re-poses them about its own pivot
+  // every step.
+  const armColliders = [];
   for (const c of spec.colliders) {
     let desc;
     if (c.shape === "cylinder") {
@@ -124,6 +132,13 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
     const surface = c.shape === "wedge" ? "wedge" : "bot";
     tagCollider(meta, collider, { kind: "bot", botIndex: index, surface });
     if (surface === "wedge") wedgeColliders.push(collider);
+    if (c.ridesArm) {
+      armColliders.push({
+        collider,
+        offset: { x: c.offset?.x ?? 0, y: c.offset?.y ?? 0, z: c.offset?.z ?? 0 },
+        rotation: c.rotation ?? m.qIdentity(),
+      });
+    }
   }
 
   // Per-probe static load share (bilinear over the anchor rectangle) so springs
@@ -300,6 +315,7 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
     inertia: { x: ix, y: iy, z: iz },
     restCenterHeight,
     wedgeColliders,
+    armColliders,
 
     /** Apply one fixed step of suspension + drive forces (before world.step). */
     update(dt, rawInput) {
