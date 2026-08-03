@@ -185,15 +185,37 @@ const jetDir = new THREE.Vector3();
  *        calibration; the nozzles are body-local like every other catalog point,
  *        so the jet has to follow the DRAWN geometry rather than the physics origin.
  */
+const jetPivot = new THREE.Vector3();
+const jetAxis = new THREE.Vector3();
+const jetSwing = new THREE.Quaternion();
+
 export function spawnBotFlame(effects, spec, state, lit, groundDrop = 0) {
   const flame = spec?.weapon?.flame;
   if (!flame || !(lit > 0.05)) return;
   const dir = flame.dir || { x: 0, y: 0.07, z: -1 };
+  // ridesWeapon: the emitter is bolted to the moving part, not the chassis.
+  // Kraken's nozzle is in its throat, so as the jaw closes the jet has to swing
+  // with it — a flame that keeps pointing where the BOT points while the mouth
+  // shuts comes out through the side of the head.
+  const w = spec.weapon;
+  const swinging = flame.ridesWeapon && w?.pivot;
+  if (swinging) {
+    const rest = w.restAngle ?? 0;
+    const fire = w.fireAngle ?? 0;
+    const angle = rest + (fire - rest) * (state.weaponAngle ?? 0);
+    jetAxis.set(w.axis?.x ?? 1, w.axis?.y ?? 0, w.axis?.z ?? 0).normalize();
+    jetSwing.setFromAxisAngle(jetAxis, angle);
+    jetPivot.set(w.pivot.x, w.pivot.y - groundDrop, w.pivot.z);
+  }
   for (const nozzle of flame.nozzles || [{ x: 0, y: 0.66, z: -0.5 }]) {
-    jetOrigin.set(nozzle.x, nozzle.y - groundDrop, nozzle.z)
-      .applyQuaternion(state.quaternion)
-      .add(state.position);
-    jetDir.set(dir.x, dir.y, dir.z).normalize().applyQuaternion(state.quaternion);
+    jetOrigin.set(nozzle.x, nozzle.y - groundDrop, nozzle.z);
+    jetDir.set(dir.x, dir.y, dir.z).normalize();
+    if (swinging) {
+      jetOrigin.sub(jetPivot).applyQuaternion(jetSwing).add(jetPivot);
+      jetDir.applyQuaternion(jetSwing);
+    }
+    jetOrigin.applyQuaternion(state.quaternion).add(state.position);
+    jetDir.applyQuaternion(state.quaternion);
     effects.spawnFlame(jetOrigin, jetDir, {
       count: Math.round(2 + lit * 4),
       speed: 11 * (0.6 + lit * 0.4),

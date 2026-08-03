@@ -7,6 +7,7 @@ import { EV } from "../shared/events.js";
 import { RAPIER, WEAPON_GROUPS, tagCollider } from "./world.js";
 import { contactPointBetween } from "./contacts.js";
 import { createSpinnerModel, resolveWeaponTuning, damageImpulseForRate } from "./weaponTuning.js";
+import { createFlamethrower } from "./flamethrower.js";
 import * as m from "./math.js";
 
 export const WEAPON_TUNING = Object.freeze({
@@ -594,12 +595,18 @@ function createCrusher({ vehicle, index, emit }) {
   const holdStrength = tuning.holdStrength ?? 6; // 1/s spring toward the hold point
   const holdDamping = tuning.holdDamping ?? 1; // share of the carrier's velocity matched
 
-  let engaged = false;
+  let engaged = false; // clamped onto the foe right now — also what a flamethrower
+                       // with requiresGrip asks about, since Kraken's nozzle
+                       // points into the bite zone and does nothing until the
+                       // jaw is shut on something.
   let stroke = 0;
   const srimech = { lastSrimechAt: -Infinity };
   let lastTickAt = -Infinity;
 
+
+  const isGripping = () => engaged;
   return {
+    isGripping,
     type: "crusher",
     update(dt, fire, ctx) {
       const { foe, simTime } = ctx;
@@ -955,12 +962,6 @@ function createLifterDisc({ vehicle, index, emit }) {
   const discZone = w.discZone ?? frontZone(spec, (tune.reach ?? 1.5) + 0.5, { minY: -0.5, maxY: 1.8 });
   const liftImpulse = w.liftImpulse ?? 150;
   const discMaxOmega = disc?.maxOmega ?? 380;
-  // The flame cone is long and narrow: it reaches well past the forks but only
-  // burns what is roughly ahead, so it rewards facing the target rather than
-  // being a free aura.
-  const flameZone = flame
-    ? frontZone(spec, flame.reach ?? 3.0, { pad: -0.2, minY: -0.6, maxY: 1.4 })
-    : null;
 
   let stroke = 0; // 0 forks down, 1 arm fully raised
   let omega = 0;
@@ -979,8 +980,6 @@ function createLifterDisc({ vehicle, index, emit }) {
   const srimech = { lastSrimechAt: -Infinity };
   let lastDiscHitAt = -Infinity;
   let lastLiftTickAt = -Infinity;
-  let lastBurnAt = -Infinity;
-  let burning = 0; // 0..1, drives the nozzle VFX through getSubAngle()
 
   function pivotWorld() {
     return m.add(vehicle.body.translation(), m.qRotate(vehicle.body.rotation(), w.pivot));
@@ -1047,28 +1046,6 @@ function createLifterDisc({ vehicle, index, emit }) {
       }
       if (!inZone) carrying = false;
 
-      // Flamethrower (free shipping): the alt channel again, but it burns
-      // rather than spins. Damage is continuous and small — it is a finisher
-      // and a crowd-pleaser, not a way to win a fight on its own.
-      if (flame) {
-        const lit = Boolean(ctx.input?.sawActive);
-        burning = m.clamp(burning + (lit ? dt / 0.12 : -dt / 0.25), 0, 1);
-        if (lit && localZoneContains(flameZone, local)
-          && simTime - lastBurnAt >= TU.hammerGrindTickSeconds) {
-          lastBurnAt = simTime;
-          emit(EV.WEAPON_HIT, {
-            attackerIndex: index,
-            targetIndex: foe.index,
-            point: m.add(foe.body.translation(), m.v3(0, 0.25, 0)),
-            normal: m.v3(0, -1, 0),
-            impulse: damageImpulseForRate(flame.damagePerSecond ?? 8, TU.hammerGrindTickSeconds),
-            appliedImpulse: 0, // fire pushes nothing over
-            energyBefore: 0,
-            heavy: false,
-          });
-        }
-      }
-
       if (!disc) return;
       // Disc: its own toggle, spinning whatever the arm is doing.
       const spinning = Boolean(ctx.input?.sawActive);
@@ -1106,9 +1083,8 @@ function createLifterDisc({ vehicle, index, emit }) {
       }
     },
     getAngle: () => stroke,
-    getSubAngle: () => burning,
     // The meter reads the disc when it is spinning, the arm otherwise.
-    getRatio: () => Math.max(stroke, disc ? omega / discMaxOmega : burning),
+    getRatio: () => Math.max(stroke, disc ? omega / discMaxOmega : 0),
     reset() {
       stroke = 0;
       omega = 0;
@@ -1118,8 +1094,6 @@ function createLifterDisc({ vehicle, index, emit }) {
       lastEmittedRatio = -1;
       lastDiscHitAt = -Infinity;
       lastLiftTickAt = -Infinity;
-      lastBurnAt = -Infinity;
-      burning = 0;
     },
   };
 }
@@ -1248,6 +1222,11 @@ function createGrappler({ vehicle, index, emit }) {
 
 /** Create the weapon system for one bot from its BotSimSpec. */
 export function createWeapon(args) {
+  const built = buildWeapon(args);
+  return args.vehicle.spec.weapon?.flame ? withFlamethrower(built, args) : built;
+}
+
+function buildWeapon(args) {
   const type = args.vehicle.spec.weapon?.type;
   // A full-body shell spinner runs the same rotor machine; what makes Gigabyte
   // different is that createSpinner sizes the weapon collider from
@@ -1271,5 +1250,39 @@ export function createWeapon(args) {
     getAngle: () => 0,
     getRatio: () => 0,
     reset() {},
+  };
+}
+
+/**
+ * Bolt a flamethrower onto any weapon. The weapon keeps running its own
+ * mechanism untouched; this adds the burn on the secondary channel and reports
+ * the jet ramp as the sub-angle, which is what the renderer draws fire from.
+ * A weapon that already reports a sub-angle of its own (Tantrum's fists,
+ * Whiplash's disc) keeps it — those bots have no flame, and a bot cannot spend
+ * the same channel twice.
+ */
+function withFlamethrower(base, args) {
+  const { vehicle, index, emit } = args;
+  const spec = vehicle.spec;
+  const flame = createFlamethrower({
+    spec, vehicle, index, emit,
+    zoneFor: frontZone,
+    inZone: localZoneContains,
+    tickSeconds: TU.hammerGrindTickSeconds,
+  });
+  if (!flame) return base;
+  return {
+    ...base,
+    update(dt, fire, ctx) {
+      base.update(dt, fire, ctx);
+      // `gripped` is the weapon's own idea of whether it is holding something.
+      // Kraken's flame points into the bite zone and is useless without one.
+      flame.update(dt, Boolean(ctx?.input?.sawActive), ctx, base.isGripping?.() ?? false);
+    },
+    getSubAngle: () => flame.getBurn(),
+    reset() {
+      base.reset?.();
+      flame.reset();
+    },
   };
 }

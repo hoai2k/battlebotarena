@@ -2043,6 +2043,21 @@ export const CATALOG = {
       spinUpSeconds: 0.2, // jaw close response
       budgetCap: 160, // enormous force, but it has to get a grip first
       dims: { x: 0.750, y: 0.500, z: 1.454 },
+      // The flamethrower fires from INSIDE the mouth — added in WC IV, aimed
+      // into the bite zone. requiresGrip is not a balance lever, it is what the
+      // weapon is: with the jaw open the jet goes past whatever is in front,
+      // and it only does anything once the jaw is already shut on something.
+      // MEASURED nozzle: the throat, on the jaw's centreline just behind the
+      // fangs, so the jet leaves through the teeth. ridesWeapon parents the
+      // emitter to modelWeapon, so it aims where the jaw points rather than
+      // where the bot points.
+      flame: {
+        nozzles: [{ x: 0, y: 1.35, z: -1.02 }],
+        dir: { x: 0, y: -0.12, z: -1 },
+        ridesWeapon: true,
+        requiresGrip: true,
+        reach: 3.2, scale: 0.85, damagePerSecond: 8,
+      },
       tuning: { strokeSeconds: 0.25, returnSeconds: 0.5, gripReach: 1.9 },
     },
     // The lower jaw is welded to the chassis and is the get-under wedge. Its
