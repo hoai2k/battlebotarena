@@ -1228,6 +1228,42 @@ await test("every animated weapon type is wired to something that moves it", asy
     missingSub.join(", "));
 });
 
+await test("a weapon channel survives the whole way from the pad to the renderer", async () => {
+  // Three layers sit between a trigger and a moving part, and each one can eat
+  // a channel silently: game/weaponControls shapes the press, game/match's
+  // filterInputs gates it on the match phase and on damage, and main.js hands
+  // the result to the renderer. Dragon King's saws were dead at the LAST of
+  // those, and every check that stopped short of it said the feature worked.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const { createWeaponInputShaper } = await import("../src/game/weaponControls.js");
+  const { createMatch } = await import("../src/game/match.js");
+  const spec = CATALOG.dragonking;
+  await withSim([spec, CATALOG.bronco], (sim, events) => {
+    const shaper = createWeaponInputShaper();
+    const match = createMatch({ sim, specs: [spec, CATALOG.bronco], emit: () => {}, on: () => () => {} });
+    match.start();
+    // Out of the countdown, which zeroes every channel — the reason a probe that
+    // never reaches "fight" reports every mechanism as broken.
+    for (let i = 0; i < 300; i++) match.update(1 / 60);
+    check(match.getState().phase === "fight", "the match reached fight",
+      `phase ${match.getState().phase}`);
+
+    // A pad press, through the real shaper and the real filter.
+    const press = (raw) => match.filterInputs([shaper.shape(raw, spec, 0), {}])[0];
+    let out = press({ weaponAlt: true }); // RB down: rising edge latches the saws
+    check(out.sawActive === true, "RB reaches the sim as sawActive", JSON.stringify(out.sawActive));
+    out = press({}); // and stays latched after release
+    check(out.sawActive === true, "and stays latched when the button comes up");
+    out = press({ weaponAux: true });
+    check(out.auxActive === true, "LB reaches it as auxActive");
+    out = press({ weaponLift: true });
+    check(out.liftActive === true, "LT reaches it as liftActive, not as the brake");
+    check(out.brake !== true, "and does not also brake this bot");
+    out = press({ weapon: true }); // RT: the jaw latch
+    check(out.weapon === true, "RT reaches it as the jaw latch");
+  });
+});
+
 // ---------------------------------------------------------------------------
 
 const failed = results.filter((r) => !r.ok);

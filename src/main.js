@@ -285,6 +285,7 @@ const ui = createUI({
 // bot-select practice viewer so a weapon you learn on the plinth is driven the
 // same way in the arena.
 const playerWeapons = createWeaponInputShaper();
+let lastInputs = null;
 const shapePlayerInput = (raw, spec, slot) => playerWeapons.shape(raw, spec, slot);
 let splitActive = false;
 
@@ -305,6 +306,7 @@ function frame() {
           : computeAiInput(renderNow[1], renderNow[0], session.specs[1], session.difficulty, dt),
       ];
       const filtered = session.match.filterInputs ? session.match.filterInputs(inputs) : inputs;
+      lastInputs = filtered;
       session.sim.stepFrame(dt, filtered);
       session.match.update?.(dt);
       session.audio.updateFrame?.(filtered, renderNow);
@@ -392,5 +394,12 @@ window.__bba2 = {
   THREE,
   syncBotVisual,
   updateWeaponSub,
+  // The inputs the loop last acted on, AFTER shaping and after match.filterInputs.
+  // A mechanism that does not move has three places to be lost — the pad read,
+  // the per-bot shaping, and the damage/phase filter — and only the last of them
+  // is visible from the sim. Exposed so a probe can say WHICH.
+  get lastInputs() {
+    return lastInputs;
+  },
   render: () => stage.render(),
 };
