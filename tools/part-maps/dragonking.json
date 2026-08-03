@@ -1,15 +1,70 @@
 {
-  "weapon": [12, 13, 14, 16],
+  "_note": "Parts 9 and 18 are REMOVED (glb-regroup.mjs ... none 9,18): together they are a black post with a bright yellow tip standing out of the middle of the deck between the saw arms. Nothing like it is on the real machine \u2014 the reference photo has a pneumatic ram lying across the body there, not a post \u2014 so it is scan invention. Re-cutting this bot must drop them again; the partition tool has no exclude list, so run glb-regroup after it.",
+  "_removed": [
+    9,
+    18
+  ],
+  "weapon": [
+    12,
+    13,
+    14,
+    16
+  ],
   "weaponSub": {
     "name": "saws",
-    "parts": [10, 11],
-    "pivotOverride": [0, 0.24, -0.1]
+    "parts": [
+      10,
+      11
+    ],
+    "pivotOverride": [
+      0,
+      0.24,
+      -0.1
+    ]
   },
   "wheels": [],
-  "weaponAxis": [1, 0, 0],
-  "pivotOverride": [0, 0.05, -0.12],
+  "weaponAxis": [
+    1,
+    0,
+    0
+  ],
+  "pivotOverride": [
+    0,
+    0.05,
+    -0.12
+  ],
   "aux": {
-    "jaw":  { "parts": [1, 0], "axis": [1, 0, 0], "pivotOverride": [0, 0.0, 0.12] },
-    "pods": { "parts": [6, 7], "axis": [1, 0, 0], "pivotOverride": [0, -0.05, -0.03] }
+    "jaw": {
+      "parts": [
+        1,
+        0
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "pivotOverride": [
+        0,
+        0.0,
+        0.12
+      ]
+    },
+    "pods": {
+      "parts": [
+        6,
+        7
+      ],
+      "axis": [
+        1,
+        0,
+        0
+      ],
+      "pivotOverride": [
+        0,
+        -0.05,
+        -0.03
+      ]
+    }
   }
 }

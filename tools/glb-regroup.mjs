@@ -1,7 +1,14 @@
 // Move segmentation parts between the model contract's groups, in place.
 //
 //   node tools/glb-regroup.mjs <bot.glb> <group> <part,part,...> [--write]
-//   group: body | weapon | aux-<name> | weaponSub-<name>
+//   group: body | weapon | aux-<name> | weaponSub-<name> | none
+//
+// `none` unparents the part instead, which is how a part that should not be on
+// the robot at all gets removed. glTF only draws what the scene graph reaches,
+// so an unparented part is gone from every renderer; its vertex data stays in
+// the BIN chunk, which is the same trade glb-carve.mjs already makes and costs
+// only bytes. Carving the triangles out would need the region to be expressed
+// in the right space, and for a whole part there is nothing to express.
 //
 // glb-partition.mjs is the tool that CUTS a bot, and it needs the raw Tripo
 // segmentation GLB to do it. Those are not in the repo — only the partitioned
@@ -23,9 +30,11 @@ if (!partList) {
   console.error("usage: node tools/glb-regroup.mjs <bot.glb> <group> <part,part,...> [--write]");
   process.exit(2);
 }
-const target = group === "body" ? "modelBody"
-  : group === "weapon" ? "modelWeapon"
-    : `model${group[0].toUpperCase()}${group.slice(1)}`;
+const REMOVE = group === "none";
+const target = REMOVE ? null
+  : group === "body" ? "modelBody"
+    : group === "weapon" ? "modelWeapon"
+      : `model${group[0].toUpperCase()}${group.slice(1)}`;
 const wanted = partList.split(",").map((p) => `tripo_part_${p.trim().replace(/^tripo_part_/, "")}`);
 
 const align4 = (v) => (v + 3) & ~3;
@@ -37,7 +46,7 @@ const binStart = 20 + align4(jsonLen) + 8;
 const binLen = buf.readUInt32LE(binStart - 8);
 
 const nodeIndex = new Map(json.nodes.map((n, i) => [n.name, i]));
-if (!nodeIndex.has(target)) {
+if (!REMOVE && !nodeIndex.has(target)) {
   throw new Error(`${path} has no ${target} — groups here are: ${json.nodes.map((n) => n.name).filter((n) => n?.startsWith("model")).join(", ")}`);
 }
 const groups = json.nodes.filter((n) => n.name?.startsWith("model"));
@@ -48,10 +57,10 @@ for (const part of wanted) {
   if (id === undefined) throw new Error(`${path} has no ${part}`);
   const from = groups.find((g) => (g.children || []).includes(id));
   if (!from) throw new Error(`${part} is not in any group`);
-  if (from.name === target) { console.log(`${part} already in ${target}`); continue; }
+  if (!REMOVE && from.name === target) { console.log(`${part} already in ${target}`); continue; }
   from.children = from.children.filter((c) => c !== id);
-  json.nodes[nodeIndex.get(target)].children.push(id);
-  moved.push(`${part}: ${from.name} -> ${target}`);
+  if (!REMOVE) json.nodes[nodeIndex.get(target)].children.push(id);
+  moved.push(`${part}: ${from.name} -> ${target ?? "removed"}`);
 }
 if (!moved.length) { console.log("nothing to do"); process.exit(0); }
 console.log(moved.join("\n"));
@@ -104,9 +113,13 @@ fs.writeFileSync(path, out);
 // Read it back: the container has to still parse and the move has to have stuck.
 const check = fs.readFileSync(path);
 const checkJson = JSON.parse(check.toString("utf8", 20, 20 + check.readUInt32LE(12)).trim());
-const dest = checkJson.nodes.find((n) => n.name === target);
 for (const part of wanted) {
   const id = checkJson.nodes.findIndex((n) => n.name === part);
-  if (!dest.children.includes(id)) throw new Error(`verify failed: ${part} is not in ${target}`);
+  const parents = checkJson.nodes.filter((n) => (n.children || []).includes(id)).map((n) => n.name);
+  if (REMOVE) {
+    if (parents.length) throw new Error(`verify failed: ${part} is still under ${parents.join(", ")}`);
+  } else if (!parents.includes(target)) {
+    throw new Error(`verify failed: ${part} is not in ${target} (it is under ${parents.join(", ") || "nothing"})`);
+  }
 }
-console.log(`verified: ${wanted.length} part(s) in ${target}, ${check.length} bytes`);
+console.log(`verified: ${wanted.length} part(s) ${REMOVE ? "unparented" : `in ${target}`}, ${check.length} bytes`);
