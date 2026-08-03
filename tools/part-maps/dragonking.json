@@ -1,4 +1,6 @@
 {
+  "_note": "Parts 0 and 1 are REMOVED: together they are a long black arm with a roller on the end, sticking straight out the back of the machine on the centreline. Nothing like it is on the real robot. They were ALSO what the jaw was pointed at, so every bite opened and shut that boom behind the robot while the dragon's head sat still. The head is parts 19 and 20: 19 is the yellow lower scoop and stays in the body as the fixed jaw, 20 is the black upper snout with the eye and is the part that moves. Its hinge is in repairs/dragonking-jaw-hinge.json. Re-cutting this bot must drop 0 and 1 again and re-point the jaw; the partition tool has no exclude list, so run glb-regroup after it.",
+  "_removed": [0, 1],
   "weapon": [12, 13, 14, 16],
   "weaponSub": {
     "name": "saws",
@@ -9,7 +11,7 @@
   "weaponAxis": [1, 0, 0],
   "pivotOverride": [0, 0.05, -0.12],
   "aux": {
-    "jaw":  { "parts": [1, 0], "axis": [1, 0, 0], "pivotOverride": [0, 0.0, 0.12] },
+    "jaw":  { "parts": [20], "axis": [1, 0, 0], "pivotOverride": [0, 0.035, -0.242] },
     "pods": { "parts": [6, 7], "axis": [1, 0, 0], "pivotOverride": [0, -0.05, -0.03] }
   }
 }

@@ -255,13 +255,19 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
     if (distance < strikeRange * 0.7) ai.latchedUntil = ai.t + 1.6;
     weapon = ai.t < ai.latchedUntil;
     if (weapon && distance < 2.2) throttleScale = 0.45; // stay planted while biting
-  } else if (type === "hammerSaw" || type === "sawArms") {
+  } else if (type === "hammerSaw") {
     // Close in, then rhythmic swings while on target.
     if (distance < strikeRange + 0.35 && ai.mode === "strike") {
       weapon = (ai.t - ai.lastStrikeAt) % 1.1 < 0.55;
     } else if (distance < 2.6) {
       weapon = true; // keep grinding while parked on the foe
     }
+  } else if (type === "sawArms") {
+    // Dragon King's primary is the JAW, and its channel means "held open", so
+    // the AI drives it the way a driver does: mouth open on the approach, shut
+    // the moment it arrives. Holding it open in contact is how you fail to bite.
+    weapon = distance > strikeRange * 0.85;
+    if (!weapon && distance < 2.6) throttleScale = 0.5; // stay planted on the bite
   } else if (type === "hammer") {
     // One heavy swing, then wait out the slow re-cock: swinging early wastes
     // the stroke, since the head only pays off at the bottom of the arc.
@@ -321,6 +327,9 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
   // Dragon King's jaw is the enabling weapon — its saws do nothing without a
   // grip — so it clamps and HOLDS whenever it is close enough to have one,
   // rather than pulsing the way Tantrum's arms do.
+  // Dragon King's aux is the saw-arm TILT, not the jaw: bring the saws down
+  // once there is something under them, which on this machine means once the
+  // jaw is shut on it.
   const auxActive = spec?.aux?.jaw
     ? distance < strikeRange * 0.9
     : Boolean(spec?.weapon?.fists)
@@ -340,5 +349,13 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
     const strafe = circling ? (Math.floor(ai.t / 2.4) % 2 === 0 ? 1 : -1) * 0.8 : 0;
     return { leftDrive, rightDrive, strafe, spin: turn, weapon, brake: false, sawActive, auxActive };
   }
-  return { leftDrive, rightDrive, weapon, brake: false, sawActive, auxActive };
+  // The body lift is the one thing on this machine that reaches BEHIND it, so
+  // that is when the AI uses it: a foe at the back, close, and no point trying
+  // to turn a bot this slow around first.
+  // signedAngleToDirection is 0 when the foe is dead ahead and +-pi when it is
+  // dead astern, so |angle| past a right angle IS "behind me".
+  const liftActive = Boolean(spec?.lift)
+    && Math.abs(signedAngleToDirection(selfState, dirToFoe)) > 2.1
+    && distance < strikeRange + 1.5;
+  return { leftDrive, rightDrive, weapon, brake: false, sawActive, auxActive, liftActive };
 }

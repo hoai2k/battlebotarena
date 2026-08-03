@@ -180,12 +180,22 @@
 .screen-select {
   padding: clamp(12px, 2vh, 26px) clamp(16px, 3vw, 40px);
   gap: clamp(10px, 1.6vh, 18px);
-  /* The roster is a full grid, so the screen scrolls rather than squeezing the
-     cards. The pods shrink until both are picked (see --stage-h) so the first
-     view still fits without scrolling on a normal display. */
+  /* This screen NEVER scrolls. Everything you need in order to choose has to be
+     on it at once: scrolling meant picking a bot from the bottom row updated a
+     pod you could not see, which reads as nothing happening, and it took a pile
+     of scroll-into-view rules to paper over. The grid is a fixed cost — it is
+     the whole roster and every card has to stay reachable — so the STAGE is
+     what flexes, taking whatever is left over. That also gets the viewers as
+     big as this screen can make them for free, which is what the fixed 56vh
+     heights were reaching for and what made it overflow.
+
+     `auto` rather than `hidden` is a safety valve, not a plan: below about
+     560px of viewport a pod cannot be drawn at a usable size AND leave room for
+     three rows of roster, and a scrollbar there is far better than clipping the
+     FIGHT button out of reach. At every size anyone plays at, there is nothing
+     to scroll. */
   overflow-y: auto;
   overscroll-behavior: contain;
-  scroll-behavior: smooth;
 }
 
 /* The live showcase canvas is FIXED to the viewport, not to the scrolling
@@ -199,12 +209,6 @@
   height: 100vh;
   z-index: 0;
   pointer-events: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .screen-select {
-    scroll-behavior: auto;
-  }
 }
 
 .screen-select > .select-head,
@@ -299,40 +303,24 @@
    3D view window in the middle (transparent — the canvas draws behind it),
    and a foot row with weapon badge, stat pips and the TEST WEAPON trigger. */
 
-/* Stage height is the whole layout trick. COMPACT while the player is still
-   choosing, so the roster grid fits on screen under it; FULL once both bays
-   are filled, which pushes the grid below the fold and hands the screen over
-   to the viewers (ui.js scrolls back to the top at that moment). */
+/* The stage takes everything the header and the roster do not. There is no
+   fixed height and no size classes any more: a vh figure is a guess about how
+   tall the grid will be, and every guess that was too generous overflowed a
+   screen that must not scroll. `flex: 1 1 auto` with `min-height: 0` is the
+   same intent stated as a constraint instead — as big as it can be, never
+   bigger than fits. The floor is there so a very short window still shows a
+   usable window rather than a sliver. */
 .select-stage {
-  --stage-h: clamp(178px, 25vh, 244px);
-  /* One bot picked: there is a live bot to look at but still a roster to read,
-     so the bay grows as far as it can while leaving the last grid row peeking
-     above the fold. Both picked -> .is-ready below, which takes the lot. */
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  /* A flat number, not a vh: this is "the least a pod can be and still be a
+     pod" — plate, a window you can see a bot in, and the foot row. Expressed as
+     a fraction of the viewport it collapses on a short window and the roster
+     draws straight over the pods instead of pushing them. */
+  min-height: 240px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: clamp(14px, 2.2vw, 34px);
   align-items: stretch;
-  transition: min-height 0.35s ease;
-  min-height: var(--stage-h);
-}
-
-.screen-select.is-picking .select-stage {
-  /* Nearly the whole screen: with a bot staged there is something worth looking
-     at, and the roster only has to stay reachable, not fully visible. Sized so
-     the last grid row is pushed mostly under the fold with a sliver showing —
-     enough to say "there is more down here" without wasting the bay. */
-  --stage-h: clamp(300px, 56vh, 600px);
-}
-
-.screen-select.is-ready .select-stage {
-  --stage-h: clamp(300px, 58vh, 640px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .select-stage {
-    transition: none;
-  }
 }
 
 .preview-pod {
@@ -507,6 +495,29 @@
   }
 }
 
+/* Browsing: this bay is showing the bot under the cursor, which is NOT the same
+   claim as one you have pressed A on. It keeps the armed dashes so it still
+   reads as an open bay, and its plate and pips are held back so the difference
+   between "what you are looking at" and "what you have taken" is visible
+   without having to read either. Claiming it is what brings them to full. */
+.preview-pod.is-preview .pod-plate,
+.preview-pod.is-preview .pod-stats,
+.preview-pod.is-preview .pod-badge {
+  opacity: 0.62;
+}
+
+.preview-pod.is-preview .pod-plate {
+  filter: saturate(0.65);
+}
+
+.preview-pod .pod-plate,
+.preview-pod .pod-stats,
+.preview-pod .pod-badge {
+  transition:
+    opacity 0.18s ease,
+    filter 0.18s ease;
+}
+
 .pod-empty {
   position: absolute;
   inset: 0;
@@ -618,90 +629,38 @@
    spin-up is the thing the practice viewer exists to teach. */
 .pod-controls {
   display: flex;
+  flex-direction: column;
   align-items: flex-end;
-  gap: 8px;
+  gap: 2px;
   margin-left: auto;
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  line-height: 1.5;
+  color: var(--white);
 }
 
 .pod-rival .pod-controls {
   margin-left: 0;
   margin-right: auto;
-  flex-direction: row-reverse;
+  align-items: flex-start;
 }
 
+/* The channel (RT / RB / LB / LT) is the part the player needs to find on the
+   pad, so it carries the accent; the mechanism name is what it does. */
 .pod-control {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  white-space: nowrap;
+  opacity: 0.82;
 }
 
-.pod-control:has(> .pod-test[hidden]) {
-  display: none;
+.pod-control > b {
+  color: var(--accent, var(--amber));
+  font-weight: 600;
 }
 
-.pod-meter {
-  display: block;
-  height: 3px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.pod-meter > i {
-  display: block;
-  width: 100%;
-  height: 100%;
-  transform: scaleX(0);
-  transform-origin: left center;
-  background: linear-gradient(90deg, var(--accent, var(--amber)), var(--yellow));
-}
-
-.pod-test {
-  flex: 0 0 auto;
-  padding: 9px 16px 8px;
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, var(--line-strong));
-  background: linear-gradient(180deg, var(--steel-600), var(--steel-800));
-  color: var(--white);
-  font-family: var(--font-display);
-  font-size: 0.8rem;
-  letter-spacing: 0.14em;
-  cursor: pointer;
-  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
-  transition: filter 0.12s ease;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: none;
-}
-
-.pod-test-alt,
-.pod-test-aux {
-  font-size: 0.72rem;
-  padding: 8px 12px 7px;
-  opacity: 0.9;
-}
-
-/* A latching channel says so, so the player knows a press sticks. */
-.pod-test[data-mode="toggle"]::after {
-  content: "⏻";
-  margin-left: 7px;
-  font-size: 0.7em;
-  opacity: 0.75;
-}
-
-.pod-test:hover {
-  filter: brightness(1.25);
-}
-
-.pod-test:focus-visible {
-  outline: 2px solid var(--amber);
-  outline-offset: 2px;
-}
-
-/* Channel running — held, latched on, or the trigger down. On a toggle this
-   stays lit after the press, which is the point. */
-.pod-test.is-live {
-  background: linear-gradient(180deg, var(--red-hot), var(--red) 48%, var(--red-deep));
-  border-color: rgba(255, 130, 110, 0.7);
-  box-shadow: 0 0 18px rgba(232, 54, 42, 0.5);
+.pod-control > i {
+  font-style: normal;
+  opacity: 0.6;
 }
 
 .select-mid {
@@ -746,6 +705,28 @@
   grid-template-columns: repeat(auto-fill, minmax(var(--card-min), 1fr));
   gap: clamp(8px, 1vw, 13px);
   padding: 4px 2px 10px;
+}
+
+/* Once a bot is CLAIMED the roster stops being the main event and pays for the
+   bay. Narrower cards mean more per row and one row fewer, and since the stage
+   simply takes whatever is left (see .select-stage) that row goes straight into
+   the viewers — about 120px of it. The badge goes too: at this width it is a
+   truncated word, and the pod beside it now says the same thing in full.
+   Browsing deliberately does NOT do this; the cursor is still in the grid, and
+   resizing it under the cursor is the screen moving while you read it. */
+.screen-select.is-showcase .bot-grid {
+  --card-min: clamp(58px, 5vw, 74px);
+  gap: clamp(6px, 0.7vw, 9px);
+}
+
+.screen-select.is-showcase .bot-card-badge {
+  display: none;
+}
+
+.screen-select.is-showcase .bot-card-name {
+  margin-top: 4px;
+  margin-bottom: 2px;
+  font-size: 0.66rem;
 }
 
 /* The roster's cost is ROWS, not columns, so on a short viewport the cards get
@@ -1167,6 +1148,21 @@
 @media (max-height: 640px) {
   .bot-card-badge {
     display: none;
+  }
+
+  /* The roster is a fixed cost the stage has to be paid out of, and on a short
+     window it is three rows tall whatever the cards' width, so the saving has
+     to come out of each card's HEIGHT. A wider thumbnail crop and a smaller
+     name give back about 20px a row, which is what keeps the pods at a usable
+     size here instead of the screen having to scroll. */
+  .bot-card-img {
+    aspect-ratio: 16 / 10;
+  }
+
+  .bot-card-name {
+    margin-top: 4px;
+    margin-bottom: 2px;
+    font-size: 0.7rem;
   }
 
   .pod-plate {

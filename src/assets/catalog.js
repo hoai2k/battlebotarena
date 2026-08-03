@@ -2172,10 +2172,11 @@ export const CATALOG = {
     accent: "#8a5a32",
     accentDark: "#2a2118",
     drive: { type: "tracked" },
-    // Rusty's two rubber tracks stay in the body (no aux group), so the scroll
-    // walks modelBody instead. It catches the tyres and nothing else that has a
-    // texture worth watching move.
-    tracks: { axis: "y", scale: 0.16 },
+    // No `tracks` block: Rusty's tracks are buried under its armour and its
+    // tread guards and are not visible from any angle the camera reaches, so
+    // there is nothing for a band to add. It DID have one, which named no aux
+    // node — so the scroll walked modelBody and dragged the texture on all 23
+    // of Rusty's parts around, the helmet and the hammer yoke included.
     weapon: {
       type: "hammer",
       // MEASURED front-of-yoke hinge, game space. The yoke is a U: two drilled
@@ -2253,10 +2254,13 @@ export const CATALOG = {
     accent: "#e8b21e",
     accentDark: "#141414",
     drive: { type: "tracked" },
-    // Both track units live in modelAux-pods, so the scroll rides the same node
-    // the pod rotation does. scale converts accumulated wheel rotation into UV
-    // travel — one texture repeat per 1/scale radians of ground roll.
-    tracks: { aux: "pods", axis: "y", scale: 0.16 },
+    // The two track units, by mesh name. engine/tracks.js sweeps a band around
+    // each one's silhouette — which for a tensioned track is its convex hull —
+    // and scrolls that along its own length. Naming the meshes is the point:
+    // the previous version scrolled the units' own UVs, and since each unit is
+    // ONE scanned mesh holding wheels, frame and band on a single atlas, that
+    // moved the texture in a different direction on every triangle.
+    tracks: { parts: ["tripo_part_6", "tripo_part_7"], widthAxis: "x", tint: "#232629" },
     weapon: {
       type: "sawArms",
       pivot: { x: 0.007, y: 0.659, z: 0.107 }, // MEASURED arm base, game space
@@ -2279,9 +2283,22 @@ export const CATALOG = {
     },
     // MEASURED aux pivots, game space. The jaw is the enabling weapon; the pods
     // rotate as whole units and drive the self-right.
+    // Rearing the body up about the axle at the back of the pods. LT holds it;
+    // the pods stay flat on the floor and the chassis swings up over them, which
+    // is the only way the saws on its back reach anything BEHIND the robot. The
+    // sim runs it as a real pitch servo on the chassis (sim/vehicle.js) rather
+    // than as an animation, because the whole point of the gesture is that what
+    // comes over the top collides with things.
+    lift: { maxAngleDeg: 90, seconds: 0.9, gain: 70, damping: 8.0, maxAccel: 150 },
     aux: {
+      // MEASURED hinge: the back-top of the skull where it meets the neck. The
+      // upper snout (part 20) is what swings; the yellow lower scoop (part 19)
+      // is welded to the chassis and is what a bitten bot is pressed onto.
+      // The mechanism's angle is how far OPEN it is — rest is shut — so the
+      // snout swings UP off the scoop, which is +x about the hinge.
       jaw: { node: "modelAux-jaw", axis: { x: 1, y: 0, z: 0 },
-             pivot: { x: 0.007, y: 0.461, z: 1.055 }, closeAngle: 0.7, seconds: 0.4 },
+             pivot: { x: 0, y: 0.138, z: -0.956 }, openAngle: 0.62, seconds: 0.4,
+             reach: 1.9, clampForce: 260, holdStrength: 9, breakDistance: 3.2 },
       pods: { node: "modelAux-pods", axis: { x: 1, y: 0, z: 0 },
               pivot: { x: 0.007, y: 0.264, z: 0.463 }, range: 2.2, seconds: 0.8,
               drivesSelfRight: true },

@@ -420,7 +420,7 @@ function detach(node) {
  */
 export function weaponVisualAngle(visual, spec, state) {
   const type = spec.weapon?.type;
-  if (type === "flipper" || type === "hammerSaw" || type === "crusher"
+  if (type === "flipper" || type === "hammerSaw" || type === "sawArms" || type === "crusher"
     || type === "hammer" || type === "lifter" || type === "lifterDisc" || type === "grappler") {
     const stroke = THREE.MathUtils.clamp(state.weaponAngle ?? 0, 0, 1);
     if (visual.weaponIsPlaceholder) return stroke * (spec.weapon.throwAngle ?? 0.9);

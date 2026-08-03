@@ -950,6 +950,144 @@ function createHammerSaw({ vehicle, index, emit }) {
 }
 
 // ---------------------------------------------------------------------------
+// Saw arms + jaw (dragonking)
+// ---------------------------------------------------------------------------
+
+// Dragon King is four separate machines and every one of them is on its own
+// button, because none of them means anything alone: the jaw is the grip, the
+// saws only cut what the jaw is already holding, the arms decide where the saws
+// are pointing, and the body lift is what lets any of it reach a bot BEHIND the
+// robot. It shared createHammerSaw with Sawblaze, which models a single swing
+// and could express none of that.
+//
+//   RT  jaw   LATCHED. Press to open, press again to bite and hold. A latch,
+//             not a hold, because the whole point is to keep hold of something
+//             while both hands are busy driving and running the saws.
+//   RB  saws  LATCHED spin-up. They are a motor, not a strike.
+//   LB  arms  HELD tilt toward the front. Release and they rake back up.
+//   LT  lift  HELD, and it belongs to the vehicle, not here — see sim/vehicle.js.
+function createSawArms({ vehicle, index, emit }) {
+  const spec = vehicle.spec;
+  const w = spec.weapon;
+  const tune = resolveWeaponTuning(spec);
+  const jawCfg = spec.aux?.jaw ?? {};
+  const sub = w.sub ?? {};
+
+  const zone = tune.zone ?? frontZone(spec, tune.reach ?? 2.4, { maxY: 1.6 });
+  const biteZone = w.biteZone ?? frontZone(spec, jawCfg.reach ?? 1.6, { pad: -0.1, maxY: 1.2 });
+  const holdPoint = jawCfg.holdPoint ?? { x: 0, y: 0.3, z: -(spec.bodyDims.z / 2 + 0.9) };
+
+  let jawOpen = false; // the latch: false = shut, true = held open
+  let jawStroke = 1; // 1 shut on the deck, 0 fully open
+  let gripped = false; // shut ON something
+  let armStroke = 0; // 0 raked back over the body, 1 tilted forward
+  let sawSpin = 0; // 0..1
+  let lastGrindAt = -Infinity;
+  const srimech = { lastSrimechAt: -Infinity };
+
+  /**
+   * Bite: the jaw is SHUTTING and there is something in the mouth. The window
+   * is the close itself — 0.55 shut up to but not including fully shut — so a
+   * mouth that is already closed cannot grab a bot that wanders into it. You
+   * have to open it and shut it on something, which is the whole gesture.
+   */
+  function tryBite(foe) {
+    if (gripped || jawStroke < 0.55 || jawStroke >= 1) return;
+    const local = toLocal(vehicle, foe.body.translation());
+    if (!localZoneContains(biteZone, local)) return;
+    gripped = true;
+    emit(EV.WEAPON_FIRED, { botIndex: index, weaponType: "jaw" });
+  }
+
+  /**
+   * Hold what is bitten. Same shape as the crusher's carry — servo the target
+   * toward a point in front of the mouth so it is HAULED rather than merely
+   * pinned, and pay for it equal-and-opposite so towing 250lb costs something.
+   */
+  function carry(dt, foe) {
+    const carrier = vehicle.body;
+    const target = m.add(carrier.translation(), m.qRotate(carrier.rotation(), holdPoint));
+    const offset = m.sub(target, foe.body.translation());
+    if (m.length(offset) > (jawCfg.breakDistance ?? 3.2)) { gripped = false; return; }
+    const wanted = m.add(m.scale(carrier.linvel(), 0.9), m.scale(offset, jawCfg.holdStrength ?? 9));
+    const effective = (vehicle.mass * foe.mass) / (vehicle.mass + foe.mass);
+    let pull = m.scale(m.sub(wanted, foe.body.linvel()), effective * Math.min(1, dt * 10));
+    const cap = effective * (jawCfg.holdImpulseCap ?? 60) * dt;
+    const magnitude = m.length(pull);
+    if (magnitude > cap) pull = m.scale(pull, cap / magnitude);
+    foe.body.applyImpulse(pull, true);
+    vehicle.body.applyImpulse(m.scale(pull, -1), true);
+    // Clamp force down through the mouth, so a held bot is pressed onto the
+    // fixed lower scoop instead of floating in front of it.
+    const jawPoint = m.add(foe.body.translation(), m.v3(0, 0.3, 0));
+    foe.body.applyImpulseAtPoint(m.scale(UP, -(jawCfg.clampForce ?? 260) * dt), jawPoint, true);
+  }
+
+  /** The saws only cut what is held, and only with the arms down on it. */
+  function grind(foe, simTime) {
+    if (!gripped || sawSpin < 0.5 || armStroke < 0.5) return;
+    if (simTime - lastGrindAt < TU.hammerGrindTickSeconds) return;
+    const local = toLocal(vehicle, foe.body.translation());
+    if (!localZoneContains(zone, local)) return;
+    lastGrindAt = simTime;
+    const rate = (sub.damagePerSecond ?? 14) * sawSpin * armStroke;
+    emit(EV.WEAPON_HIT, {
+      attackerIndex: index,
+      targetIndex: foe.index,
+      point: m.add(foe.body.translation(), m.v3(0, 0.4, 0)),
+      normal: m.v3(0, -1, 0),
+      impulse: damageImpulseForRate(rate, TU.hammerGrindTickSeconds),
+      energyBefore: 0,
+      heavy: false,
+    });
+  }
+
+  return {
+    type: "sawArms",
+    update(dt, fire, ctx) {
+      // `fire` is already the LATCH state: weaponControls toggles it, so here it
+      // simply means "the jaw is being held open".
+      jawOpen = Boolean(fire);
+      const jawSeconds = Math.max(0.05, jawCfg.seconds ?? 0.4);
+      jawStroke = m.clamp(jawStroke + (jawOpen ? -dt : dt) / jawSeconds, 0, 1);
+      if (jawOpen) gripped = false;
+      else tryBite(ctx.foe);
+      if (gripped) carry(dt, ctx.foe);
+
+      const armSeconds = Math.max(0.05, tune.strokeSeconds ?? 0.4);
+      const armBack = Math.max(0.05, tune.returnSeconds ?? 0.7);
+      const tilting = Boolean(ctx.input?.auxActive);
+      armStroke = m.clamp(armStroke + (tilting ? dt / armSeconds : -dt / armBack), 0, 1);
+
+      const spinSeconds = Math.max(0.05, sub.spinUpSeconds ?? 1);
+      const spinning = Boolean(ctx.input?.sawActive);
+      sawSpin = m.clamp(sawSpin + (spinning ? dt / spinSeconds : -dt / (spinSeconds * 1.6)), 0, 1);
+
+      // Driving the arms down against the floor rolls the bot back over, the
+      // same as any other arm that can reach it.
+      if (tilting) armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
+      grind(ctx.foe, ctx.simTime);
+    },
+    /** Arm tilt drives the visual arm angle. */
+    getAngle: () => armStroke,
+    /** Saw spin-up, for the blades' own rotation. */
+    getSubAngle: () => sawSpin,
+    /** How far OPEN, 0..1. botAnimation swings the snout up by this much. */
+    getAuxAngle: () => 1 - jawStroke,
+    getRatio: () => sawSpin,
+    isGripping: () => gripped,
+    reset() {
+      jawOpen = false;
+      jawStroke = 1;
+      gripped = false;
+      armStroke = 0;
+      sawSpin = 0;
+      lastGrindAt = -Infinity;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Hammer (beta)
 // ---------------------------------------------------------------------------
 
@@ -1430,7 +1568,8 @@ function buildWeapon(args) {
   // full extension while the trigger is down (that is the cut), and the blades
   // are their own latched channel. The difference is the jaw, which is an aux
   // group rather than part of the weapon.
-  if (type === "hammerSaw" || type === "sawArms") return createHammerSaw(args);
+  if (type === "sawArms") return createSawArms(args);
+  if (type === "hammerSaw") return createHammerSaw(args);
   if (type === "hammer") return createHammer(args);
   if (type === "lifterDisc" || type === "lifter") return createLifterDisc(args);
   if (type === "grappler") return createGrappler(args);

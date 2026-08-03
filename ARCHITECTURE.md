@@ -94,6 +94,16 @@ export async function createSim({ bots, emit }) // bots: [BotSimSpec, BotSimSpec
   three separate mechanisms, which today is only Tantrum's punch arms; LB is the
   brake for everyone else, and `game/weaponControls.js` is the one place that
   knows which is which.
+- `liftActive` is a FOURTH held channel (LT), read only by a bot with a `lift`
+  block — today Dragon King, which rears its whole chassis up about the axle at
+  the back of its track pods. It is a real pitch servo in `sim/vehicle.js`, not
+  an animation, because the point of the gesture is that what comes over the top
+  collides with things: it is the only way this machine reaches a bot BEHIND it.
+  `podAngle()` reports how far it has got, and the renderer counter-rotates the
+  pods by exactly that so they stay flat on the floor while the body swings over
+  them — measured through the real loop, the body's up vector goes 1.00 -> 0.10
+  while the pods' stays at 1.00. LT is the brake for every bot without a `lift`
+  block, resolved in `weaponControls.js` the same way LB is.
 - `strafe` and `spin` are read only by a bot whose `drive.type` is `holonomic`
   (Glitch, Shatter): its omniwheels resolve into movement along both chassis
   axes AND yaw, independently, so its sticks are not a tank pair. LEFT STICK
@@ -128,6 +138,13 @@ export async function createSim({ bots, emit }) // bots: [BotSimSpec, BotSimSpec
    left to come out of tyre slip. Lateral: friction-circle clamp
    `|F_lat| ≤ μ·F_n` (μ≈1.1) — no velocity scrubbing. Extra yaw damping torque
    when no turn input. Airborne: no drive forces, light angular damping only.
+   A `drive.type === "tracked"` bot does not coast: the stop is commanded in
+   full the instant the input goes (`trackedStopBoost`) and the friction ceiling
+   that would otherwise limit it is lifted (`trackedBrakeGrip`). Both are
+   DECELERATION-ONLY, so a track buys no extra acceleration and no extra grip in
+   a turn — it is not a grippier tyre, it is a drivetrain that will not
+   freewheel. Neither tracked bot needs a brake as a result, which is what frees
+   LT on Dragon King for its body lift.
 3. **Spinners** (bar/drum): spin state is scalar energy `E = ½Iω²`; weapon
    mesh spins visually. Weapon collider is a thin solid cuboid/cylinder in its
    own collision group (hits opponent + props, not floor). On contact with
@@ -166,9 +183,15 @@ export async function createSim({ bots, emit }) // bots: [BotSimSpec, BotSimSpec
 8. **Screws** (corner spinners): kinematic cylinders with
    `setNextKinematicRotation`; surface friction conveys bots; grind events on
    contact.
-9. **Mass/COM**: from catalog — total weight, COM low and slightly rear,
+9. **Environment**: `engine/environment.js` builds one small generated
+   environment (a gradient plus a band of house lights, through PMREM) and both
+   the arena and the bot-select plinth set it as `scene.environment`. Metal has
+   no diffuse term in a PBR renderer — with nothing to reflect it renders black,
+   which is why a polished part had to lie about its metalness to stay bright
+   and then read as painted plastic. This is a game made entirely of metal.
+10. **Mass/COM**: from catalog — total weight, COM low and slightly rear,
    yaw inertia < pitch/roll (~0.7×). No density stacking.
-10. **Safety rails**: velocity cap ~60ft/s, arena escape clamp = gentle
+11. **Safety rails**: velocity cap ~60ft/s, arena escape clamp = gentle
     inward impulse (not teleport) if outside walls.
 
 ### Headless tests (v2/tools/sim-tests.mjs, `node v2/tools/sim-tests.mjs`)
@@ -265,6 +288,21 @@ the sim tests and the roster grid size themselves off it.
   the stroke returns).
 - `tuning.ownerPitchScale > 0` (Deep Six) makes a spinner's own hits tumble it
   — the reason the biggest weapon in the game is not simply the best.
+- A weapon type must be named in THREE places to be visible, not two: the
+  catalog, the sim, and the renderer's two lists —
+  `models.weaponVisualAngle` (arm types whose 0..1 stroke maps onto an arc) and
+  `botAnimation.updateWeaponSub` (types with a nested spinner). `sawArms` was
+  missing from both, so Dragon King's arms never tilted and its saw discs never
+  turned while the sim happily spun the rotor and gated damage on it.
+  `tools/sim-tests.mjs` now asserts the lists cover the roster.
+- `sawArms` (Dragon King) is four mechanisms on four buttons, because none of
+  them means anything alone: RT LATCHES the jaw (press to open, press again to
+  bite and hold — a latch, not a hold, because you have to keep hold of
+  something while both hands are driving), RB latches the saw motors, LB holds
+  the arm tilt, LT holds the body lift. The jaw is the enabling weapon: the saws
+  only cut a bot the jaw is gripping, and only with the arms down on it. It used
+  to share `createHammerSaw` with Sawblaze, which models one swing and could
+  express none of that.
 - `weapon.overheadStall` (Gigabyte) says the rotor IS the roof, so a hammer that
   comes down square on it stops the rotor dead and jams it for a beat: `radius`
   is how far from the bot's centre the head still lands on the spinning face,
@@ -637,7 +675,10 @@ long RT was held.
 
 **The pods are a PRACTICE viewer, not a showreel.** The owner orbits with the
 right stick, leans in with LT, and works the weapon on RT/RB/LB — the same
-channels as a fight. Raw presses go through `game/weaponControls.js`, the ONE
+channels as a fight, driven by the PAD — the pod carries no test buttons, only a
+read-only legend of the selected bot's channels (`describeWeaponControls`), which
+can list all four of Dragon King's where a fixed row of buttons covered three.
+Raw presses go through `game/weaponControls.js`, the ONE
 definition of which button does what, shared with main.js's match loop; the
 motion comes from `engine/previewWeapon.js`, which mirrors the phase machines
 in `sim/weapons.js` off the same `resolveWeaponTuning` numbers, and is drawn

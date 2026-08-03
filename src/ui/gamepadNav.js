@@ -102,6 +102,9 @@ function centerOf(el) {
  * @param {(screen: string|null, player: number) => boolean} [opts.onStart] return true if handled
  * @param {(el: HTMLElement, player: number) => boolean} [opts.onActivate] return true if handled
  * @param {(count: number) => void} [opts.onPlayerCountChange] fires when the connected-pad count changes
+ * @param {(el: HTMLElement|null, player: number) => void} [opts.onFocusChange] fires whenever a cursor lands
+ *   somewhere new. The screen owns what that MEANS — bot select uses it to stage
+ *   the bot under the cursor in the 3D bay.
  * @param {string[]} [opts.duoScreens] screens that give each pad its own cursor
  * @param {HTMLElement|null} [opts.modal] settings modal element
  */
@@ -111,6 +114,7 @@ export function createGamepadNav({
   onStart,
   onActivate,
   onPlayerCountChange,
+  onFocusChange,
   duoScreens = [],
   modal = null,
 } = {}) {
@@ -213,8 +217,10 @@ export function createGamepadNav({
   }
 
   function setFocus(el, { scroll = true, player = 0 } = {}) {
+    const moved = cursors[player] !== (el || null);
     clearFocusClass(player);
     cursors[player] = el || null;
+    if (moved) onFocusChange?.(el || null, player);
     if (!el) return;
     paintFocus(el, player);
     // Only the primary cursor owns real DOM focus — there is just one
@@ -271,8 +277,7 @@ export function createGamepadNav({
    * disabled until both bots are picked), so nav falls back to geometry rather
    * than dead-ending.
    */
-  function hintedNext(from, dir) {
-    const hint = from?.dataset?.[`nav${dir[0].toUpperCase()}${dir.slice(1)}`];
+  function firstFocusable(hint) {
     if (!hint) return null;
     const list = items();
     // Comma-separated = priority order, NOT a selector list: the first entry
@@ -283,6 +288,22 @@ export function createGamepadNav({
       if (target && list.includes(target)) return target;
     }
     return null;
+  }
+
+  function hintedNext(from, dir) {
+    return firstFocusable(from?.dataset?.[`nav${dir[0].toUpperCase()}${dir.slice(1)}`]);
+  }
+
+  /**
+   * Where a wrap should LAND, when the screen has an opinion:
+   * `data-nav-wrap-up/down="<selector>"` on the screen element. Coming off the
+   * bottom of the roster, geometry says "the topmost thing", which is whatever
+   * happens to sit in the top-left corner — but the thing you want after
+   * picking a bot is FIGHT. Same priority-list rule as the per-element hints,
+   * so a disabled FIGHT simply falls through to geometry.
+   */
+  function wrapHint(dir) {
+    return firstFocusable(root()?.dataset?.[`navWrap${dir[0].toUpperCase()}${dir.slice(1)}`]);
   }
 
   /**
@@ -343,12 +364,33 @@ export function createGamepadNav({
     if (aligned) return aligned;
     if (loose) return loose;
 
-    // Fallback: DOM order. Left/right wraps (so the end of a grid row rolls
-    // into the next one); up/down clamps so the edges feel like walls.
+    // Nothing lies that way, so this is an edge. Both axes WRAP rather than
+    // stop: pressing down at the bottom of the roster rolls back to the top of
+    // the screen, where FIGHT is, which is where you want to be once you have
+    // picked. A wall there is just a press that does nothing.
+    //
+    // Vertical wrap goes to the extreme SPATIALLY, not by DOM order — the grid
+    // is laid out by CSS and its DOM order says nothing about which card is
+    // bottom-left. The tie-break is the x distance, so a column stays a column
+    // across the wrap.
     const i = list.indexOf(from);
-    const step = dir === "right" || dir === "down" ? 1 : -1;
-    if (!horizontal) return list[i + step] || from;
-    return list[(i + step + list.length) % list.length];
+    if (horizontal) return list[(i + (sign > 0 ? 1 : -1) + list.length) % list.length];
+    const wrapTo = wrapHint(dir);
+    if (wrapTo && wrapTo !== from) return wrapTo;
+    let best = null;
+    let bestScore = Infinity;
+    for (const el of list) {
+      if (el === from) continue;
+      const b = centerOf(el);
+      // Coming back in from the far edge: down wraps to the highest thing on
+      // screen, up wraps to the lowest.
+      const score = (sign > 0 ? b.y : -b.y) + Math.abs(b.x - a.x) * 0.35;
+      if (score < bestScore) {
+        bestScore = score;
+        best = el;
+      }
+    }
+    return best || from;
   }
 
   function move(dir, player = 0) {
@@ -719,6 +761,13 @@ export function createGamepadNav({
     activate,
     back,
     startAction: start,
+    /** Put a player's cursor somewhere the screen decided it should be. The UI
+     *  owns "what just happened"; this owns "where the cursor is". */
+    focus(el, player = 0) {
+      if (!el || inert() || !items().includes(el)) return false;
+      setFocus(el, { player, scroll: false });
+      return true;
+    },
     refresh: ensureFocus,
     items,
     screens,

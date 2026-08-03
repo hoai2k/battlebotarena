@@ -50,6 +50,19 @@ function mapDrive(raw, spec) {
 /** Rotors: the primary button LATCHES them on and off. */
 export const SPINNER_TYPES = new Set(["bar", "drum", "shellSpinner"]);
 
+/**
+ * Does this bot spend LT on a mechanism instead of on the brake? Dragon King
+ * rears its whole body up about the axle at the back of its pods, and that is a
+ * HELD gesture with nowhere else to live: RT, RB and LB are already a jaw, a
+ * pair of saw motors and the arm tilt, and none of the four can share with
+ * another because you use them together — bite, drive somewhere, run the saws
+ * up, tilt them down. Losing the brake is the price of being a four-mechanism
+ * robot, and it is the least-used button on a bot that slow.
+ */
+export function usesLiftChannel(spec) {
+  return Boolean(spec?.lift);
+}
+
 /** Arms whose SECONDARY channel latches (saw motor, disc, jaw, flame). */
 export const ALT_TOGGLE_TYPES = new Set(["hammerSaw", "sawArms", "lifterDisc", "grappler", "lifter"]);
 
@@ -75,7 +88,7 @@ const PRIMARY_LABELS = {
 
 /** Does this bot spend the aux channel, i.e. is LB something other than brake? */
 export function usesAuxChannel(spec) {
-  // Tantrum's punch arms and Dragon King's clamping jaw. Both are a third
+  // Tantrum's punch arms and Dragon King's saw-arm tilt. Both are a third
   // machine that cannot share a button with the second one.
   return Boolean(spec?.weapon?.fists) || Boolean(spec?.aux?.jaw);
 }
@@ -90,7 +103,17 @@ export function usesAuxChannel(spec) {
  */
 export function describeWeaponControls(spec) {
   const w = spec?.weapon;
-  if (!w) return { primary: null, secondary: null, aux: null };
+  if (!w) return { primary: null, secondary: null, aux: null, lift: null };
+  // Dragon King reads nothing like the rest of the roster: its PRIMARY is the
+  // jaw, not the saws, because the jaw is what every other mechanism depends on.
+  if (w.type === "sawArms") {
+    return {
+      primary: { label: "BITE", toggle: true },
+      secondary: { label: "SAWS", toggle: true },
+      aux: { label: "TILT SAWS", toggle: false },
+      lift: { label: "REAR UP", toggle: false },
+    };
+  }
   const primary = SPINNER_TYPES.has(w.type)
     ? { label: "SPIN UP", toggle: true }
     : { label: PRIMARY_LABELS[w.type] || "WEAPON", toggle: false };
@@ -105,6 +128,7 @@ export function describeWeaponControls(spec) {
       primary: { label: "RAISE", toggle: false },
       secondary: { label: "LOWER", toggle: false },
       aux: null,
+      lift: null,
     };
   }
   // Tantrum's carriage is MOMENTARY on purpose: the button is the wind-up, and
@@ -118,10 +142,8 @@ export function describeWeaponControls(spec) {
   // latching them would leave the arms standing up in the air.
   // The jaw is held, not latched: it is the grip, and letting go is how you
   // let go. Dragon King's saws do nothing without it.
-  const aux = w.fists ? { label: "FISTS", toggle: false }
-    : spec.aux?.jaw ? { label: "JAW", toggle: false }
-      : null;
-  return { primary, secondary, aux };
+  const aux = w.fists ? { label: "FISTS", toggle: false } : null;
+  return { primary, secondary, aux, lift: null };
 }
 
 /**
@@ -149,29 +171,51 @@ export function createWeaponInputShaper() {
     // bot that does not. Resolving it here rather than in the input layer is
     // what keeps the input layer from having to know the catalog.
     const aux = Boolean(raw.weaponAux);
-    const brake = Boolean(raw.brake) || (aux && !usesAuxChannel(spec));
+    // LT is the brake on every bot that does not spend it on something else,
+    // exactly as LB is. Resolving both here is what keeps the input layer from
+    // having to know the catalog.
+    const liftActive = usesLiftChannel(spec) ? Boolean(raw.weaponLift) : false;
+    const brake = Boolean(raw.brake)
+      || (aux && !usesAuxChannel(spec))
+      || (Boolean(raw.weaponLift) && !usesLiftChannel(spec));
+    // Dragon King: RT LATCHES the jaw (press to open, press again to bite and
+    // hold), RB latches the saw motors, LB holds the arm tilt, LT holds the
+    // body lift. Four mechanisms, four buttons, and the jaw latches because you
+    // have to keep hold of something while driving and running the saws.
+    if (type === "sawArms") {
+      if (weaponEdge) weaponLatch[slot] = !weaponLatch[slot];
+      if (altEdge) sawLatch[slot] = !sawLatch[slot];
+      return {
+        ...raw,
+        weapon: weaponLatch[slot],
+        sawActive: sawLatch[slot],
+        auxActive: aux,
+        liftActive,
+        brake,
+      };
+    }
     if (SPINNER_TYPES.has(type)) {
       if (weaponEdge) weaponLatch[slot] = !weaponLatch[slot];
       // Tantrum's drum latches like any spinner. Its carriage and its arms are
       // both momentary, and on separate buttons, because the carriage's whole
       // point is that RELEASING it is the shot.
       if (spec.weapon.fists || spec.weapon.track) {
-        return { ...raw, weapon: weaponLatch[slot], sawActive: Boolean(raw.weaponAlt), auxActive: aux, brake };
+        return { ...raw, weapon: weaponLatch[slot], sawActive: Boolean(raw.weaponAlt), auxActive: aux, liftActive, brake };
       }
-      return { ...raw, weapon: weaponLatch[slot], brake };
+      return { ...raw, weapon: weaponLatch[slot], liftActive, brake };
     }
     // Split controls: the trigger drives the arm, RB latches the second
     // mechanism. Free Shipping spends that channel on flame; Duck has nothing
     // on it and simply ignores it.
     // Two-way arm: both channels are momentary directions, so neither latches.
     // Checked before the toggle set because a plain lifter is in that set.
-    if (spec?.weapon?.twoWayArm) return { ...raw, sawActive: Boolean(raw.weaponAlt), brake };
+    if (spec?.weapon?.twoWayArm) return { ...raw, sawActive: Boolean(raw.weaponAlt), liftActive, brake };
     if (altLatches(spec)) {
       if (altEdge) sawLatch[slot] = !sawLatch[slot];
-      return { ...raw, sawActive: sawLatch[slot], auxActive: aux, brake };
+      return { ...raw, sawActive: sawLatch[slot], auxActive: aux, liftActive, brake };
     }
     // flipper fires on press, crusher bites while held, hammer swings while held
-    return { ...raw, brake };
+    return { ...raw, liftActive, brake };
   }
 
   function reset(slot = null) {

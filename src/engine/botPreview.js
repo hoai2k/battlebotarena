@@ -33,6 +33,7 @@
 import * as THREE from "three";
 import { loadBotModel } from "../assets/models.js";
 import { syncBotVisual, updateWeaponSub } from "./botAnimation.js";
+import { arenaEnvironment } from "./environment.js";
 import { createEffects, spawnBotFlame } from "./effects.js";
 import { createPreviewWeapon } from "./previewWeapon.js";
 import { createWeaponInputShaper, describeWeaponControls } from "../game/weaponControls.js";
@@ -49,6 +50,14 @@ const ZOOM_MIN = 0.55;
 const ZOOM_MAX = 1.9;
 const AUTO_SPIN_AFTER = 2.5; // s of no camera input before the turntable drift resumes
 const AUTO_SPIN_SPEED = 0.22; // rad/s
+// The claim flourish. Browsing already puts a bot in the bay, so the pod looks
+// the same the instant before you press A as the instant after — without this
+// the one moment the whole screen exists for reads as nothing happening. A full
+// turn is unmistakable at a glance and lands back exactly where it started, so
+// it costs the player nothing: whatever angle they were studying is the angle
+// they get back.
+const CLAIM_SECONDS = 0.85;
+const CLAIM_RING_FLASH = 3.4; // x the ring's resting emissive at the peak
 // A click (pad A / keyboard Enter) with no pointer hold behind it still has to
 // produce a real button press, so it is replayed as a short raw pulse. On a
 // LATCHING channel one pulse is one edge, which is exactly one toggle; on a
@@ -58,8 +67,6 @@ const AUTO_SPIN_SPEED = 0.22; // rad/s
 // missed edge is a button that silently does nothing; a seconds-based floor
 // loses that race whenever a frame runs long. Two frames is always enough and
 // is never perceptible.
-const MIN_PRESS_FRAMES = 2;
-const CLICK_PRESS_FRAMES = 4; // a synthetic click (pad A / keyboard) has no hold behind it
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -89,7 +96,7 @@ function disposeObject(root) {
 export function createBotPreview({ canvas, pods = [] } = {}) {
   if (!canvas || pods.length === 0) {
     // Preview-less boot (tests, stripped DOM): every method is a no-op.
-    return { showBot: async () => {}, clearBot: () => {}, unload: () => {}, setControl: () => {}, dispose: () => {} };
+    return { showBot: async () => {}, clearBot: () => {}, claimBot: () => {}, unload: () => {}, setControl: () => {}, dispose: () => {} };
   }
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
@@ -102,6 +109,10 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   renderer.toneMappingExposure = 1.05;
 
   const scene = new THREE.Scene(); // transparent background: the screen's carbon backdrop shows through
+  // The same environment the arena reflects, so a polished part looks the same
+  // on the plinth as it does in the fight.
+  scene.environment = arenaEnvironment(renderer);
+  scene.environmentIntensity = 0.8;
 
   scene.add(new THREE.HemisphereLight(0xdbe8ff, 0x15130f, 1.65));
   const key = new THREE.DirectionalLight(0xffffff, 3.1);
@@ -176,24 +187,21 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       spec: null,
       token: 0,
       viewEl: pods[slot]?.view || null,
-      // Three channels, matching the pad: primary is RT, secondary is RB and
-      // aux is LB. Only a bot with three separate mechanisms shows the third.
-      buttons: {
-        primary: pods[slot]?.primary || null,
-        secondary: pods[slot]?.secondary || null,
-        aux: pods[slot]?.aux || null,
-      },
-      meters: {
-        primary: pods[slot]?.primaryMeter || null,
-        secondary: pods[slot]?.secondaryMeter || null,
-        aux: pods[slot]?.auxMeter || null,
-      },
+      // The pod has no test buttons any more: a controller runs the weapons
+      // here exactly as it does in the arena, and a fixed row of buttons could
+      // only ever cover the channels someone remembered to add one for — Dragon
+      // King has four mechanisms and there were three buttons. What is on
+      // screen instead is a read-only legend of THIS bot's channels, which can
+      // list all four.
+      controlsEl: pods[slot]?.controls || null,
       loadingEl: pods[slot]?.view?.querySelector?.(".pod-loading") || null,
       // Orbit state: yaw mirrored so both bots open on a facing 3/4 view.
       orbit: { yaw: slot === 0 ? 0.7 : -0.7, pitch: 0.4, zoom: 1, dist: 9, targetY: 1.1, lean: 0, idleFor: 99 },
+      /** Claim flourish: seconds into the spin-and-flash, or -1 when idle. */
+      claim: -1,
       /** Mirrors the sim's weapon stroke machine for this bot. */
       weapon: null,
-      controls: { primary: null, secondary: null, aux: null },
+      controls: { primary: null, secondary: null, aux: null, lift: null },
       state: {
         position: new THREE.Vector3(x, PLINTH_HEIGHT, 0),
         quaternion: new THREE.Quaternion(),
@@ -205,12 +213,6 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       // RAW (pre-latch) button state per channel, from pointer holds, click
       // pulses and the pad. The shaper turns these into shaped weapon input.
       raw: {
-        primaryHeld: false,
-        secondaryHeld: false,
-        auxHeld: false,
-        primaryFrames: 0, // frames this press must still be reported for
-        secondaryFrames: 0,
-        auxFrames: 0,
         primaryPad: false,
         secondaryPad: false,
         auxPad: false,
@@ -272,48 +274,6 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       });
     }
 
-    // Each weapon button reports a RAW press — held while the pointer is down,
-    // a short pulse for a click with no hold behind it (pad A / keyboard).
-    // Everything about latch-vs-momentary is decided downstream by the shared
-    // shaper, so these two handlers are identical for every weapon in the game.
-    const wireButton = (el, heldKey, framesKey) => {
-      if (!el) return;
-      // A pointer sequence sets the hold plus a two-frame floor, so even a tap
-      // shorter than a frame still shows the loop a rising edge. A bare click
-      // event — keyboard Enter, or gamepadNav's A -> el.click() — has no
-      // pointer behind it and is replayed as the floor alone.
-      let fromPointer = false;
-      const onDown = () => {
-        fromPointer = true;
-        bay.raw[heldKey] = true;
-        bay.raw[framesKey] = Math.max(bay.raw[framesKey], MIN_PRESS_FRAMES);
-      };
-      const release = () => {
-        bay.raw[heldKey] = false;
-      };
-      const onClick = () => {
-        if (fromPointer) {
-          fromPointer = false;
-          return; // the pointer press already delivered the edge
-        }
-        bay.raw[framesKey] = CLICK_PRESS_FRAMES;
-      };
-      el.addEventListener("pointerdown", onDown);
-      el.addEventListener("pointerup", release);
-      el.addEventListener("pointerleave", release);
-      el.addEventListener("pointercancel", release);
-      el.addEventListener("click", onClick);
-      bay.cleanups.push(() => {
-        el.removeEventListener("pointerdown", onDown);
-        el.removeEventListener("pointerup", release);
-        el.removeEventListener("pointerleave", release);
-        el.removeEventListener("pointercancel", release);
-        el.removeEventListener("click", onClick);
-      });
-    };
-    wireButton(bay.buttons.primary, "primaryHeld", "primaryFrames");
-    wireButton(bay.buttons.secondary, "secondaryHeld", "secondaryFrames");
-    wireButton(bay.buttons.aux, "auxHeld", "auxFrames");
   });
 
   // ------------------------------------------------------------- gamepads
@@ -374,14 +334,10 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       leftDrive: 0,
       rightDrive: 0,
       brake: false,
-      weapon: raw.primaryHeld || raw.primaryPad || raw.primaryFrames > 0,
-      weaponAlt: raw.secondaryHeld || raw.secondaryPad || raw.secondaryFrames > 0,
-      weaponAux: raw.auxHeld || raw.auxPad || raw.auxFrames > 0,
+      weapon: raw.primaryPad,
+      weaponAlt: raw.secondaryPad,
+      weaponAux: raw.auxPad,
     };
-    // Consumed only once this frame has actually reported it.
-    raw.primaryFrames = Math.max(0, raw.primaryFrames - 1);
-    raw.secondaryFrames = Math.max(0, raw.secondaryFrames - 1);
-    raw.auxFrames = Math.max(0, raw.auxFrames - 1);
     return press;
   }
 
@@ -412,17 +368,6 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     // sawActive channel it does in the match.
     updateWeaponSub(bay.visual, bay.spec, dt, Boolean(shaped.sawActive));
 
-    // Button + meter feedback. On a latching channel "live" means latched, so
-    // the button stays lit after you let go — which is the thing the player
-    // most needs to see about a spinner.
-    const primaryLive = Boolean(shaped.weapon);
-    const secondaryLive = Boolean(shaped.sawActive);
-    bay.buttons.primary?.classList.toggle("is-live", primaryLive);
-    bay.buttons.secondary?.classList.toggle("is-live", secondaryLive);
-    bay.buttons.aux?.classList.toggle("is-live", Boolean(shaped.auxActive));
-    if (bay.meters.primary) bay.meters.primary.style.transform = `scaleX(${bay.weapon.ratio().toFixed(3)})`;
-    if (bay.meters.secondary) bay.meters.secondary.style.transform = `scaleX(${bay.weapon.subRatio().toFixed(3)})`;
-    if (bay.meters.aux) bay.meters.aux.style.transform = `scaleX(${(bay.weapon.auxRatio?.() ?? 0).toFixed(3)})`;
   }
 
   // --------------------------------------------------------------- camera
@@ -430,6 +375,23 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     const orbit = bay.orbit;
     orbit.idleFor += dt;
     if (orbit.idleFor > AUTO_SPIN_AFTER) orbit.yaw += AUTO_SPIN_SPEED * dt; // showcase drift
+    if (bay.claim >= 0) {
+      // Ease-out over exactly one turn, then stop dead. Driven off the ANGLE
+      // rather than by adding a rate each frame, so the flourish ends on the
+      // yaw it started from however the frame times fall — an accumulated
+      // spin leaves the bot a few degrees off and the pod looks nudged.
+      const before = bay.claim;
+      bay.claim += dt;
+      const ease = (t) => 1 - (1 - Math.min(1, t / CLAIM_SECONDS)) ** 3;
+      orbit.yaw += (ease(bay.claim) - ease(before)) * Math.PI * 2;
+      if (bay.claim >= CLAIM_SECONDS) {
+        bay.claim = -1;
+        // The flash is computed from `claim` earlier in the same frame, so put
+        // the ring back here rather than leaving it a frame bright.
+        bay.ringMaterial.emissiveIntensity = 0.55;
+      }
+      orbit.idleFor = 0; // no turntable drift on top of the flourish
+    }
     // Distance that fits the model's bounding sphere in BOTH axes. Vertical FOV
     // is fixed; the horizontal one falls out of the aspect, and a wide bot in a
     // wide-but-short window is limited by the vertical one — so take whichever
@@ -541,6 +503,11 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     // a latched rotor has to keep spinning while you scroll down the roster.
     for (const bay of bays) {
       if (!bay.visual) continue;
+      // Light up with the spin: the plinth ring is already this bot's accent
+      // colour, so driving its emissive is a flash in the bot's OWN colour
+      // rather than a generic white pop, and it needs no extra geometry.
+      const flash = bay.claim >= 0 ? Math.sin((bay.claim / CLAIM_SECONDS) * Math.PI) : 0;
+      bay.ringMaterial.emissiveIntensity = 0.55 * (1 + (CLAIM_RING_FLASH - 1) * flash);
       updateWeaponAnim(bay, dt);
       syncBotVisual(bay.visual, bay.spec, bay.state);
       // A lit flamethrower is drawn here, from the same helper and the same
@@ -612,50 +579,46 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     bay.state.weaponAngle = 0;
     bay.state.weaponSubAngle = 0;
     bay.state.weaponTrack = 0;
-    bay.raw.primaryHeld = false;
-    bay.raw.secondaryHeld = false;
-    bay.raw.auxHeld = false;
-    bay.raw.primaryFrames = 0;
-    bay.raw.secondaryFrames = 0;
-    bay.raw.auxFrames = 0;
     bay.orbit.yaw = bay.slot === 0 ? 0.7 : -0.7;
     bay.orbit.pitch = 0.4;
     bay.orbit.idleFor = 99; // start on the slow showcase drift
-    bay.buttons.primary?.classList.remove("is-live");
-    bay.buttons.secondary?.classList.remove("is-live");
-    bay.buttons.aux?.classList.remove("is-live");
   }
 
-  /** Label the two channel buttons for this bot and hide the one it lacks. */
+  // Which pad control and which key run each channel. Naming the CHANNEL as
+  // well as the mechanism is the point: "FLAME" says what a button does but not
+  // which trigger it is, and a bot whose interesting mechanism is on the second
+  // channel (Free Shipping's flamethrower) gets reported as broken when the
+  // player holds RT and nothing burns.
+  const CHANNEL_KEYS = {
+    primary: { pad: "RT", key: "Space" },
+    secondary: { pad: "RB", key: "R" },
+    aux: { pad: "LB", key: "F" },
+    lift: { pad: "LT", key: "C" },
+  };
+
+  /** Write this bot's channels into the pod as a read-only legend. */
   function applyControls(bay, spec) {
     const controls = describeWeaponControls(spec);
     bay.controls = controls;
-    const dress = (el, meterEl, channel) => {
-      if (!el) return;
-      el.hidden = !channel;
-      if (meterEl?.parentElement) meterEl.parentElement.hidden = !channel;
-      if (!channel) return;
-      const labelEl = el.querySelector("[data-control-label]") || el;
-      // Name the CHANNEL as well as the mechanism. "LIFT" and "FLAME" say what
-      // the two buttons do but not which trigger is which, and a bot whose
-      // second channel is the interesting one (Free Shipping's flamethrower)
-      // gets reported as broken when the player holds RT and nothing burns.
-      const chan = el === bay.buttons.aux ? "LB" : el === bay.buttons.secondary ? "RB" : "RT";
-      const key = el === bay.buttons.aux ? "F" : el === bay.buttons.secondary ? "R" : "Space";
-      // Non-breaking space: "RT" and "LIFT" are one label, not two words.
-      labelEl.textContent = `${chan}\u00a0${channel.label}`;
+    const el = bay.controlsEl;
+    if (!el) return;
+    el.textContent = "";
+    for (const name of ["primary", "secondary", "aux", "lift"]) {
+      const channel = controls[name];
+      if (!channel) continue;
+      const { pad, key } = CHANNEL_KEYS[name];
+      const row = document.createElement("span");
+      row.className = "pod-control";
+      const chan = document.createElement("b");
+      chan.textContent = pad;
+      row.append(chan, `\u00a0${channel.label}\u00a0`);
       // Toggle vs hold is the single most useful thing to tell the player here.
-      el.dataset.mode = channel.toggle ? "toggle" : "hold";
-      el.setAttribute(
-        "aria-label",
-        `${channel.label} — ${chan} / ${key}, `
-        + `${channel.toggle ? "toggles on and off" : "hold"}`,
-      );
-      if (meterEl) meterEl.style.transform = "scaleX(0)";
-    };
-    dress(bay.buttons.primary, bay.meters.primary, controls.primary);
-    dress(bay.buttons.secondary, bay.meters.secondary, controls.secondary);
-    dress(bay.buttons.aux, bay.meters.aux, controls.aux);
+      const mode = document.createElement("i");
+      mode.textContent = channel.toggle ? "(toggle)" : "(hold)";
+      row.append(mode);
+      row.title = `${channel.label} — ${pad} / ${key}, ${channel.toggle ? "toggles on and off" : "hold"}`;
+      el.append(row);
+    }
   }
 
   /** Load spec's model into the slot's bay (no-op if it is already showing). */
@@ -698,6 +661,8 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     bay.token += 1; // cancels an in-flight load
     bay.spec = null;
     bay.weapon = null;
+    bay.claim = -1; // a bay being emptied is not a bay being claimed
+    bay.ringMaterial.emissiveIntensity = 0.55;
     setLoading(bay, false);
     applyControls(bay, null);
     removeVisual(bay);
@@ -708,6 +673,17 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
    *  bays repopulate from cache on the way back. */
   function unload() {
     bays.forEach((bay) => clearBot(bay.slot));
+  }
+
+  /** This bay's bot has just been CLAIMED, as opposed to merely browsed to.
+   *  Runs the spin-and-flash. Set even when the model is still downloading:
+   *  everything that advances it is gated on `bay.visual`, so an unfinished
+   *  load simply means the flourish starts when the bot appears rather than
+   *  being swallowed. */
+  function claimBot(slot) {
+    const bay = bays[slot];
+    if (!bay) return;
+    bay.claim = 0;
   }
 
   /** @param {{ duo?: boolean, focusSlot?: number|null }} next */
@@ -729,6 +705,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   return {
     showBot,
     clearBot,
+    claimBot,
     unload,
     setControl,
     dispose,

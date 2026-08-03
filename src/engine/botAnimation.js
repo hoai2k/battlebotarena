@@ -5,6 +5,7 @@
 // arena — the sim produces the state during a match, the preview synthesizes
 // it, and everything downstream of that is this file.
 import * as THREE from "three";
+import { scrollTrackBands } from "./tracks.js";
 import { weaponVisualAngle } from "../assets/models.js";
 
 const scratchAxis = new THREE.Vector3();
@@ -105,46 +106,29 @@ export function syncBotVisual(visual, spec, state, dt = 1 / 60) {
     if (!node) continue;
     const a = cfg.axis ?? { x: 1, y: 0, z: 0 };
     scratchAxis.set(a.x, a.y, a.z).normalize();
-    // The jaw runs off the aux channel's 0..1; the pods run off their own
-    // ratio, which the sim drives automatically rather than from a button.
-    const stroke = name === "pods"
-      ? THREE.MathUtils.clamp(state.auxPodAngle ?? 0, 0, 1)
-      : THREE.MathUtils.clamp(state.weaponAuxAngle ?? 0, 0, 1);
-    const travel = cfg.closeAngle ?? cfg.range ?? 0;
+    // The jaw runs off the weapon's own 0..1 (1 = shut). The PODS are the odd
+    // one: they do not swing on a button at all, they are counter-rotated by
+    // however far the chassis has reared up so they stay flat on the floor while
+    // the body swings over them. That is what makes the lift read as the body
+    // pivoting about the rear axle rather than the whole robot tipping over.
+    if (name === "pods") {
+      // NEGATIVE: the group above these pods is already carrying the chassis's
+      // nose-up rotation, so cancelling it is what leaves them flat on the
+      // floor. Rotating them the same way as the body stands them on end.
+      const liftAngle = THREE.MathUtils.clamp(state.auxPodAngle ?? 0, 0, 1)
+        * (((spec.lift?.maxAngleDeg ?? 90) * Math.PI) / 180);
+      node.quaternion.setFromAxisAngle(scratchAxis, -liftAngle);
+      continue;
+    }
+    const stroke = THREE.MathUtils.clamp(state.weaponAuxAngle ?? 0, 0, 1);
+    const travel = cfg.openAngle ?? cfg.closeAngle ?? cfg.range ?? 0;
     node.quaternion.setFromAxisAngle(scratchAxis, stroke * travel);
   }
-  // Tracks. A tracked bot has no wheels to turn — rotating a track unit like a
-  // wheel is worse than leaving it still — so the band SCROLLS instead: offset
-  // the material's UVs by the same accumulated ground rotation the wheel meshes
-  // use, which means the tracks and the bot agree about how fast it is going
-  // for free, including while it is being shoved backwards.
-  const tracks = spec.tracks;
-  if (tracks) {
-    const node = tracks.aux ? visual.parts.aux?.[tracks.aux] : visual.parts.body;
-    if (node) {
-      const spins = state.wheelSpin;
-      const spin = spins?.length ? spins.reduce((a, b) => a + b, 0) / spins.length : 0;
-      const axis = tracks.axis === "x" ? "x" : "y";
-      const shift = spin * (tracks.scale ?? 1);
-      node.traverse((mesh) => {
-        if (!mesh.isMesh || !mesh.material?.map) return;
-        let map = mesh.material.map;
-        // The GLTF loader shares one texture across everything that uses it,
-        // including the SECOND bot in the match. Scrolling a shared map drives
-        // both bots' tracks off one bot's speed, so take a copy the first time.
-        if (!map.__trackScroll) {
-          map = map.clone();
-          map.__trackScroll = true;
-          map.wrapS = THREE.RepeatWrapping;
-          map.wrapT = THREE.RepeatWrapping;
-          map.needsUpdate = true;
-          mesh.material = mesh.material.clone();
-          mesh.material.map = map;
-        }
-        map.offset[axis] = shift % 1;
-      });
-    }
-  }
+  // Tracks. The band is real geometry built at load time (engine/tracks.js) and
+  // scrolled along its own length here; the track units' own textures are left
+  // alone, because on a scanned pod they are one atlas shared with the wheels
+  // and the frame and no offset of them means "forward".
+  scrollTrackBands(visual.trackBands, spec, state.wheelSpin);
   const punch = visual.parts.aux?.fists;
   if (punch && spec.weapon?.fists) {
     const f = spec.weapon.fists;
@@ -165,7 +149,10 @@ export function syncBotVisual(visual, spec, state, dt = 1 / 60) {
 const SAW_DISC_SPEED = -67.2; // rad/s at full speed (was 42, +60%)
 export function updateWeaponSub(visual, spec, dt, active) {
   const sub = visual.parts.weaponSub;
-  if (!sub || !["hammerSaw", "lifterDisc"].includes(spec.weapon?.type)) return;
+  // sawArms belongs here too, and its absence is why Dragon King's blades have
+  // never turned: the channel latched, the sim spun its rotor up and gated the
+  // grind damage on it, and the two discs on screen sat perfectly still.
+  if (!sub || !["hammerSaw", "sawArms", "lifterDisc"].includes(spec.weapon?.type)) return;
   const state = (visual.__subSpin ||= { angle: 0, speed: 0 });
   const target = active ? SAW_DISC_SPEED : 0;
   state.speed += (target - state.speed) * Math.min(1, dt * (active ? 2.2 : 1.1));

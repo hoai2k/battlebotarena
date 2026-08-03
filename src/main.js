@@ -9,6 +9,7 @@ import { createEffects, spawnBotFlame } from "./engine/effects.js";
 import { createArenaVisuals } from "./engine/arena.js";
 import { createBotPreview } from "./engine/botPreview.js";
 import { syncBotVisual, updateWeaponSub } from "./engine/botAnimation.js";
+import { buildTrackBands } from "./engine/tracks.js";
 
 // Written by the parallel build agents; wired here at integration time.
 import { createUI } from "./ui/ui.js";
@@ -40,14 +41,14 @@ const loader = createLoader();
 // 3D showcase on the bot select screen: each chosen bot renders on a lit
 // turntable inside its pod. ui.js only emits selection actions; the routing
 // to this module happens below (UI never imports three.js).
+// The pod is a showcase and a controller test bench, nothing more: its weapons
+// run off the pad's own triggers, the same ones the match reads. It used to
+// carry three on-screen test buttons as well, which could only ever cover the
+// channels someone remembered to add a button for — Dragon King has four
+// mechanisms and there were three buttons.
 const podEls = (side) => ({
   view: document.querySelector(`#pod-view-${side}`),
-  primary: document.querySelector(`#pod-primary-${side}`),
-  secondary: document.querySelector(`#pod-secondary-${side}`),
-  aux: document.querySelector(`#pod-aux-${side}`),
-  primaryMeter: document.querySelector(`#pod-primary-meter-${side}`),
-  secondaryMeter: document.querySelector(`#pod-secondary-meter-${side}`),
-  auxMeter: document.querySelector(`#pod-aux-meter-${side}`),
+  controls: document.querySelector(`#pod-controls-${side}`),
 });
 const botPreview = createBotPreview({
   canvas: document.querySelector("#preview-canvas"),
@@ -153,6 +154,10 @@ async function startMatch({ playerBotId, rivalBotId, difficulty }) {
       }).then((visual) => {
         modelProgress[i] = 1;
         reportModels();
+        // A tracked bot's band is built from the loaded geometry rather than
+        // shipped in the GLB — see engine/tracks.js for why the scan cannot
+        // provide one. Built once here; botAnimation only scrolls it.
+        visual.trackBands = buildTrackBands(visual, spec);
         return visual;
       })
     )
@@ -243,17 +248,19 @@ const ui = createUI({
         difficulty: session.difficulty,
       });
       else if (action.type === "previewSelection") {
-        // Selection changed on the bot select screen: mirror it into the
-        // showcase bays. Random stays a mystery — no model until the box opens.
-        const ids = [
-          action.playerBotId,
-          action.rivalBotId === "random" ? null : action.rivalBotId,
-        ];
-        ids.forEach((id, slot) => {
+        // What the bot select screen wants staged in each bay. This is NOT the
+        // selection: an unclaimed bay stages whatever the cursor is over, so
+        // the ids arrive already resolved (and "random" already reduced to
+        // nothing, since a mystery opponent has no model to show).
+        (action.showIds || []).forEach((id, slot) => {
           if (id) botPreview.showBot(slot, getBotSpec(id));
           else botPreview.clearBot(slot);
         });
         botPreview.setControl({ duo: action.duo, focusSlot: action.focusSlot });
+        // A bay that just went from browsed to claimed spins and lights up. The
+        // model is usually already loaded — browsing put it there — so this is
+        // the only thing that distinguishes the press from the hover.
+        if (typeof action.claimSlot === "number") botPreview.claimBot(action.claimSlot);
       }
       else if (action.type === "toTitle" || action.type === "changeBots") {
         loader.hide();
@@ -378,4 +385,14 @@ window.__bba2 = {
   // headless browser can verify that a bot actually renders and drives rather
   // than only that its catalog entry parses.
   startMatch,
+  // Drive one bot's animation directly, at a state of the caller's choosing, and
+  // draw a frame from it. A moving part that is only reachable through the match
+  // loop can only be checked at whatever speed the match happens to be running;
+  // tools/track-probe.mjs needs a KNOWN wheel speed and successive frames that
+  // differ by nothing else. THREE rides along so a probe can measure the model
+  // it is looking at without importing its own copy.
+  THREE,
+  syncBotVisual,
+  updateWeaponSub,
+  render: () => stage.render(),
 };

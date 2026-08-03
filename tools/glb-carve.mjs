@@ -18,6 +18,8 @@
 //              spinner whose second end the scan never resolved
 //   paint    — move matching triangles onto a new plain material, for surface
 //              the scan textured wrong (blank atlas corners read as pale patches)
+//   material — retune an existing material by name (paint can only create one,
+//              and it cannot reach a part that has already been painted)
 //   islands  — MOVE every connected component below `minTris` into a new part.
 //              A region carved out of a scan shell drags loose specks of the
 //              donor along its cut line; they are not describable by position
@@ -325,6 +327,20 @@ for (const op of ops) {
       + `  translation ${base.translation.map((n) => n.toFixed(4)).join(", ")} -> ${node.translation.map((n) => n.toFixed(4)).join(", ")}`);
     continue;
   }
+  if (op.mode === "material") {
+    // Retune an EXISTING material by name. `paint` can only create one, and it
+    // reads primitives[0] — so a part that has already been painted has an
+    // empty primitive there and a second paint matches nothing. Re-tuning what
+    // is already on the part is the operation that was missing.
+    const index = json.materials.findIndex((m) => m.name === op.name);
+    if (index < 0) throw new Error(`no material named ${op.name} — have: ${json.materials.map((m) => m.name).filter(Boolean).join(", ")}`);
+    const pbr = json.materials[index].pbrMetallicRoughness ||= {};
+    for (const key of ["baseColorFactor", "metallicFactor", "roughnessFactor"]) {
+      if (op[key] !== undefined) pbr[key] = op[key];
+    }
+    console.log(`${op.name} [material]: ${JSON.stringify(pbr)}`);
+    continue;
+  }
   if (op.mode === "paint") {
     // Move a part's triangles matching a region onto a NEW plain material.
     // Some scan damage is not shape at all: the surface is there and solid, its
@@ -333,6 +349,21 @@ for (const op of ops) {
     // hole; a panel behind it is hidden by it. The only thing that works is to
     // stop it sampling the texture.
     const node = json.nodes[nodeIndexByName(`tripo_part_${op.part}`)];
+    // Idempotent: a repair spec is re-applied over the SHIPPED model, not over a
+    // pristine one, and painting moves every matched triangle onto a second
+    // primitive — so a second run finds primitives[0] empty and matches nothing.
+    // If this part already carries the material this op would create, retune it
+    // in place and leave the triangles where they are.
+    const already = json.meshes[node.mesh].primitives
+      .find((prim) => op.material?.name && json.materials[prim.material]?.name === op.material.name);
+    if (already) {
+      const pbr = json.materials[already.material].pbrMetallicRoughness ||= {};
+      for (const key of ["baseColorFactor", "metallicFactor", "roughnessFactor"]) {
+        if (op.material[key] !== undefined) pbr[key] = op.material[key];
+      }
+      console.log(`part ${op.part} [paint]: already painted ${op.material.name}, retuned in place`);
+      continue;
+    }
     const primitive = json.meshes[node.mesh].primitives[0];
     const posAccessor = primitive.attributes.POSITION;
     const uvAccessor = primitive.attributes.TEXCOORD_0;
