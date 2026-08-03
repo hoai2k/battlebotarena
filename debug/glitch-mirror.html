@@ -9,6 +9,10 @@
   body { margin:0; background:#181b20; color:#dfe4ea; font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
   #wrap { display:flex; height:100vh; }
   #view { flex:1; position:relative; }
+  #status { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+            text-align:center; padding:24px; color:#9aa5b1; pointer-events:none; }
+  #status.err { color:#ff7b6b; }
+  #status.done { display:none; }
   #panel { width:340px; padding:16px 18px; background:#12151a; border-left:1px solid #2a2f37; overflow:auto; }
   h1 { font-size:15px; margin:0 0 4px; color:#fff; letter-spacing:.02em; }
   .sub { color:#7d8794; margin:0 0 18px; font-size:12px; }
@@ -56,8 +60,17 @@
   input[type=range]::-moz-range-thumb { width:26px; height:26px; border:0; border-radius:50%; background:#35e07a; }
 </style>
 <script type="importmap">
- { "imports": { "three": "/vendor/three/three.module.js", "three/addons/": "/vendor/three/addons/" } }
+ { "imports": { "three": "../vendor/three/three.module.js", "three/addons/": "../vendor/three/addons/" } }
 </script>
+<!--
+  Every path on this page is RELATIVE to the page, never rooted at "/".
+  This file is served two ways: from the dev server, where the repo IS the
+  site root, and from GitHub Pages, where it is under /battlebotarena/. An
+  absolute "/vendor/three.module.js" resolves to hoai2k.github.io/vendor/...
+  on Pages and 404s, and because a failed module import produces no visible
+  output the whole viewer just renders black. "../vendor/..." is correct in
+  both places.
+-->
 </head>
 <body>
 <!--
@@ -81,12 +94,15 @@
   than assumed, so it stays right if the yaw changes.
 -->
 <div id="wrap">
-  <div id="view"></div>
+  <div id="view"><div id="status">Loading Glitch…</div></div>
   <div id="panel">
     <h1>Glitch — mirror plane</h1>
-    <p class="sub">Model space. Drag until the bot looks symmetric and right, then send me the line at the bottom.</p>
+    <p class="sub">Model space. Yaw first, then the plane — drag until the bot looks symmetric and right, then send me the line at the bottom.</p>
 
-    <label>Plane position &nbsp;<span class="val" id="planeV">0.000</span></label>
+    <label>1. Yaw trim &nbsp;<span class="val" id="yawV">0.0&deg;</span></label>
+    <input type="range" id="yaw" min="-12" max="12" step="0.25" value="0">
+
+    <label>2. Plane position &nbsp;<span class="val" id="planeV">0.000</span></label>
     <input type="range" id="plane" min="-0.35" max="0.20" step="0.002" value="0">
 
     <label>Keep which half</label>
@@ -94,9 +110,6 @@
       <button id="keepNeg" class="on">&minus;X (bigger)</button>
       <button id="keepPos">+X</button>
     </div>
-
-    <label>Extra yaw trim &nbsp;<span class="val" id="yawV">0.0&deg;</span></label>
-    <input type="range" id="yaw" min="-12" max="12" step="0.25" value="0">
 
     <label>View</label>
     <div class="seg">
@@ -110,18 +123,23 @@
     </div>
 
     <label>Reference</label>
-    <img src="/public/reference/glitch.png" style="width:100%;border-radius:5px;border:1px solid #2a2f37" alt="Glitch reference photo">
+    <img id="ref" src="../public/reference/glitch.png" style="width:100%;border-radius:5px;border:1px solid #2a2f37" alt="Glitch reference photo">
 
     <div id="stats"></div>
     <div id="out">…</div>
     <button id="copy">Copy for Claude</button>
 
     <p class="hint">
-      The plane is where the two halves meet. The kept half is drawn solid; the
-      other side is its reflection. If the bot looks narrow or fat, the plane is
-      off — the silhouette should match the reference arrowhead.<br><br>
-      Yaw trim is only needed if the bot still looks skewed when the plane looks
-      right; it means the bake left a residual angle.
+      Work in the numbered order — that is the order the carve runs, and the
+      trim comes first for a reason: it turns the raw model <em>before</em> the
+      reflection, so between them the two sliders reach any mirror plane, not
+      just the ones square to the model's X axis. Trimming afterwards would only
+      spin a finished result.<br><br>
+      So: turn until the bot's centreline runs straight up the screen along the
+      green forward arrow, then slide the plane until the halves meet without a
+      seam. The kept half is drawn solid, the other side is its reflection. If
+      the bot looks narrow or fat the plane is off — the silhouette should match
+      the reference arrowhead.
     </p>
   </div>
 </div>
@@ -129,7 +147,7 @@
 <script type="module">
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CATALOG } from "/src/assets/catalog.js";
+import { CATALOG } from "../src/assets/catalog.js";
 
 const BOT = new URLSearchParams(location.search).get("bot") || "glitch";
 const spec = CATALOG[BOT];
@@ -178,19 +196,88 @@ const planeMesh = new THREE.Mesh(
 planeMesh.rotation.y = Math.PI / 2;
 scene.add(planeMesh);
 
-const spin = new THREE.Group();   // carries the yaw trim
+// The yaw trim is applied INSIDE each half, BEFORE the reflection, so the two
+// controls compose the way the carve does: turn the bot, then mirror the turned
+// bot about an axis-aligned plane. Turning the finished mirror instead only
+// spins a symmetric result on screen — it cannot fix a skew, because the plane
+// it was built about is still stuck to the raw model's X axis. It was also
+// quietly wrong: clipping planes are world space, so a trimmed model got cut by
+// an untilted plane while its reflection was built about a tilted one, and the
+// two halves stopped meeting at the seam.
+//
+// Each half is: keepSide / mirrorSide (the reflection) -> pivot (parked on the
+// model centre) -> spin (the trim) -> hold (undoes the pivot) -> the model.
+// Rotating about the centre rather than the file origin keeps the bot still
+// under the camera while you drag, which is the whole job of the top view.
 const keepSide = new THREE.Group();
 const mirrorSide = new THREE.Group();
-spin.add(keepSide, mirrorSide);
-scene.add(spin);
+const pivotA = new THREE.Group(), spinA = new THREE.Group(), holdA = new THREE.Group();
+const pivotB = new THREE.Group(), spinB = new THREE.Group(), holdB = new THREE.Group();
+pivotA.add(spinA); spinA.add(holdA); keepSide.add(pivotA);
+pivotB.add(spinB); spinB.add(holdB); mirrorSide.add(pivotB);
+scene.add(keepSide, mirrorSide);
 
 const clipKeep = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0);
 const clipMirror = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0);
 
 let bounds = null;
+let hull = [];
 const focus = new THREE.Vector3();
 let radius = 0.6;
-new GLTFLoader().load(spec.modelPath.replace("./", "/"), (gltf) => {
+
+// The width readout has to describe the model AS TRIMMED, otherwise it reports
+// the untrimmed extent and disagrees with what is on screen. Re-running Box3
+// over ~200k vertices on every drag frame is not affordable, and rotating the
+// bounding box is not the same as bounding the rotated model, so take the
+// planform convex hull once: min/max X of the rotated model is exactly min/max
+// X of its rotated hull, and the hull is a few dozen points.
+function planformHull(root) {
+  root.updateWorldMatrix(true, true);
+  const pts = [];
+  const v = new THREE.Vector3();
+  root.traverse((n) => {
+    if (!n.isMesh) return;
+    const pos = n.geometry.attributes.position;
+    for (let i = 0; i < pos.count; i += 1) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(n.matrixWorld);
+      pts.push([v.x, v.z]);
+    }
+  });
+  pts.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  const cross = (o, p, q) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+  const chain = (src) => {
+    const out = [];
+    for (const p of src) {
+      while (out.length >= 2 && cross(out[out.length - 2], out[out.length - 1], p) <= 0) out.pop();
+      out.push(p);
+    }
+    out.pop();
+    return out;
+  };
+  return chain(pts).concat(chain(pts.slice().reverse()));
+}
+
+// Extent along X after turning by `trim` about the centre, matching three.js
+// rotation.y: x' = x cos + z sin.
+function extentX(trim) {
+  const cos = Math.cos(trim), sin = Math.sin(trim);
+  let lo = Infinity, hi = -Infinity;
+  for (const [x, z] of hull) {
+    const rx = (x - focus.x) * cos + (z - focus.z) * sin + focus.x;
+    if (rx < lo) lo = rx;
+    if (rx > hi) hi = rx;
+  }
+  return [lo, hi];
+}
+// The model is 16MB, so on a phone this is a real wait — and a wait with no
+// feedback is indistinguishable from a broken page, which is exactly how this
+// tool first arrived. Report progress, and report failure loudly: a module or
+// asset that 404s otherwise leaves nothing behind but a black rectangle.
+const status = document.getElementById("status");
+addEventListener("error", (e) => {
+  if (e.target?.id === "ref") { status.className = "err"; status.textContent = "Reference photo failed to load — check the path."; }
+}, true);
+new GLTFLoader().load(spec.modelPath.replace(/^\.\//, "../"), (gltf) => {
   const a = gltf.scene;
   const b = a.clone(true);
   // Reflection is a negative scale, which flips winding, so the copy has to
@@ -206,13 +293,18 @@ new GLTFLoader().load(spec.modelPath.replace("./", "/"), (gltf) => {
     n.material = n.material.clone();
     n.material.clippingPlanes = [clipKeep];
   });
-  keepSide.add(a);
-  mirrorSide.add(b);
+  // Measure while the model is still unparented, so the numbers are in raw
+  // model space rather than in whatever the trim happens to be set to.
   bounds = new THREE.Box3().setFromObject(a);
   // Frame on the MODEL, not on the origin. Tripo parts are centred on nothing
   // in particular and a camera aimed at 0,0,0 puts the bot in a corner.
   bounds.getCenter(focus);
   radius = Math.max(...bounds.getSize(new THREE.Vector3()).toArray()) * 0.5;
+  hull = planformHull(a);
+  holdA.add(a);
+  holdB.add(b);
+  for (const g of [pivotA, pivotB]) g.position.copy(focus);
+  for (const g of [holdA, holdB]) g.position.copy(focus).negate();
   // Ahead of the nose, not through the bot: depthTest is off so it can be seen
   // from any angle, which also means it would paint a green stripe down the
   // middle of the model in the top view if it were centred.
@@ -222,7 +314,17 @@ new GLTFLoader().load(spec.modelPath.replace("./", "/"), (gltf) => {
   planeMesh.geometry = new THREE.PlaneGeometry(radius * 2.6, radius * 1.1);
   planeMesh.position.y = focus.y;
   planeMesh.position.z = focus.z;
+  status.className = "done";
   update();
+}, (ev) => {
+  if (ev.lengthComputable) {
+    status.textContent = `Loading Glitch… ${Math.round((ev.loaded / ev.total) * 100)}%`;
+  } else {
+    status.textContent = `Loading Glitch… ${(ev.loaded / 1e6).toFixed(1)} MB`;
+  }
+}, (err) => {
+  status.className = "err";
+  status.textContent = `Could not load ${spec.modelPath}\n${err?.message || err}`;
 });
 
 const el = (id) => document.getElementById(id);
@@ -249,9 +351,11 @@ function frame() {
 function update() {
   const c = parseFloat(el("plane").value);
   const trim = parseFloat(el("yaw").value);
+  const trimRad = trim * Math.PI / 180;
   el("planeV").textContent = c.toFixed(3);
   el("yawV").textContent = `${trim.toFixed(2)}°`;
-  spin.rotation.y = trim * Math.PI / 180;
+  spinA.rotation.y = trimRad;
+  spinB.rotation.y = trimRad;
   planeMesh.position.x = c;
 
   // Keep the side the buttons say; the reflected copy fills the other.
@@ -266,16 +370,20 @@ function update() {
   // kept half must not be clipped away.
   clipKeep.constant = showMirror ? -keep * c : 1e6;
 
-  if (bounds) {
-    const lo = bounds.min.x, hi = bounds.max.x;
+  if (hull.length) {
+    const [lo, hi] = extentX(trimRad);
     const kept = keep < 0 ? c - lo : hi - c;
     el("stats").innerHTML =
-      `raw plate x <b>${lo.toFixed(3)}</b> to <b>${hi.toFixed(3)}</b><br>` +
+      `trimmed model x <b>${lo.toFixed(3)}</b> to <b>${hi.toFixed(3)}</b><br>` +
       `kept half reaches <b>${kept.toFixed(3)}</b> from the plane<br>` +
-      `mirrored width <b>${(kept * 2).toFixed(3)}</b> (raw is ${(hi - lo).toFixed(3)})`;
+      `mirrored width <b>${(kept * 2).toFixed(3)}</b> (raw is ${(bounds.max.x - bounds.min.x).toFixed(3)})`;
   }
+  // Written in the order the carve runs it: rotate the geometry, then mirror
+  // the rotated geometry about an axis-aligned plane.
+  const p = (n) => n.toFixed(3);
   el("out").textContent =
-    `glitch mirror: plane x = ${c.toFixed(3)}, keep = ${keep < 0 ? "-" : "+"}, yaw trim = ${trim.toFixed(2)} deg`;
+    `glitch: rotate y ${trim >= 0 ? "+" : ""}${trim.toFixed(2)}° about ` +
+    `[${p(focus.x)}, ${p(focus.y)}, ${p(focus.z)}], then mirror x = ${c.toFixed(3)} keeping ${keep < 0 ? "-X" : "+X"}`;
   frame();
 }
 

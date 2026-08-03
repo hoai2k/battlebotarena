@@ -50,6 +50,14 @@ const ZOOM_MIN = 0.55;
 const ZOOM_MAX = 1.9;
 const AUTO_SPIN_AFTER = 2.5; // s of no camera input before the turntable drift resumes
 const AUTO_SPIN_SPEED = 0.22; // rad/s
+// The claim flourish. Browsing already puts a bot in the bay, so the pod looks
+// the same the instant before you press A as the instant after — without this
+// the one moment the whole screen exists for reads as nothing happening. A full
+// turn is unmistakable at a glance and lands back exactly where it started, so
+// it costs the player nothing: whatever angle they were studying is the angle
+// they get back.
+const CLAIM_SECONDS = 0.85;
+const CLAIM_RING_FLASH = 3.4; // x the ring's resting emissive at the peak
 // A click (pad A / keyboard Enter) with no pointer hold behind it still has to
 // produce a real button press, so it is replayed as a short raw pulse. On a
 // LATCHING channel one pulse is one edge, which is exactly one toggle; on a
@@ -88,7 +96,7 @@ function disposeObject(root) {
 export function createBotPreview({ canvas, pods = [] } = {}) {
   if (!canvas || pods.length === 0) {
     // Preview-less boot (tests, stripped DOM): every method is a no-op.
-    return { showBot: async () => {}, clearBot: () => {}, unload: () => {}, setControl: () => {}, dispose: () => {} };
+    return { showBot: async () => {}, clearBot: () => {}, claimBot: () => {}, unload: () => {}, setControl: () => {}, dispose: () => {} };
   }
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
@@ -189,6 +197,8 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       loadingEl: pods[slot]?.view?.querySelector?.(".pod-loading") || null,
       // Orbit state: yaw mirrored so both bots open on a facing 3/4 view.
       orbit: { yaw: slot === 0 ? 0.7 : -0.7, pitch: 0.4, zoom: 1, dist: 9, targetY: 1.1, lean: 0, idleFor: 99 },
+      /** Claim flourish: seconds into the spin-and-flash, or -1 when idle. */
+      claim: -1,
       /** Mirrors the sim's weapon stroke machine for this bot. */
       weapon: null,
       controls: { primary: null, secondary: null, aux: null, lift: null },
@@ -365,6 +375,23 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     const orbit = bay.orbit;
     orbit.idleFor += dt;
     if (orbit.idleFor > AUTO_SPIN_AFTER) orbit.yaw += AUTO_SPIN_SPEED * dt; // showcase drift
+    if (bay.claim >= 0) {
+      // Ease-out over exactly one turn, then stop dead. Driven off the ANGLE
+      // rather than by adding a rate each frame, so the flourish ends on the
+      // yaw it started from however the frame times fall — an accumulated
+      // spin leaves the bot a few degrees off and the pod looks nudged.
+      const before = bay.claim;
+      bay.claim += dt;
+      const ease = (t) => 1 - (1 - Math.min(1, t / CLAIM_SECONDS)) ** 3;
+      orbit.yaw += (ease(bay.claim) - ease(before)) * Math.PI * 2;
+      if (bay.claim >= CLAIM_SECONDS) {
+        bay.claim = -1;
+        // The flash is computed from `claim` earlier in the same frame, so put
+        // the ring back here rather than leaving it a frame bright.
+        bay.ringMaterial.emissiveIntensity = 0.55;
+      }
+      orbit.idleFor = 0; // no turntable drift on top of the flourish
+    }
     // Distance that fits the model's bounding sphere in BOTH axes. Vertical FOV
     // is fixed; the horizontal one falls out of the aspect, and a wide bot in a
     // wide-but-short window is limited by the vertical one — so take whichever
@@ -476,6 +503,11 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     // a latched rotor has to keep spinning while you scroll down the roster.
     for (const bay of bays) {
       if (!bay.visual) continue;
+      // Light up with the spin: the plinth ring is already this bot's accent
+      // colour, so driving its emissive is a flash in the bot's OWN colour
+      // rather than a generic white pop, and it needs no extra geometry.
+      const flash = bay.claim >= 0 ? Math.sin((bay.claim / CLAIM_SECONDS) * Math.PI) : 0;
+      bay.ringMaterial.emissiveIntensity = 0.55 * (1 + (CLAIM_RING_FLASH - 1) * flash);
       updateWeaponAnim(bay, dt);
       syncBotVisual(bay.visual, bay.spec, bay.state);
       // A lit flamethrower is drawn here, from the same helper and the same
@@ -629,6 +661,8 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     bay.token += 1; // cancels an in-flight load
     bay.spec = null;
     bay.weapon = null;
+    bay.claim = -1; // a bay being emptied is not a bay being claimed
+    bay.ringMaterial.emissiveIntensity = 0.55;
     setLoading(bay, false);
     applyControls(bay, null);
     removeVisual(bay);
@@ -639,6 +673,17 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
    *  bays repopulate from cache on the way back. */
   function unload() {
     bays.forEach((bay) => clearBot(bay.slot));
+  }
+
+  /** This bay's bot has just been CLAIMED, as opposed to merely browsed to.
+   *  Runs the spin-and-flash. Set even when the model is still downloading:
+   *  everything that advances it is gated on `bay.visual`, so an unfinished
+   *  load simply means the flourish starts when the bot appears rather than
+   *  being swallowed. */
+  function claimBot(slot) {
+    const bay = bays[slot];
+    if (!bay) return;
+    bay.claim = 0;
   }
 
   /** @param {{ duo?: boolean, focusSlot?: number|null }} next */
@@ -660,6 +705,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   return {
     showBot,
     clearBot,
+    claimBot,
     unload,
     setControl,
     dispose,
