@@ -1,0 +1,147 @@
+{
+  "round": "glitch-kraken-gigabyte-rusty-dragonking",
+  "drop": "updates",
+  "priority": [
+    "glitch",
+    "kraken",
+    "gigabyte",
+    "rusty",
+    "dragonking"
+  ],
+  "creditsAtStart": 465,
+  "costs": {
+    "generate": 30,
+    "segment": 40
+  },
+  "controls": "Primary weapon = RT, secondary = RB, tertiary = LB.",
+  "plan": "Round complete: all 5 generated, segmented, part-mapped and partitioned. 350 credits spent of 465.",
+  "resume": "node tools/bot-pipeline.mjs status  /  node tools/bot-pipeline.mjs advance   (BOT_DROP defaults to updates/new-bots; this round lives at updates/, so pass BOT_DROP=updates)",
+  "bots": {
+    "glitch": {
+      "name": "Glitch",
+      "weapon": "vertical drum spinner",
+      "reference": "reference/glitch.png",
+      "referenceSource": "user-supplied high-res press photo (1254-1448px)",
+      "notes": "Drum (part 6) clean. Omniwheel X-drive not segmented — needs drive.holonomic in sim.",
+      "generate": {
+        "status": "done",
+        "taskId": "6c2ec827-0572-47ed-9048-cd06e00bfc14",
+        "file": "tripo_out/glitch_gen.glb",
+        "startedAt": "2026-08-03T02:48:22.185Z"
+      },
+      "segment": {
+        "status": "done",
+        "taskId": "432a26b1-da83-4b77-b1bc-322bd8ddf6a1",
+        "file": "updates2/raw/glitch_seg.glb"
+      },
+      "partition": {
+        "status": "done",
+        "model": "updates/models/glitch.glb"
+      },
+      "docs": {
+        "status": "done"
+      }
+    },
+    "kraken": {
+      "name": "Kraken",
+      "weapon": "crushing jaw + integrated flamethrower",
+      "reference": "reference/kraken.png",
+      "referenceSource": "user-supplied high-res press photo (1254-1448px)",
+      "notes": "Wheels ~10% asymmetric (z=+0.30 vs -0.24) — Tripo artifact, flagged by glb-rig-check by design. Lower jaw correctly static.",
+      "generate": {
+        "status": "done",
+        "taskId": "4830c692-068d-406c-b1f6-8acb4d3cba4b",
+        "file": "tripo_out/kraken_gen.glb",
+        "startedAt": "2026-08-03T02:48:25.899Z"
+      },
+      "segment": {
+        "status": "done",
+        "taskId": "d4ed73a0-6249-4506-9739-7b1a2f70608c",
+        "file": "updates2/raw/kraken_seg.glb"
+      },
+      "partition": {
+        "status": "done",
+        "model": "updates/models/kraken.glb"
+      },
+      "docs": {
+        "status": "done"
+      }
+    },
+    "gigabyte": {
+      "name": "Gigabyte",
+      "weapon": "full-body shell spinner",
+      "reference": "reference/gigabyte.png",
+      "referenceSource": "user-supplied high-res press photo (1254-1448px)",
+      "notes": "Shell fused with chassis into part 7 — correct for a full-body spinner; only the antenna mast stays static. Vertical spin axis [0,1,0].",
+      "generate": {
+        "status": "done",
+        "taskId": "5bca4334-6c70-4dfb-888a-0bd62d3eb9a5",
+        "file": "tripo_out/gigabyte_gen.glb",
+        "startedAt": "2026-08-03T02:48:28.329Z"
+      },
+      "segment": {
+        "status": "done",
+        "taskId": "b29a9585-625e-45cf-bfba-243f6fe5e077",
+        "file": "updates2/raw/gigabyte_seg.glb"
+      },
+      "partition": {
+        "status": "done",
+        "model": "updates/models/gigabyte.glb"
+      },
+      "docs": {
+        "status": "done"
+      }
+    },
+    "rusty": {
+      "name": "Rusty",
+      "weapon": "hammer",
+      "reference": "reference/rusty.png",
+      "referenceSource": "user-supplied high-res press photo (1254-1448px)",
+      "notes": "Hammer = U-shaped yoke (2,22 bars + 12 head fin), pivots at front, head over the tail. Needs weaponAxis [0,0,-1]. Tracked.",
+      "generate": {
+        "status": "done",
+        "taskId": "da76c7d6-92fe-4818-82ff-1c28cca329fc",
+        "file": "tripo_out/rusty_gen.glb",
+        "startedAt": "2026-08-03T02:48:30.993Z"
+      },
+      "segment": {
+        "status": "done",
+        "taskId": "eadbb956-0f24-438e-9337-9234b39c4a2c",
+        "file": "updates2/raw/rusty_seg.glb"
+      },
+      "partition": {
+        "status": "done",
+        "model": "updates/models/rusty.glb"
+      },
+      "docs": {
+        "status": "done"
+      }
+    },
+    "dragonking": {
+      "name": "Dragon King",
+      "weapon": "twin vertical saw discs on a lifting arm, tracked drive",
+      "reference": "reference/dragonking.png",
+      "referenceSource": "user-supplied high-res press photo (1254-1448px)",
+      "notes": "Upper jaw did not separate; modelAux-jaw is the front grabber assembly. Saws/arms/pods all clean. 5 animated groups.",
+      "generate": {
+        "status": "done",
+        "taskId": "0c730dc2-b820-48ab-b897-44a8cd82d4b7",
+        "file": "tripo_out/dragonking_gen.glb",
+        "startedAt": "2026-08-03T02:48:33.362Z"
+      },
+      "segment": {
+        "status": "done",
+        "taskId": "56681f53-ba5b-4873-b0df-5e07758a26f7",
+        "file": "updates2/raw/dragonking_seg.glb"
+      },
+      "partition": {
+        "status": "done",
+        "model": "updates/models/dragonking.glb"
+      },
+      "docs": {
+        "status": "done"
+      }
+    }
+  },
+  "updatedAt": "2026-08-03T03:08:59.462Z"
+}
