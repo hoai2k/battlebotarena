@@ -1854,8 +1854,14 @@ export const CATALOG = {
     tagline: "Always pointed at you.",
     referenceImage: "./public/reference/glitch.png",
     modelPath: "./public/models/glitch.glb",
-    modelYaw: Math.PI, // MEASURED: model faces +Z, and the drum leads at game -Z
-    modelScale: 3.146,
+    // MEASURED off the drum, not off the body. A covariance fit over the drum's
+    // vertices puts its axle at [0.4483, 0.0567, -0.8921] in model space; this
+    // is the yaw that makes that axle transverse in game space, and it drops
+    // the arrowhead's point onto the nose at the same time. Checked by width
+    // profile: the nose slab measures |x| 0.27 and the plate widens to 1.70
+    // behind it, with the two swept blades on the tail.
+    modelYaw: 2.0361,
+    modelScale: 2.6614,
     hideWheels: true, // four omniwheels in an X-drive, tucked under the wedge
     // --- the real machine ---------------------------------------------
     // battlebots.com files the weapon as a vertical bar spinner; the team and
@@ -1873,7 +1879,7 @@ export const CATALOG = {
 
     weightLbs: 250,
     weaponWeightLbs: 58,
-    bodyDims: { x: 2.900, y: 0.825, z: 3.146 }, // MEASURED: flat delta, and the plate is only 10in thick
+    bodyDims: { x: 2.900, y: 0.698, z: 2.885 }, // MEASURED: flat delta, and the plate is only 8in thick
     wheelAnchors: [
       { x: -1.15, y: 0.21, z: -1.05 },
       { x: 1.15, y: 0.21, z: -1.05 },
@@ -1892,24 +1898,30 @@ export const CATALOG = {
     drive: { type: "holonomic", strafeRatio: 0.9, pushForceScale: 0.4 },
     weapon: {
       type: "drum",
-      pivot: { x: -0.157, y: 0.594, z: -0.661 }, // MEASURED drum axle, game space
-      axis: { x: 1, y: 0, z: 0 },
-      // MEASURED: the drum is genuinely off-centre — it sits in a bay left of
-      // the centreline, which is what "asymmetric eggbeater" means on this bot.
+      pivot: { x: 0.472, y: 0.494, z: -0.356 }, // MEASURED drum axle, game space
+      // MEASURED game-space axle, from the drum's own principal axis carried
+      // through modelYaw: (-0.998, 0.057, -0.002). Transverse, as a drum should
+      // be — which it was NOT before, because the part map had guessed a clean
+      // [1,0,0] that is 27 degrees off the real axle.
+      axis: { x: -1, y: 0.057, z: 0 },
+      // MEASURED: the drum is genuinely off-centre — it sits in a bay right of
+      // the centreline, and the wedge extends AHEAD of it. Glitch gets under an
+      // opponent with the plate first and feeds them back into the drum; the
+      // drum is not the leading edge.
       spinUpSeconds: 1.3,
       spinDownSeconds: 1.1,
       inertia: 1.2,
       maxOmega: 620,
       budgetCap: 360,
-      radius: 0.535, // MEASURED swept radius about the axle
-      dims: { x: 0.522, y: 0.355, z: 0.457 },
+      radius: 0.472, // MEASURED swept radius about the axle
+      dims: { x: 0.370, y: 0.300, z: 0.379 },
     },
     // The nose is a WEDGE: it is the whole point of the machine, and test 16
     // requires nothing but a wedge ahead of the drum's leading edge (-1.196).
     colliders: [
-      { shape: "wedge", halfExtents: { x: 1.40, y: 0.13, z: 0.32 }, offset: { x: 0, y: 0.13, z: -1.25 }, tipY: 0.02 },
-      { shape: "box", halfExtents: { x: 1.45, y: 0.22, z: 1.28 }, offset: { x: 0, y: 0.22, z: 0.29 } },
-      { shape: "box", halfExtents: { x: 0.58, y: 0.20, z: 0.16 }, offset: { x: -0.16, y: 0.62, z: -0.20 } },
+      { shape: "wedge", halfExtents: { x: 1.30, y: 0.12, z: 0.40 }, offset: { x: 0.10, y: 0.12, z: -1.22 }, tipY: 0.02 },
+      { shape: "box", halfExtents: { x: 1.45, y: 0.20, z: 1.02 }, offset: { x: 0.20, y: 0.20, z: 0.24 } },
+      { shape: "box", halfExtents: { x: 0.45, y: 0.20, z: 0.20 }, offset: { x: 0.45, y: 0.55, z: -0.35 } },
     ],
   },
 
@@ -2121,7 +2133,9 @@ export const CATALOG = {
     tagline: "Pin it, then cut it open.",
     referenceImage: "./public/reference/dragonking.png",
     modelPath: "./public/models/dragonking.glb",
-    modelYaw: Math.PI, // MEASURED: model faces +Z
+    // Was Math.PI, which had it driving tail-first. The grabber arm and the
+    // dragon's head lead; the saw arms rake back over the body behind them.
+    modelYaw: 0,
     modelScale: 3.949,
     hideWheels: true, // tracked pods, rigged as modelAux-pods
     // --- the real machine ---------------------------------------------
@@ -2158,7 +2172,7 @@ export const CATALOG = {
     drive: { type: "tracked" },
     weapon: {
       type: "sawArms",
-      pivot: { x: -0.007, y: 0.659, z: -0.107 }, // MEASURED arm base, game space
+      pivot: { x: 0.007, y: 0.659, z: 0.107 }, // MEASURED arm base, game space
       axis: { x: 1, y: 0, z: 0 },
       restAngle: 0, // baked arms RAISED — the stroke DROPS them, like a hammer
       fireAngle: 1.4, // ~80 degrees down onto a held opponent
@@ -2170,7 +2184,7 @@ export const CATALOG = {
       // own nested group. They do nothing without a grip — that IS the bot.
       sub: {
         node: "modelWeaponSub-saws",
-        pivot: { x: -0.007, y: 1.409, z: -0.186 }, // MEASURED, both blades share this line
+        pivot: { x: 0.007, y: 1.409, z: 0.186 }, // MEASURED, both blades share this line
         axis: { x: 1, y: 0, z: 0 },
         spinUpSeconds: 1.0, damagePerSecond: 14, requiresGrip: true,
       },
@@ -2180,16 +2194,19 @@ export const CATALOG = {
     // rotate as whole units and drive the self-right.
     aux: {
       jaw: { node: "modelAux-jaw", axis: { x: 1, y: 0, z: 0 },
-             pivot: { x: -0.007, y: 0.461, z: -1.055 }, closeAngle: 0.7, seconds: 0.4 },
+             pivot: { x: 0.007, y: 0.461, z: 1.055 }, closeAngle: 0.7, seconds: 0.4 },
       pods: { node: "modelAux-pods", axis: { x: 1, y: 0, z: 0 },
-              pivot: { x: -0.007, y: 0.264, z: -0.463 }, range: 2.2, seconds: 0.8,
+              pivot: { x: 0.007, y: 0.264, z: 0.463 }, range: 2.2, seconds: 0.8,
               drivesSelfRight: true },
     },
+    // Re-authored for the flip: what used to be the tail leads now, so the
+    // wedge moved to the OTHER end. A wedge's slope is baked front-to-back, so
+    // mirroring its offset alone would have left it facing backwards.
     colliders: [
-      { shape: "wedge", halfExtents: { x: 0.34, y: 0.18, z: 0.60 }, offset: { x: 0, y: 0.18, z: -1.95 }, tipY: 0.02 },
-      { shape: "box", halfExtents: { x: 1.05, y: 0.28, z: 1.39 }, offset: { x: 0, y: 0.28, z: 0 } },
-      { shape: "box", halfExtents: { x: 0.68, y: 0.52, z: 0.68 }, offset: { x: 0, y: 0.52, z: -0.17 } },
-      { shape: "box", halfExtents: { x: 1.65, y: 0.27, z: 1.01 }, offset: { x: 0, y: 0.27, z: -0.45 } },
+      { shape: "wedge", halfExtents: { x: 1.05, y: 0.20, z: 0.45 }, offset: { x: 0, y: 0.20, z: -1.10 }, tipY: 0.02 },
+      { shape: "box", halfExtents: { x: 1.05, y: 0.28, z: 1.20 }, offset: { x: 0, y: 0.28, z: 0.20 } },
+      { shape: "box", halfExtents: { x: 0.68, y: 0.52, z: 0.68 }, offset: { x: 0, y: 0.52, z: 0.17 } },
+      { shape: "box", halfExtents: { x: 1.65, y: 0.27, z: 1.01 }, offset: { x: 0, y: 0.27, z: 0.45 } },
     ],
   },
 };

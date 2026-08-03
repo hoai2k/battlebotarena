@@ -286,9 +286,16 @@ function nodeIndexByName(name) {
 
 for (const op of ops) {
   if (op.mode === "pivot") {
+    // Also rewrites weaponAxis, because the two are the same mistake: the
+    // partitioner takes both off the part map, and a map that guesses the axle
+    // as a clean [1,0,0] when the real drum sits at 27 degrees to it spins the
+    // mesh about a line it is not mounted on. Measure the part's principal
+    // axis and write that instead.
     const node = json.nodes[nodeIndexByName(op.node)];
-    node.extras = { ...(node.extras || {}), pivotLocal: op.pivotLocal };
-    console.log(`${op.node} [pivot]: pivotLocal = [${op.pivotLocal.join(", ")}]`);
+    node.extras = { ...(node.extras || {}) };
+    if (op.pivotLocal) node.extras.pivotLocal = op.pivotLocal;
+    if (op.weaponAxis) node.extras.weaponAxis = op.weaponAxis;
+    console.log(`${op.node} [pivot]: ${op.pivotLocal ? `pivotLocal = [${op.pivotLocal.join(", ")}] ` : ""}${op.weaponAxis ? `weaponAxis = [${op.weaponAxis.join(", ")}]` : ""}`);
     continue;
   }
   if (op.mode === "transform") {
