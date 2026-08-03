@@ -33,7 +33,8 @@ import * as THREE from "three";
 
 const SEGMENTS = 160; // samples around the loop; the hull is smooth by then
 const OUTSET = 0.004; // fraction of perimeter the band sits proud of the hull
-const WIDTH_INSET = 0.82; // of the unit's width, so the band reads inside the frame
+const ON_HULL = 0.006; // fraction of perimeter: how close counts as "on the track path"
+const WIDTH_TRIM = 0.02; // percentile trimmed off each end of the measured width
 const TREAD_FT = 0.32; // ground travel per tread plate; the tile IS one plate
 
 /** Convex hull of 2D points (monotone chain). The taut path around the wheels. */
@@ -52,6 +53,21 @@ function hull2d(points) {
     upper.push(p);
   }
   return [...lower.slice(0, -1), ...upper.slice(0, -1)];
+}
+
+/** Distance from a point to a closed polygon, for "is this vertex on the band". */
+function hullDistance(loop, p) {
+  let best = Infinity;
+  for (let i = 0; i < loop.length; i++) {
+    const a = loop[i];
+    const b = loop[(i + 1) % loop.length];
+    const vx = b[0] - a[0];
+    const vy = b[1] - a[1];
+    const len = vx * vx + vy * vy;
+    const t = len ? Math.max(0, Math.min(1, ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / len)) : 0;
+    best = Math.min(best, Math.hypot(p[0] - (a[0] + t * vx), p[1] - (a[1] + t * vy)));
+  }
+  return best;
 }
 
 /** Resample a closed polygon to `count` points at even arc length. */
@@ -147,8 +163,30 @@ function bandFor(mesh, spec) {
     return [x + (dx / len) * outset, y + (dy / len) * outset, dx / len, dy / len];
   });
 
-  const halfWidth = (size[wide] / 2) * WIDTH_INSET;
-  const midWide = (box.min[wide] + box.max[wide]) / 2;
+  // How wide the tread is, and where across the unit it sits — both MEASURED
+  // from the vertices that actually lie on the track path, not taken from the
+  // unit's bounding box. Dragon King's pod is 0.356 across but its track band is
+  // 0.12, sitting outboard at x 0.27..0.39 with the frame and the chassis side
+  // taking up the rest. Sizing the band off the bbox made it nearly three times
+  // too wide AND centred it on the pod rather than on the track, so it swallowed
+  // the gap between the wheels and the body that the real machine has.
+  const onHull = [];
+  for (let i = 0; i < pos.count; i++) {
+    if (hullDistance(loop, flat[i]) < perimeter * ON_HULL) onHull.push(pos.getComponent(i, "xyz".indexOf(wide)));
+  }
+  let halfWidth = (size[wide] / 2) * 0.8;
+  let midWide = (box.min[wide] + box.max[wide]) / 2;
+  if (onHull.length > 64) {
+    // Trimmed percentiles, not min/max: a scan leaves a few stray vertices on
+    // the hull line that belong to the frame, and one of them is enough to
+    // stretch the band back across the whole pod.
+    onHull.sort((p, q) => p - q);
+    const at = (f) => onHull[Math.min(onHull.length - 1, Math.max(0, Math.round(f * (onHull.length - 1))))];
+    const lo = at(WIDTH_TRIM);
+    const hi = at(1 - WIDTH_TRIM);
+    halfWidth = (hi - lo) / 2;
+    midWide = (hi + lo) / 2;
+  }
   const scale = spec.modelScale ?? 1;
   const perimeterFt = perimeter * scale;
   const repeats = Math.max(1, Math.round(perimeterFt / TREAD_FT));

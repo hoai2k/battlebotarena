@@ -1,5 +1,6 @@
 // Renderer + scene + lighting setup. Owns the WebGL context and resize.
 import * as THREE from "three";
+import { arenaEnvironment } from "./environment.js";
 
 export function createRenderer(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
@@ -11,6 +12,11 @@ export function createRenderer(canvas) {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0c0e10);
+  // What the metal reflects. Every bot in this game is made of it and had
+  // nothing to mirror; see engine/environment.js. Kept off `background`, so it
+  // shows up in reflections without becoming the sky.
+  scene.environment = arenaEnvironment(renderer);
+  scene.environmentIntensity = 0.8;
   // Far fog only — the battle camera can sit ~30-50ft from the far wall and
   // the whole 48ft arena must stay clearly readable.
   scene.fog = new THREE.Fog(0x0c0e10, 65, 150);

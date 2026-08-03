@@ -33,6 +33,7 @@
 import * as THREE from "three";
 import { loadBotModel } from "../assets/models.js";
 import { syncBotVisual, updateWeaponSub } from "./botAnimation.js";
+import { arenaEnvironment } from "./environment.js";
 import { createEffects, spawnBotFlame } from "./effects.js";
 import { createPreviewWeapon } from "./previewWeapon.js";
 import { createWeaponInputShaper, describeWeaponControls } from "../game/weaponControls.js";
@@ -108,6 +109,10 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   renderer.toneMappingExposure = 1.05;
 
   const scene = new THREE.Scene(); // transparent background: the screen's carbon backdrop shows through
+  // The same environment the arena reflects, so a polished part looks the same
+  // on the plinth as it does in the fight.
+  scene.environment = arenaEnvironment(renderer);
+  scene.environmentIntensity = 0.8;
 
   scene.add(new THREE.HemisphereLight(0xdbe8ff, 0x15130f, 1.65));
   const key = new THREE.DirectionalLight(0xffffff, 3.1);

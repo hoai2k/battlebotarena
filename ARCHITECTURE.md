@@ -183,9 +183,15 @@ export async function createSim({ bots, emit }) // bots: [BotSimSpec, BotSimSpec
 8. **Screws** (corner spinners): kinematic cylinders with
    `setNextKinematicRotation`; surface friction conveys bots; grind events on
    contact.
-9. **Mass/COM**: from catalog — total weight, COM low and slightly rear,
+9. **Environment**: `engine/environment.js` builds one small generated
+   environment (a gradient plus a band of house lights, through PMREM) and both
+   the arena and the bot-select plinth set it as `scene.environment`. Metal has
+   no diffuse term in a PBR renderer — with nothing to reflect it renders black,
+   which is why a polished part had to lie about its metalness to stay bright
+   and then read as painted plastic. This is a game made entirely of metal.
+10. **Mass/COM**: from catalog — total weight, COM low and slightly rear,
    yaw inertia < pitch/roll (~0.7×). No density stacking.
-10. **Safety rails**: velocity cap ~60ft/s, arena escape clamp = gentle
+11. **Safety rails**: velocity cap ~60ft/s, arena escape clamp = gentle
     inward impulse (not teleport) if outside walls.
 
 ### Headless tests (v2/tools/sim-tests.mjs, `node v2/tools/sim-tests.mjs`)
@@ -282,6 +288,13 @@ the sim tests and the roster grid size themselves off it.
   the stroke returns).
 - `tuning.ownerPitchScale > 0` (Deep Six) makes a spinner's own hits tumble it
   — the reason the biggest weapon in the game is not simply the best.
+- A weapon type must be named in THREE places to be visible, not two: the
+  catalog, the sim, and the renderer's two lists —
+  `models.weaponVisualAngle` (arm types whose 0..1 stroke maps onto an arc) and
+  `botAnimation.updateWeaponSub` (types with a nested spinner). `sawArms` was
+  missing from both, so Dragon King's arms never tilted and its saw discs never
+  turned while the sim happily spun the rotor and gated damage on it.
+  `tools/sim-tests.mjs` now asserts the lists cover the roster.
 - `sawArms` (Dragon King) is four mechanisms on four buttons, because none of
   them means anything alone: RT LATCHES the jaw (press to open, press again to
   bite and hold — a latch, not a hold, because you have to keep hold of
