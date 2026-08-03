@@ -744,6 +744,26 @@ await test("roster: the catalog, the display order and the select cards agree", 
     `absent from BOT_CARDS, so unreachable in game: ${missing(catalog, cards).join(", ")}`);
   check(missing(cards, catalog).length === 0, "every select card has a catalog bot",
     `card with no bot behind it: ${missing(cards, catalog).join(", ")}`);
+
+  // The select screen's speed bar is derived from the sim, so the two must not
+  // be able to disagree: a faster bot may never carry a lower speed rating.
+  // Nothing stops someone editing one file and not the other, and the card is
+  // what the player picks on.
+  const ranked = BOT_CARDS
+    .map((c) => ({ id: c.id, fps: CATALOG[c.id].maxSpeedFps, stat: c.stats.speed }))
+    .sort((a, b) => b.fps - a.fps);
+  const inversions = [];
+  for (let i = 1; i < ranked.length; i++) {
+    const [faster, slower] = [ranked[i - 1], ranked[i]];
+    if (faster.fps > slower.fps && faster.stat < slower.stat) {
+      inversions.push(`${slower.id} (${slower.fps}ft/s, rated ${slower.stat}) outranks ${faster.id} (${faster.fps}ft/s, rated ${faster.stat})`);
+    }
+    if (faster.fps === slower.fps && faster.stat !== slower.stat) {
+      inversions.push(`${faster.id} and ${slower.id} are the same speed but rated ${faster.stat} vs ${slower.stat}`);
+    }
+  }
+  check(inversions.length === 0, "the card speed ratings agree with the sim",
+    inversions.join(" | "));
 });
 
 // ---------------------------------------------------------------------------

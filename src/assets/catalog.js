@@ -48,6 +48,45 @@
 // against the fixed 0.45ft ray travel in sim/vehicle.js, and scaling it sinks
 // the chassis to the floor and takes the wheels off the ground.
 //
+// So a bot cannot be resized by editing widthFt alone — that leaves a machine
+// whose colliders no longer match its model. Use tools/rescale-bot.mjs, which
+// applies the one multiply to every length in the entry and then verifies it
+// against a fresh import. Gigabyte (3.00 -> 3.35), Kraken (2.60 -> 2.90) and
+// Rusty (2.60 -> 2.85) were resized that way, so their MEASURED values are
+// re-derived rather than re-measured: the ratios between them are exactly as
+// measured, the absolute numbers carry the new scale, and any parenthetical in
+// those three entries quoting a figure not in this file is in the old scale.
+//
+// SPEEDS (how maxSpeedFps got its value)
+// Chassis top speeds are published even more rarely than dimensions — a search
+// across the roster turns up seven, and for most machines the only public fact
+// about the drive is its motors. So speed is graded the same way size is:
+//   published        off a source page. Claw Viper ("tops out at 20 mph",
+//                    battlebots.com) and Mammoth (22).
+//   builder-stated   off the team's own site. Kraken's 2022/23 rebuild: "over
+//                    22hp of drive power", expected "around 20mph", up from 30lb
+//                    of brushed motors making 3-4hp (cerobots.com). That rebuild
+//                    is why Kraken is no longer the slowest wheeled bot here.
+//   team-stated      a figure the team has given in interviews or on air:
+//                    HyperShock 28, HUGE 15, Whiplash 15, Beta 12.
+//   class-estimate   everything else, ranked by the drive hardware that IS
+//                    recorded in realWorld.drive — four modern brushless motors
+//                    beat two, brushed motors sit low, and tracks (Rusty, Dragon
+//                    King) sit lowest. Treat these as game balance, not fact.
+//
+// The game runs at ARENA SCALE 0.58 of real: maxSpeedFps = mph(realMph * 0.58).
+// One factor for the whole roster, so the ORDER and the RATIOS are the real
+// ones; the factor itself is chosen to leave the roster's mean speed where it
+// already was (~13 ft/s) while letting the spread be the real spread. A bot's
+// game speed is therefore always derivable from the fact above it.
+//
+// Acceleration is NOT derived from top speed, because the sources repeatedly
+// separate the two. HyperShock has the highest ceiling on the roster and, by
+// its own team's account, takes about twice as long to reach it as Claw Viper —
+// which is why Claw Viper carries the highest accel in the catalog (four
+// RV-120E brushless motors and magnets holding it to the floor) and is the one
+// machine HyperShock cannot outrun, despite giving away 8mph on paper.
+//
 // EXTENSIONS beyond the ARCHITECTURE.md typedef (all optional, documented):
 // - accent / accentDark: hex colors for placeholder models + UI.
 // - weapon.dims: half extents {x,y,z} of the weapon volume around the pivot
@@ -78,7 +117,7 @@
   colliders: {shape:'box'|'cylinder'|'hull'|'wedge', offset:{x:number,y:number,z:number}}[],
   realWorld: {                             // the machine this bot is modelled on
     team: string, from: string,
-    weightLbs: number, topSpeedMph: number|null,
+    weightLbs: number, topSpeedMph: number|null, topSpeedSource?: string,
     size: {widthFt:number, lengthFt:number, heightFt:number, source:string},
     weapon: {name:string, weightLbs:number|null, tipSpeedMph:number|null, rpm:number|null},
     drive: string|null, power: string|null,
@@ -105,7 +144,7 @@ export const CATALOG = {
     realWorld: {
       team: "Aptyx Designs", from: "Mountain View, CA",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 13, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 3.05, lengthFt: 2.66, heightFt: 1.43, source: "class-estimate" },
       weapon: { name: "Vertical bar spinner", weightLbs: 40, tipSpeedMph: null, rpm: null },
@@ -121,7 +160,7 @@ export const CATALOG = {
       { x: -1.2803, y: 0.21, z: 0.8137 },
       { x: 1.2803, y: 0.21, z: 0.8137 },
     ],
-    maxSpeedFps: mph(8.182), // 12.00
+    maxSpeedFps: mph(7.54), // 11.06 fps
     accel: 8.2,
     turnRate: 1.05,
     accent: "#3b82c4",
@@ -168,7 +207,7 @@ export const CATALOG = {
     realWorld: {
       team: "Inertia Labs", from: "Sausalito, CA",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 12, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 3, lengthFt: 4.3, heightFt: 2.01, source: "class-estimate" },
       weapon: { name: "Pneumatic flipping arm", weightLbs: null, tipSpeedMph: null, rpm: null },
@@ -184,7 +223,7 @@ export const CATALOG = {
       { x: -1.1874, y: 0.21, z: 1.2758 },
       { x: 1.1874, y: 0.21, z: 1.2758 },
     ],
-    maxSpeedFps: mph(7.5), // 11.00
+    maxSpeedFps: mph(6.96), // 10.21 fps
     accel: 6.7,
     turnRate: 0.9,
     accent: "#c23b2e",
@@ -223,7 +262,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team HUGE", from: "South Windsor, CT",
       weightLbs: 250,
-      topSpeedMph: 15,
+      topSpeedMph: 15, topSpeedSource: "team-stated",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 5.69, lengthFt: 3.34, heightFt: 3.34, source: "wheel-calibrated" },
       weapon: { name: "Vertical bar spinner", weightLbs: 35, tipSpeedMph: 180, rpm: null },
@@ -240,8 +279,8 @@ export const CATALOG = {
       { x: -1.7627, y: 0.21, z: 0.8913 },
       { x: 1.7627, y: 0.21, z: 0.8913 },
     ],
-    maxSpeedFps: mph(3.682), // 5.40
-    accel: 8.4,
+    maxSpeedFps: mph(8.70), // 12.76 fps
+    accel: 6,
     turnRate: 0.72,
     accent: "#3f7bff",
     accentDark: "#e8e9ec",
@@ -289,7 +328,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team Robo Challenge", from: "Birmingham, UK",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 12, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 2.9, lengthFt: 3.36, heightFt: 2.15, source: "class-estimate" },
       weapon: { name: "Hydraulic crusher", weightLbs: null, tipSpeedMph: null, rpm: null },
@@ -305,7 +344,7 @@ export const CATALOG = {
       { x: -0.9032, y: 0.3069, z: 0.9141 },
       { x: 0.9032, y: 0.3069, z: 0.9141 },
     ],
-    maxSpeedFps: mph(7.5), // 11.00
+    maxSpeedFps: mph(6.96), // 10.21 fps
     accel: 6.2,
     turnRate: 0.84,
     accent: "#2244cc",
@@ -382,7 +421,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team HyperShock", from: "Miami, FL",
       weightLbs: 250, // 238-250lbs
-      topSpeedMph: 28,
+      topSpeedMph: 28, topSpeedSource: "team-stated",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 2.28, lengthFt: 3.76, heightFt: 1.04, source: "class-estimate" },
       weapon: { name: "Vertical spinner", weightLbs: 40, tipSpeedMph: null, rpm: null },
@@ -407,8 +446,8 @@ export const CATALOG = {
       { x: -1.024, y: 0.21, z: 1.28 },
       { x: 1.024, y: 0.21, z: 1.28 },
     ],
-    maxSpeedFps: mph(13.636), // 20.00
-    accel: 8.6,
+    maxSpeedFps: mph(16.24), // 23.82 fps
+    accel: 6,
     turnRate: 1.12,
     accent: "#7ad114",
     accentDark: "#1c2410",
@@ -447,7 +486,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team RioBotz", from: "Rio de Janeiro, Brazil",
       weightLbs: 250, // 230-250lbs
-      topSpeedMph: null,
+      topSpeedMph: 17, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 3, lengthFt: 3.21, heightFt: 1.03, source: "class-estimate" },
       weapon: { name: "Drum spinner", weightLbs: 70, tipSpeedMph: 250, rpm: 12000 },
@@ -463,7 +502,7 @@ export const CATALOG = {
       { x: -0.9714, y: 0.21, z: 0.9714 },
       { x: 0.9714, y: 0.21, z: 0.9714 },
     ],
-    maxSpeedFps: mph(10.909), // 16.00
+    maxSpeedFps: mph(9.86), // 14.46 fps
     accel: 7.9,
     turnRate: 0.98,
     accent: "#b06a3a",
@@ -502,7 +541,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team SawBlaze", from: "Cambridge, MA",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 12, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 2.8, lengthFt: 2.71, heightFt: 2.03, source: "class-estimate" },
       weapon: { name: "Hammer saw + flamethrower", weightLbs: null, tipSpeedMph: null, rpm: null },
@@ -518,7 +557,7 @@ export const CATALOG = {
       { x: -1.1407, y: 0.33, z: 0.8765 }, // rear drive wheels
       { x: 1.1407, y: 0.33, z: 0.8765 },
     ],
-    maxSpeedFps: mph(7.773), // 11.40
+    maxSpeedFps: mph(6.96), // 10.21 fps
     accel: 7.5,
     turnRate: 1.0,
     accent: "#24b04c",
@@ -563,7 +602,7 @@ export const CATALOG = {
     realWorld: {
       team: "Hardcore Robotics", from: "Placerville, CA",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 11, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 3.9, lengthFt: 2.93, heightFt: 1.29, source: "class-estimate" },
       weapon: { name: "Horizontal bar spinner", weightLbs: 71, tipSpeedMph: 235, rpm: null },
@@ -579,7 +618,7 @@ export const CATALOG = {
       { x: -1.5189, y: 0.3355, z: 0.5208 }, // rear tires
       { x: 1.5045, y: 0.3355, z: 0.5208 },
     ],
-    maxSpeedFps: mph(6.545), // 9.60
+    maxSpeedFps: mph(6.38), // 9.36 fps
     accel: 5.8,
     turnRate: 0.78,
     accent: "#c0392b",
@@ -627,7 +666,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team Hurtz", from: "Oxfordshire, UK",
       weightLbs: 250,
-      topSpeedMph: 12,
+      topSpeedMph: 12, topSpeedSource: "team-stated",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 2.9, lengthFt: 3.03, heightFt: 2.36, source: "class-estimate" },
       weapon: { name: "Hammer", weightLbs: 16, tipSpeedMph: null, rpm: null },
@@ -643,7 +682,7 @@ export const CATALOG = {
       { x: -0.9939, y: 0.21, z: 0.68 },
       { x: 0.9939, y: 0.21, z: 0.68 },
     ],
-    maxSpeedFps: mph(8), // 11.73
+    maxSpeedFps: mph(6.96), // 10.21 fps
     accel: 7.0,
     turnRate: 0.95,
     accent: "#b9bcc0",
@@ -687,7 +726,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team Fast Electric Robots", from: "Thousand Oaks, CA",
       weightLbs: 250,
-      topSpeedMph: 15,
+      topSpeedMph: 15, topSpeedSource: "team-stated",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 2.9, lengthFt: 3.77, heightFt: 2.24, source: "class-estimate" },
       weapon: { name: "Lifter + arm-mounted disk", weightLbs: 22, tipSpeedMph: null, rpm: null },
@@ -705,7 +744,7 @@ export const CATALOG = {
       { x: -1.2762, y: 0.21, z: 1.3235 },
       { x: 1.2762, y: 0.21, z: 1.3235 },
     ],
-    maxSpeedFps: 16.0, // known for its driving
+    maxSpeedFps: mph(8.70), // 12.76 fps // known for its driving
     accel: 8.5,
     turnRate: 1.1,
     accent: "#d8e021",
@@ -754,7 +793,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team Bad Ideas", from: "Seattle, WA",
       weightLbs: 250, // ~238lbs in WC V
-      topSpeedMph: 20,
+      topSpeedMph: 20, topSpeedSource: "published",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 2.9, lengthFt: 4.21, heightFt: 2.38, source: "class-estimate" },
       weapon: { name: "Lifter + grappler", weightLbs: null, tipSpeedMph: null, rpm: null },
@@ -771,8 +810,8 @@ export const CATALOG = {
       { x: -1.0263, y: 0.2495, z: 1.7632 },
       { x: 1.0263, y: 0.2495, z: 1.7632 },
     ],
-    maxSpeedFps: 17.0, // weapon-class motor on every wheel
-    accel: 9.5,
+    maxSpeedFps: mph(11.60), // 17.01 fps // weapon-class motor on every wheel
+    accel: 14,
     turnRate: 1.15,
     accent: "#3355cc",
     accentDark: "#141414",
@@ -822,7 +861,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team Overboard", from: "Norfolk, VA",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 13, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 4, lengthFt: 3.06, heightFt: 3.11, source: "published" },
       weapon: { name: "Vertical bar spinner", weightLbs: 80, tipSpeedMph: 207, rpm: null },
@@ -839,7 +878,7 @@ export const CATALOG = {
       { x: -1.4444, y: 0.21, z: 1 },
       { x: 1.4444, y: 0.21, z: 1 },
     ],
-    maxSpeedFps: 12.0,
+    maxSpeedFps: mph(7.54), // 11.06 fps
     accel: 7.0,
     turnRate: 0.9,
     accent: "#b1642f",
@@ -901,7 +940,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team Whyachi", from: "Dorchester, WI",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 17, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 3, lengthFt: 3.75, heightFt: 1.6, source: "class-estimate" },
       weapon: { name: "Hydraulic flipper", weightLbs: null, tipSpeedMph: null, rpm: null },
@@ -917,7 +956,7 @@ export const CATALOG = {
       { x: -1.1377, y: 0.21, z: 1.1377 },
       { x: 1.1377, y: 0.21, z: 1.1377 },
     ],
-    maxSpeedFps: 16.5,
+    maxSpeedFps: mph(9.86), // 14.46 fps
     accel: 9.0,
     turnRate: 1.1,
     accent: "#6b3fa0",
@@ -962,7 +1001,7 @@ export const CATALOG = {
     realWorld: {
       team: "Seems Reasonable Robotics", from: "Mountain View, CA",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 18, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 2.95, lengthFt: 3.65, heightFt: 1.53, source: "class-estimate" },
       weapon: { name: "Flywheel flipper", weightLbs: 16, tipSpeedMph: null, rpm: 9000 },
@@ -979,7 +1018,7 @@ export const CATALOG = {
       { x: -1.0824, y: 0.21, z: 0.9685 },
       { x: 1.0824, y: 0.21, z: 0.9685 },
     ],
-    maxSpeedFps: 17.0,
+    maxSpeedFps: mph(10.44), // 15.31 fps
     accel: 9.5,
     turnRate: 1.1,
     accent: "#2f6fd0",
@@ -1035,7 +1074,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team Copperhead", from: "Denver, CO",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 15, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       // lengthFt/heightFt were read off the model BEFORE the repair: 3.22 was
       // the mirrored rear forks and 2.05 was a scan whisker. Re-measured
@@ -1070,7 +1109,7 @@ export const CATALOG = {
       { x: -1.27, y: 0.2395, z: 0.4775 }, // rear tyres
       { x: 1.27, y: 0.2395, z: 0.4775 },
     ],
-    maxSpeedFps: 14.0,
+    maxSpeedFps: mph(8.70), // 12.76 fps
     accel: 8.0,
     turnRate: 1.0,
     accent: "#c1743a",
@@ -1140,7 +1179,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team Black and Blue", from: "Palo Alto, CA",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 14, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 3.5, lengthFt: 2.88, heightFt: 0.76, source: "class-estimate" },
       weapon: { name: "Lifting plow", weightLbs: 50, tipSpeedMph: null, rpm: null },
@@ -1156,7 +1195,7 @@ export const CATALOG = {
       { x: -1.2083, y: 0.21, z: 0.9416 },
       { x: 1.2083, y: 0.21, z: 0.9416 },
     ],
-    maxSpeedFps: 13.0,
+    maxSpeedFps: mph(8.12), // 11.91 fps
     accel: 7.5,
     turnRate: 0.95,
     accent: "#d8b62c",
@@ -1308,7 +1347,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team End Game", from: "Auckland, New Zealand",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 18, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 3.3, lengthFt: 2.24, heightFt: 1.71, source: "class-estimate" },
       weapon: { name: "Vertical spinner", weightLbs: 55, tipSpeedMph: null, rpm: 6000 },
@@ -1324,7 +1363,7 @@ export const CATALOG = {
       { x: -1.2618, y: 0.21, z: 0.6794 },
       { x: 1.2618, y: 0.21, z: 0.6794 },
     ],
-    maxSpeedFps: 15.0,
+    maxSpeedFps: mph(10.44), // 15.31 fps
     accel: 8.5,
     turnRate: 1.05,
     accent: "#e8502a",
@@ -1374,7 +1413,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team Special Delivery", from: "San Leandro, CA",
       weightLbs: 250, // 210lbs from WC VII
-      topSpeedMph: null,
+      topSpeedMph: 15, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 2.7, lengthFt: 4.2, heightFt: 1.97, source: "class-estimate" },
       weapon: { name: "Forklift lifter + flamethrowers", weightLbs: null, tipSpeedMph: null, rpm: null },
@@ -1390,7 +1429,7 @@ export const CATALOG = {
       { x: -0.9881, y: 0.21, z: 1.6427 },
       { x: 0.9881, y: 0.21, z: 1.6427 },
     ],
-    maxSpeedFps: 14.5,
+    maxSpeedFps: mph(8.70), // 12.76 fps
     accel: 8.0,
     turnRate: 1.0,
     accent: "#d94b2b",
@@ -1464,7 +1503,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team Mammoth", from: "Baltimore, MD",
       weightLbs: 250,
-      topSpeedMph: 22,
+      topSpeedMph: 22, topSpeedSource: "published",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 5.33, lengthFt: 8.75, heightFt: 6.25, source: "published" },
       weapon: { name: "Rotary lifting trunk", weightLbs: null, tipSpeedMph: null, rpm: null },
@@ -1480,7 +1519,7 @@ export const CATALOG = {
       { x: -2.3455, y: 0.21, z: 1.1525 },
       { x: 2.3455, y: 0.21, z: 1.1525 },
     ],
-    maxSpeedFps: 11.0,
+    maxSpeedFps: mph(12.76), // 18.71 fps
     accel: 5.5,
     turnRate: 0.7,
     accent: "#8a5a2c",
@@ -1553,7 +1592,7 @@ export const CATALOG = {
     realWorld: {
       team: "Equals Zero Robotics", from: "Atlanta, GA",
       weightLbs: 250, // 247lbs in Champions I
-      topSpeedMph: null,
+      topSpeedMph: 16, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 3.1, lengthFt: 4.01, heightFt: 2.21, source: "class-estimate" },
       weapon: { name: "Lifter + grabber", weightLbs: null, tipSpeedMph: null, rpm: null },
@@ -1569,7 +1608,7 @@ export const CATALOG = {
       { x: -1.2033, y: 0.21, z: 1.1294 },
       { x: 1.2033, y: 0.21, z: 1.1294 },
     ],
-    maxSpeedFps: 15.5,
+    maxSpeedFps: mph(9.28), // 13.61 fps
     accel: 8.5,
     turnRate: 1.05,
     accent: "#cf3b3b",
@@ -1625,7 +1664,7 @@ export const CATALOG = {
     realWorld: {
       team: "Bots FC", from: "Brooklyn, NY",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 14, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 2.45, lengthFt: 4.18, heightFt: 2.82, source: "class-estimate" },
       weapon: { name: "Hammer", weightLbs: null, tipSpeedMph: null, rpm: null },
@@ -1641,7 +1680,7 @@ export const CATALOG = {
       { x: -0.979, y: 0.21, z: 1.4358 },
       { x: 0.979, y: 0.21, z: 1.4358 },
     ],
-    maxSpeedFps: 14.0,
+    maxSpeedFps: mph(8.12), // 11.91 fps
     accel: 8.0,
     turnRate: 1.15,
     accent: "#8f6fd0",
@@ -1701,7 +1740,7 @@ export const CATALOG = {
     realWorld: {
       team: "Seems Reasonable Robotics", from: "Mountain View, CA",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 16, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 3, lengthFt: 3.43, heightFt: 1.61, source: "class-estimate" },
       weapon: { name: "Punching vertical spinner", weightLbs: 18, tipSpeedMph: null, rpm: 8500 },
@@ -1717,7 +1756,7 @@ export const CATALOG = {
       { x: -1.1769, y: 0.21, z: 0.9629 },
       { x: 1.1769, y: 0.21, z: 0.9629 },
     ],
-    maxSpeedFps: 15.0,
+    maxSpeedFps: mph(9.28), // 13.61 fps
     accel: 8.5,
     turnRate: 1.05,
     accent: "#e2701f",
@@ -1794,7 +1833,7 @@ export const CATALOG = {
     realWorld: {
       team: "Team Witch Doctor", from: "Miami, FL",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 16, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
       size: { widthFt: 2.95, lengthFt: 3.36, heightFt: 1.31, source: "class-estimate" },
       weapon: { name: "Vertical disk spinner + flamethrower", weightLbs: 47, tipSpeedMph: 250, rpm: 4000 },
@@ -1810,7 +1849,7 @@ export const CATALOG = {
       { x: -1.138, y: 0.21, z: 1.3764 },
       { x: 1.138, y: 0.21, z: 1.3764 },
     ],
-    maxSpeedFps: 15.0,
+    maxSpeedFps: mph(9.28), // 13.61 fps
     accel: 8.5,
     turnRate: 1.05,
     accent: "#7fd430",
@@ -1871,7 +1910,7 @@ export const CATALOG = {
     realWorld: {
       team: "Combat Robotics at Berkeley", from: "Berkeley, CA",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 12, topSpeedSource: "class-estimate",
       size: { widthFt: 2.9, lengthFt: 3.15, heightFt: 0.94, source: "class-estimate" },
       weapon: { name: "Eggbeater drum", weightLbs: 58, tipSpeedMph: 180, rpm: null },
       drive: "4x Scorpion SII-4035-450KV (X-drive omni)", power: null,
@@ -1886,8 +1925,8 @@ export const CATALOG = {
       { x: -1.15, y: 0.21, z: 1.05 },
       { x: 1.15, y: 0.21, z: 1.05 },
     ],
-    maxSpeedFps: 15.0,
-    accel: 7.0,
+    maxSpeedFps: mph(6.96), // 10.21 fps
+    accel: 6,
     turnRate: 1.15,
     accent: "#7b3fd4",
     accentDark: "#15161a",
@@ -1937,7 +1976,7 @@ export const CATALOG = {
     // NOT rotate and it wants to lie back over the tail rather than stick out
     // sideways where it reads as a broken antenna.
     modelYaw: 1.6912,
-    modelScale: 3.813,
+    modelScale: 4.2579,
     // The SHELL is what gets scaled to widthFt, not the overall bbox, and it is
     // also what the footprint centres on: modelBody here is the passive
     // self-righting pole, and that pole arcs out sideways far enough to shove
@@ -1950,29 +1989,29 @@ export const CATALOG = {
     realWorld: {
       team: "Robotic Death Company", from: "Oceanside, CA",
       weightLbs: 250,
-      topSpeedMph: null,
-      size: { widthFt: 3.0, lengthFt: 3.0, heightFt: 1.04, source: "class-estimate" },
+      topSpeedMph: 12, topSpeedSource: "class-estimate",
+      size: { widthFt: 3.35, lengthFt: 3.35, heightFt: 1.1613, source: "class-estimate" },
       weapon: { name: "Full-body shell", weightLbs: 120, tipSpeedMph: 188, rpm: null },
       drive: "2x TP5680 brushless", power: null,
     },
 
     weightLbs: 250,
     weaponWeightLbs: 120,
-    bodyDims: { x: 3.113, y: 1.040, z: 3.098 }, // MEASURED shell, after gigabyte-round.json made it circular
+    bodyDims: { x: 3.4762, y: 1.1613, z: 3.4594 }, // MEASURED shell, after gigabyte-round.json made it circular
     wheelAnchors: [
-      { x: -1.25, y: 0.21, z: -0.55 },
-      { x: 1.25, y: 0.21, z: -0.55 },
-      { x: -1.25, y: 0.21, z: 0.55 },
-      { x: 1.25, y: 0.21, z: 0.55 },
+      { x: -1.3958, y: 0.21, z: -0.6142 },
+      { x: 1.3958, y: 0.21, z: -0.6142 },
+      { x: -1.3958, y: 0.21, z: 0.6142 },
+      { x: 1.3958, y: 0.21, z: 0.6142 },
     ],
-    maxSpeedFps: 11.0,
+    maxSpeedFps: mph(6.96), // 10.21 fps
     accel: 5.5,
     turnRate: 0.7,
     accent: "#d94a1e",
     accentDark: "#121214",
     weapon: {
       type: "shellSpinner",
-      pivot: { x: -0.012, y: 0.649, z: -0.076 }, // MEASURED shell centre, game space
+      pivot: { x: -0.0134, y: 0.7247, z: -0.0849 }, // MEASURED shell centre, game space
       axis: { x: 0, y: 1, z: 0 }, // VERTICAL — the only weapon in the game that is
       // Six seconds is the published spin-up and it is the whole risk of the
       // machine: before it is up it is a 250lb dome with two wheels.
@@ -1985,8 +2024,8 @@ export const CATALOG = {
       // unsteerable once up to speed is the price of the six-second wind-up.
       recoilScale: 1.8,
       gyroPenalty: 0.55,
-      radius: 1.55, // MEASURED shell radius (the rim teeth reach 1.62)
-      dims: { x: 1.554, y: 0.520, z: 1.554 },
+      radius: 1.7308, // MEASURED shell radius x the 3.35ft resize (teeth reach 1.81)
+      dims: { x: 1.7353, y: 0.5807, z: 1.7353 },
       // The shell is the roof, which is the one way in to a spun-up full-body
       // spinner: a hammer that comes down square on the rim drives it into the
       // chassis and the rotor stops dead. No other weapon in the catalog sets
@@ -1994,7 +2033,7 @@ export const CATALOG = {
       // overhead blow glances off it. `radius` is how far out from the bot's
       // centre the head still lands on the spinning face; it is the shell, not
       // the teeth, because a hit on the rim itself is a graze.
-      overheadStall: { radius: 1.4, minPower: 0.45, seconds: 2.0 },
+      overheadStall: { radius: 1.5633, minPower: 0.45, seconds: 2.0 },
       // Tombstone's chain, sized for a rotor half again as heavy. Gigabyte hits
       // harder than the bar does — that is the whole bot — but the hit is the
       // same KIND of hit: a horizontal spinner throws you sideways and doesn't
@@ -2015,7 +2054,7 @@ export const CATALOG = {
     // The pole is the only part that does not rotate and it never reaches the
     // floor, so it gets no collider of its own.
     colliders: [
-      { shape: "cylinder", axis: "y", radius: 1.55, halfHeight: 0.50, offset: { x: 0, y: 0.50, z: 0 } },
+      { shape: "cylinder", axis: "y", radius: 1.7308, halfHeight: 0.5583, offset: { x: 0, y: 0.5583, z: 0 } },
     ],
   },
 
@@ -2026,7 +2065,7 @@ export const CATALOG = {
     referenceImage: "./public/reference/kraken.png",
     modelPath: "./public/models/kraken.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X
-    modelScale: 3.197,
+    modelScale: 3.5659,
     // --- the real machine ---------------------------------------------
     // The only pneumatic crusher ever built — an air BAG between chassis and
     // jaw lever, not a rod cylinder. It trades holding force for speed, and it
@@ -2035,29 +2074,32 @@ export const CATALOG = {
     realWorld: {
       team: "CE Robots", from: "Titusville, FL",
       weightLbs: 249,
-      topSpeedMph: null,
-      size: { widthFt: 2.6, lengthFt: 3.2, heightFt: 1.71, source: "class-estimate" },
+      topSpeedMph: 20, topSpeedSource: "builder-stated",
+      size: { widthFt: 2.9, lengthFt: 3.5692, heightFt: 1.9073, source: "class-estimate" },
       weapon: { name: "Pneumatic crusher", weightLbs: 60, tipSpeedMph: null, rpm: null },
-      drive: "2x NPC-T74", power: null,
+      // 2022/23 rebuild: four brushless motors (~20lb) making over 22hp,
+      // replacing 30lb of brushed NPC-T74s making 3-4hp. That is the whole
+      // reason this bot is no longer the slowest wheeled machine in the game.
+      drive: "4x brushless (22hp); was 2x NPC-T74", power: null,
     },
 
     weightLbs: 249,
     weaponWeightLbs: 60,
-    bodyDims: { x: 2.600, y: 1.707, z: 3.197 }, // MEASURED
+    bodyDims: { x: 2.9, y: 1.904, z: 3.5659 }, // MEASURED
     wheelAnchors: [
-      { x: -0.90, y: 0.21, z: -0.55 },
-      { x: 0.90, y: 0.21, z: -0.55 },
-      { x: -0.95, y: 0.21, z: 0.955 },
-      { x: 0.95, y: 0.21, z: 0.955 },
+      { x: -1.0038, y: 0.21, z: -0.6135 },
+      { x: 1.0038, y: 0.21, z: -0.6135 },
+      { x: -1.0596, y: 0.21, z: 1.0652 },
+      { x: 1.0596, y: 0.21, z: 1.0652 },
     ],
-    maxSpeedFps: 8.8,
-    accel: 5.2,
-    turnRate: 0.7,
+    maxSpeedFps: mph(11.60), // 17.01 fps
+    accel: 9,
+    turnRate: 0.95,
     accent: "#3fa63f",
     accentDark: "#16181a",
     weapon: {
       type: "crusher",
-      pivot: { x: 0, y: 1.589, z: 0.856 }, // MEASURED top-rear hinge, game space
+      pivot: { x: 0, y: 1.7723, z: 0.9548 }, // MEASURED top-rear hinge, game space
       axis: { x: 1, y: 0, z: 0 },
       // MEASURED: the GLB is baked jaw-OPEN, so the stroke CLOSES it onto the
       // fixed lower V-scoop. About 30 degrees, which matches the real gape.
@@ -2065,17 +2107,18 @@ export const CATALOG = {
       fireAngle: -0.55,
       spinUpSeconds: 0.2, // jaw close response
       budgetCap: 160, // enormous force, but it has to get a grip first
-      dims: { x: 0.750, y: 0.500, z: 1.454 },
-      tuning: { strokeSeconds: 0.25, returnSeconds: 0.5, gripReach: 1.9 },
+      dims: { x: 0.8365, y: 0.5577, z: 1.6218 },
+      tuning: { strokeSeconds: 0.25, returnSeconds: 0.5, gripReach: 2.1192 },
     },
     // The lower jaw is welded to the chassis and is the get-under wedge. Its
-    // tip MEASURES 0.27 off the floor, which is a scan artifact rather than the
+    // tip MEASURES 0.30 off the floor (0.27 before the 2.90ft resize), which is a
+    // scan artifact rather than the
     // machine — authored to the floor so it works as the wedge it is.
     colliders: [
-      { shape: "wedge", halfExtents: { x: 0.34, y: 0.16, z: 0.48 }, offset: { x: 0, y: 0.16, z: -1.00 }, tipY: 0.02 },
-      { shape: "box", halfExtents: { x: 0.95, y: 0.55, z: 0.55 }, offset: { x: 0, y: 0.55, z: -0.45 } },
-      { shape: "box", halfExtents: { x: 1.30, y: 0.45, z: 0.62 }, offset: { x: 0, y: 0.45, z: 0.42 } },
-      { shape: "box", halfExtents: { x: 0.92, y: 0.33, z: 0.58 }, offset: { x: 0, y: 0.33, z: 1.22 } },
+      { shape: "wedge", halfExtents: { x: 0.3792, y: 0.1785, z: 0.5354 }, offset: { x: 0, y: 0.1785, z: -1.1154 }, tipY: 0.0223 },
+      { shape: "box", halfExtents: { x: 1.0596, y: 0.6135, z: 0.6135 }, offset: { x: 0, y: 0.6135, z: -0.5019 } },
+      { shape: "box", halfExtents: { x: 1.45, y: 0.5019, z: 0.6915 }, offset: { x: 0, y: 0.5019, z: 0.4685 } },
+      { shape: "box", halfExtents: { x: 1.0262, y: 0.3681, z: 0.6469 }, offset: { x: 0, y: 0.3681, z: 1.3608 } },
     ],
   },
 
@@ -2086,7 +2129,7 @@ export const CATALOG = {
     referenceImage: "./public/reference/rusty.png",
     modelPath: "./public/models/rusty.glb",
     modelYaw: Math.PI / 2, // MEASURED: model faces +X
-    modelScale: 3.882,
+    modelScale: 4.2553,
     hideWheels: true, // tracked — the two rubber track units stay in the body
     // --- the real machine ---------------------------------------------
     // A genuine one-man team, and the rust is real rather than paint. The
@@ -2096,22 +2139,22 @@ export const CATALOG = {
     realWorld: {
       team: "Team Iron Force", from: "Antioch, IL",
       weightLbs: 250,
-      topSpeedMph: null,
-      size: { widthFt: 2.6, lengthFt: 3.88, heightFt: 1.85, source: "class-estimate" },
+      topSpeedMph: 7, topSpeedSource: "class-estimate",
+      size: { widthFt: 2.85, lengthFt: 4.2531, heightFt: 2.0279, source: "class-estimate" },
       weapon: { name: "Pneumatic hammer", weightLbs: 30, tipSpeedMph: null, rpm: null },
       drive: "2x rubber tracks", power: null,
     },
 
     weightLbs: 250,
     weaponWeightLbs: 30,
-    bodyDims: { x: 2.600, y: 1.848, z: 3.882 }, // MEASURED
+    bodyDims: { x: 2.85, y: 2.0257, z: 4.2553 }, // MEASURED
     wheelAnchors: [
-      { x: -1.15, y: 0.21, z: -1.35 },
-      { x: 1.15, y: 0.21, z: -1.35 },
-      { x: -1.15, y: 0.21, z: 1.35 },
-      { x: 1.15, y: 0.21, z: 1.35 },
+      { x: -1.2606, y: 0.21, z: -1.4798 },
+      { x: 1.2606, y: 0.21, z: -1.4798 },
+      { x: -1.2606, y: 0.21, z: 1.4798 },
+      { x: 1.2606, y: 0.21, z: 1.4798 },
     ],
-    maxSpeedFps: 7.0,
+    maxSpeedFps: mph(4.06), // 5.95 fps
     accel: 4.2,
     turnRate: 0.6,
     accent: "#8a5a32",
@@ -2122,8 +2165,9 @@ export const CATALOG = {
       // MEASURED front-of-yoke hinge, game space. The yoke is a U: two drilled
       // plate-steel bars down the sides joined by the head fin at the tail, so
       // the pivot is at the FRONT beside the dome and the head hangs over the
-      // tail at z 2.02. That is why the hammer is invisible in front-on photos.
-      pivot: { x: 0, y: 1.118, z: -1.004 },
+      // tail at z 2.21 (2.02 before the 2.85ft resize). That is why the hammer is
+      // invisible in front-on photos.
+      pivot: { x: 0, y: 1.2255, z: -1.1005 },
       // Negative X: the head is BEHIND the pivot, so a positive rotation about
       // +X would drive it into the floor instead of lifting it over the top.
       axis: { x: -1, y: 0, z: 0 },
@@ -2139,14 +2183,14 @@ export const CATALOG = {
       // release and it re-cocks. Retraction is where Rusty actually loses
       // fights, so leaving the head down has to be something you can DO.
       holdStroke: true,
-      dims: { x: 0.300, y: 0.546, z: 0.300 },
-      tuning: { strokeSeconds: 0.25, returnSeconds: 1.4, reach: 3.03 },
+      dims: { x: 0.3288, y: 0.5985, z: 0.3288 },
+      tuning: { strokeSeconds: 0.25, returnSeconds: 1.4, reach: 3.3213 },
     },
     colliders: [
-      { shape: "wedge", halfExtents: { x: 0.62, y: 0.20, z: 0.30 }, offset: { x: 0, y: 0.20, z: -1.56 }, tipY: 0.03 },
-      { shape: "box", halfExtents: { x: 1.30, y: 0.36, z: 1.55 }, offset: { x: 0, y: 0.36, z: 0.24 } },
-      { shape: "box", halfExtents: { x: 0.78, y: 0.62, z: 0.66 }, offset: { x: 0, y: 1.22, z: -0.85 } },
-      { shape: "box", halfExtents: { x: 1.28, y: 0.30, z: 0.62 }, offset: { x: 0, y: 0.92, z: 0.62 } },
+      { shape: "wedge", halfExtents: { x: 0.6796, y: 0.2192, z: 0.3288 }, offset: { x: 0, y: 0.2192, z: -1.71 }, tipY: 0.0329 },
+      { shape: "box", halfExtents: { x: 1.425, y: 0.3946, z: 1.699 }, offset: { x: 0, y: 0.3946, z: 0.2631 } },
+      { shape: "box", halfExtents: { x: 0.855, y: 0.6796, z: 0.7235 }, offset: { x: 0, y: 1.3373, z: -0.9317 } },
+      { shape: "box", halfExtents: { x: 1.4031, y: 0.3288, z: 0.6796 }, offset: { x: 0, y: 1.0085, z: 0.6796 } },
     ],
   },
 
@@ -2169,7 +2213,7 @@ export const CATALOG = {
     realWorld: {
       team: "Bot Bash Party Crew", from: "Birmingham, AL",
       weightLbs: 250,
-      topSpeedMph: null,
+      topSpeedMph: 8, topSpeedSource: "class-estimate",
       size: { widthFt: 3.3, lengthFt: 4.19, heightFt: 1.95, source: "class-estimate" },
       weapon: { name: "Twin saws", weightLbs: null, tipSpeedMph: null, rpm: null },
       drive: "2x rotating tracked pods", power: null,
@@ -2187,7 +2231,7 @@ export const CATALOG = {
       { x: -1.30, y: 0.21, z: 0.35 },
       { x: 1.30, y: 0.21, z: 0.35 },
     ],
-    maxSpeedFps: 8.0,
+    maxSpeedFps: mph(4.64), // 6.81 fps
     accel: 4.5,
     turnRate: 0.65,
     accent: "#e8b21e",
