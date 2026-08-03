@@ -1617,6 +1617,10 @@ export const CATALOG = {
     modelYaw: Math.PI / 2, // MEASURED: model faces +X
     modelScale: 4.177,
     hideWheels: true, // omni drive enclosed by the side armour
+    // Four omniwheels. Same X-drive as Glitch: the left stick alone translates
+    // in any direction and yaw is its own channel, so the hammer stays pointed
+    // at what it is about to hit while the bot moves somewhere else.
+    drive: { type: "holonomic", strafeRatio: 0.85, pushForceScale: 0.6 },
     // --- the real machine ---------------------------------------------
     realWorld: {
       team: "Bots FC", from: "Brooklyn, NY",
@@ -2088,6 +2092,10 @@ export const CATALOG = {
       spinUpSeconds: 0.2,
       budgetCap: 260,
       selfRight: true,
+      // RT alone: hold and the head stays down at the bottom of the arc,
+      // release and it re-cocks. Retraction is where Rusty actually loses
+      // fights, so leaving the head down has to be something you can DO.
+      holdStroke: true,
       dims: { x: 0.300, y: 0.546, z: 0.300 },
       tuning: { strokeSeconds: 0.25, returnSeconds: 1.4, reach: 3.03 },
     },

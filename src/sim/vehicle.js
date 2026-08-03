@@ -44,6 +44,9 @@ export function completeInput(input = {}) {
   return {
     leftDrive: m.clamp(input.leftDrive ?? 0, -1, 1),
     rightDrive: m.clamp(input.rightDrive ?? 0, -1, 1),
+    // Holonomic translation, used only by drive.type === "holonomic".
+    strafe: m.clamp(input.strafe ?? 0, -1, 1),
+    spin: m.clamp(input.spin ?? 0, -1, 1),
     weapon: Boolean(input.weapon),
     // Secondary weapon channel (RB): Sawblaze's saw motor, Whiplash's disc.
     // This used to be dropped here, so the only consumers were the renderer
@@ -257,7 +260,7 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
     }
   }
 
-  function applyLateralGrip(dt, basis, worldAnchors, yawTarget) {
+  function applyLateralGrip(dt, basis, worldAnchors, yawTarget, strafeTarget = 0) {
     const { rightH } = basis;
     const comWorld = m.add(basis.pos, m.qRotate(basis.rot, com));
     for (let i = 0; i < anchors.length; i++) {
@@ -268,10 +271,18 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
       // rotation at the target yaw rate is not slip, so grip doesn't fight the
       // turn (or pin the pivot to the grippier axle and make the bot orbit).
       const r = m.sub(worldAnchors[i], comWorld);
-      const vLatDesired = m.dot(m.cross({ x: 0, y: yawTarget, z: 0 }, r), rightH);
+      // An omniwheel's rollers let it slide sideways freely, so on a holonomic
+      // bot "lateral slip" is not slip at all — it is a commanded velocity, and
+      // the servo tracks it instead of killing it. That single change is what
+      // turns the tyre model into an X-drive.
+      const vLatDesired = m.dot(m.cross({ x: 0, y: yawTarget, z: 0 }, r), rightH) + strafeTarget;
       const slip = vLat - vLatDesired;
       // Friction circle: lateral capacity is what the longitudinal force left over.
-      const muN = T.tireMu * state.normalForce;
+      // Omniwheels pay for that freedom with grip: only the roller contact
+      // patch carries load, and half of each diagonal pair's force is cancelling
+      // the other. gripScale is the documented weakness — a heavy pusher moves
+      // Glitch around at will, which is exactly how it loses.
+      const muN = T.tireMu * state.normalForce * gripScale;
       const latCapForce = Math.sqrt(Math.max(0, muN * muN - state.longForce * state.longForce));
       // Exponential scrub (v1's tuned tire feel), NOT a one-tick slip kill —
       // killing all slip per step made every micro-slide snap and read "sticky".
@@ -314,6 +325,15 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
       body.applyImpulse(m.scale(m.norm(push), mass * T.escapeAccel * dt), true);
     }
   }
+
+  // Omnidirectional drive. An X-drive mounts four omniwheels at 45 degrees; the
+  // pairs resolve into translation along both chassis axes AND yaw, all three
+  // independently. In this model that reduces to two things: the lateral servo
+  // tracks a commanded sideways velocity instead of killing slip, and grip is
+  // scaled back because omniwheels have far less of it.
+  const holonomic = spec.drive?.type === "holonomic";
+  const strafeRatio = spec.drive?.strafeRatio ?? 0.9;
+  const gripScale = holonomic ? (spec.drive?.pushForceScale ?? 0.55) : 1;
 
   // Yaw authority, scaled down by a spun-up rotor. 1 = full. Only Gigabyte's
   // shell spinner drives this today; every other bot leaves it alone.
@@ -363,6 +383,14 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
         let yawRate = -turnInput * T.baseTurnRate * turnScale * gyroYawScale
           * (counterRotating ? T.counterRotateBoost : 1);
         if (counterRotating) yawRate = m.clamp(yawRate, -T.counterRotateCap, T.counterRotateCap);
+        // Holonomic: the stick is a translation VECTOR, not a tank pair. Yaw
+        // comes off its own channel, so the bot can hold its weapon square on
+        // an opponent while circling — which is the entire reason a combat
+        // robot fits omniwheels, and why Glitch is "always pointed at you".
+        if (holonomic) {
+          yawRate = -input.spin * T.baseTurnRate * turnScale
+            * (Math.abs(input.spin) > 0.55 ? T.counterRotateBoost : 1);
+        }
         const targets = {
           forward: input.brake ? 0 : throttle * spec.maxSpeedFps,
           yawRate,
@@ -371,7 +399,10 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
         const basis = { pos, rot, linvel, angvel, fwdH, rightH: m.cross(fwdH, { x: 0, y: 1, z: 0 }) };
         driveSide(dt, leftIdx, targets, basis, worldAnchors);
         driveSide(dt, rightIdx, targets, basis, worldAnchors);
-        applyLateralGrip(dt, basis, worldAnchors, targets.yawRate);
+        const strafeTarget = holonomic && !input.brake
+          ? input.strafe * spec.maxSpeedFps * strafeRatio
+          : 0;
+        applyLateralGrip(dt, basis, worldAnchors, targets.yawRate, strafeTarget);
         const grip = probeState.filter((p) => p.grounded).length / probeState.length;
         applyYawServo(dt, turnInput, targets.yawRate, grip, angvel);
       } else if (!grounded) {

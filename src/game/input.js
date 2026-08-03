@@ -185,6 +185,14 @@ export function createInput({ on, playerIndex = 0, gamepadIndex = 0 } = {}) {
     return {
       leftDrive: clamp(throttle + turn, -1, 1),
       rightDrive: clamp(throttle - turn, -1, 1),
+      // Holonomic channels, read only by bots whose drive.type says so (Glitch,
+      // Shatter). An omniwheel drives along its own axis and SLIDES sideways,
+      // so an X-drive can translate any direction independently of where it is
+      // pointing — which needs a second axis the tank pair has nowhere to put.
+      // A/D strafe, Q/E rotate: the whole of basic movement is on WASD, and
+      // turning is the optional extra rather than the other way round.
+      strafe: clamp((keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0), -1, 1),
+      spin: clamp((keys.has("KeyE") ? 1 : 0) - (keys.has("KeyQ") ? 1 : 0), -1, 1),
       weapon: keys.has("Space"),
       // Secondary weapon channel (sawblaze saw toggle): R on keyboard, RB on pad.
       weaponAlt: keys.has("KeyR"),
@@ -206,9 +214,16 @@ export function createInput({ on, playerIndex = 0, gamepadIndex = 0 } = {}) {
       const leftStick = -dead(pad.axes[1] || 0);
       const rightStick = -dead(pad.axes[3] || 0);
       const stickDrive = leftStick !== 0 || rightStick !== 0;
+      // On a pad the left stick's X axis was going unused. For a holonomic bot
+      // it is the strafe, so the LEFT STICK ALONE gives translation in any
+      // direction — which is the whole point of an X-drive — and the right
+      // stick becomes rotation rather than half of a tank pair.
+      const strafeAxis = dead(pad.axes[0] || 0);
       return {
         leftDrive: stickDrive ? clamp(leftStick, -1, 1) : keyboard.leftDrive,
         rightDrive: stickDrive ? clamp(rightStick, -1, 1) : keyboard.rightDrive,
+        strafe: strafeAxis !== 0 ? clamp(strafeAxis, -1, 1) : keyboard.strafe,
+        spin: stickDrive ? clamp((leftStick - rightStick) / 2, -1, 1) : keyboard.spin,
         weapon: (pad.buttons[7]?.value || 0) > TRIGGER_THRESHOLD || Boolean(pad.buttons[7]?.pressed) || keyboard.weapon,
         weaponAlt: Boolean(pad.buttons[5]?.pressed) || keyboard.weaponAlt,
         weaponAux: (pad.buttons[4]?.value || 0) > TRIGGER_THRESHOLD || Boolean(pad.buttons[4]?.pressed) || keyboard.weaponAux,

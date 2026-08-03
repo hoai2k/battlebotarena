@@ -330,5 +330,15 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
   const throttle = steer.throttle * level.drive * throttleScale;
   const turn = clamp(steer.turn * level.turnGain, -1, 1);
   const { leftDrive, rightDrive } = tankFrom(throttle, turn);
+  // An X-drive bot that only ever drove its tank pair would get the omniwheel
+  // grip penalty and none of the payoff. Circle-strafe instead: keep the nose
+  // (and therefore the weapon) on the foe with `turn`, and slide sideways to
+  // stay off its centreline. The direction flips on a slow cycle so it does not
+  // simply orbit one way into a wall.
+  if (spec?.drive?.type === "holonomic") {
+    const circling = distance < AI_ENGAGE_DISTANCE * level.range * 1.4;
+    const strafe = circling ? (Math.floor(ai.t / 2.4) % 2 === 0 ? 1 : -1) * 0.8 : 0;
+    return { leftDrive, rightDrive, strafe, spin: turn, weapon, brake: false, sawActive, auxActive };
+  }
   return { leftDrive, rightDrive, weapon, brake: false, sawActive, auxActive };
 }

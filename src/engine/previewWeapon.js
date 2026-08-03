@@ -201,7 +201,12 @@ export function createPreviewWeapon(spec) {
     const aux = Boolean(input.auxActive);
     if (SPINNER_TYPES.has(type)) updateSpinner(dt, fire, alt, aux);
     else if (type === "flipper") updateOneShot(dt, fire, tune.strokeSeconds, tune.returnSeconds);
-    else if (type === "hammer") updateOneShot(dt, fire, tune.strokeSeconds, tune.returnSeconds);
+    // A holding hammer (Rusty) runs the swing/hold/return machine, not the
+    // one-shot — same shape as hammerSaw but with nothing on the alt channel.
+    else if (type === "hammer") {
+      if (w.holdStroke) updateHammerSaw(dt, fire, false);
+      else updateOneShot(dt, fire, tune.strokeSeconds, tune.returnSeconds);
+    }
     else if (type === "hammerSaw" || type === "sawArms") updateHammerSaw(dt, fire, alt);
     else if (type === "crusher") updateCrusher(dt, fire);
     else if (type === "lifter" || type === "lifterDisc") updateLifter(dt, fire, alt);
@@ -239,6 +244,7 @@ export function createPreviewWeapon(spec) {
         if (phase === "returning") return clamp01(t / tune.returnSeconds);
         return phase === "idle" ? 1 : 0;
       }
+      if (phase === "held") return 0;
       return state.weaponAngle;
     },
     /** 0..1 secondary readiness — disc speed, saw motor, flame ramp, jaw, carriage. */

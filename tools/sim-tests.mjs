@@ -723,6 +723,29 @@ await test("lifter: the plow's solid swings with the arm", async () => {
   }
 });
 
+await test("roster: the catalog, the display order and the select cards agree", async () => {
+  // Three lists have to name the same bots and nothing checks them against each
+  // other. CATALOG is physics, BOT_IDS is display order, BOT_CARDS is the
+  // select screen — and the select screen is built from BOT_CARDS alone, so a
+  // bot can be fully integrated, measured, rigged, armed and AI-driven and
+  // still be invisible to the player because one list was not touched. That is
+  // exactly what happened to all five of Glitch, Kraken, Gigabyte, Rusty and
+  // Dragon King: they fought fine in the roster probe and never appeared in the
+  // game.
+  const { CATALOG, BOT_IDS } = await import("../src/assets/catalog.js");
+  const { BOT_CARDS } = await import("../src/ui/botCards.js");
+  const catalog = new Set(Object.keys(CATALOG));
+  const ids = new Set(BOT_IDS);
+  const cards = new Set(BOT_CARDS.map((c) => c.id));
+  const missing = (from, to) => [...from].filter((id) => !to.has(id));
+  check(missing(catalog, ids).length === 0, "every catalog bot is in BOT_IDS",
+    `absent: ${missing(catalog, ids).join(", ")}`);
+  check(missing(catalog, cards).length === 0, "every catalog bot has a select card",
+    `absent from BOT_CARDS, so unreachable in game: ${missing(catalog, cards).join(", ")}`);
+  check(missing(cards, catalog).length === 0, "every select card has a catalog bot",
+    `card with no bot behind it: ${missing(cards, catalog).join(", ")}`);
+});
+
 // ---------------------------------------------------------------------------
 
 const failed = results.filter((r) => !r.ok);

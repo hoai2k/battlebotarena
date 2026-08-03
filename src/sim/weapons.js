@@ -797,7 +797,14 @@ function createHammer({ vehicle, index, emit }) {
   const downforce = w.downforce ?? 0; // lbf held onto the floor
   const reactionScale = w.reactionScale ?? 0.15;
 
-  let phase = "idle"; // idle | swinging | returning
+  // Rusty holds. Its arm is a pneumatic gantry and re-cocking it is a separate
+  // action that repeatedly FAILED on the real machine, leaving the head
+  // dragging — in one FaceOffs fight the dragging axe fell into the killsaw
+  // slot and immobilised the robot. So the stroke stays down while the trigger
+  // is down and only re-cocks when you let go, on one button. Beta keeps the
+  // one-shot: its hammer is a strike, not a hold.
+  const holdsStroke = Boolean(w.holdStroke);
+  let phase = "idle"; // idle | swinging | held | returning
   let t = 0;
   let hitThisSwing = false;
 
@@ -861,6 +868,15 @@ function createHammer({ vehicle, index, emit }) {
         if (!hitThisSwing && stroke >= strikeAt) trySlam(ctx.foe, stroke);
         armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
         if (t >= strokeSeconds) {
+          phase = holdsStroke && fire ? "held" : "returning";
+          t = 0;
+        }
+      } else if (phase === "held") {
+        // Parked at the bottom of the arc. Keep levering against the floor:
+        // this is the pose that rights the bot, and on Rusty it is also the
+        // pose that gets the head caught on things.
+        armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
+        if (!fire) {
           phase = "returning";
           t = 0;
         }
@@ -871,6 +887,7 @@ function createHammer({ vehicle, index, emit }) {
     },
     getAngle() {
       if (phase === "swinging") return Math.min(1, t / strokeSeconds);
+      if (phase === "held") return 1;
       if (phase === "returning") return Math.max(0, 1 - t / returnSeconds);
       return 0;
     },
