@@ -2172,6 +2172,10 @@ export const CATALOG = {
     accent: "#8a5a32",
     accentDark: "#2a2118",
     drive: { type: "tracked" },
+    // Rusty's two rubber tracks stay in the body (no aux group), so the scroll
+    // walks modelBody instead. It catches the tyres and nothing else that has a
+    // texture worth watching move.
+    tracks: { axis: "y", scale: 0.16 },
     weapon: {
       type: "hammer",
       // MEASURED front-of-yoke hinge, game space. The yoke is a U: two drilled
@@ -2249,6 +2253,10 @@ export const CATALOG = {
     accent: "#e8b21e",
     accentDark: "#141414",
     drive: { type: "tracked" },
+    // Both track units live in modelAux-pods, so the scroll rides the same node
+    // the pod rotation does. scale converts accumulated wheel rotation into UV
+    // travel — one texture repeat per 1/scale radians of ground roll.
+    tracks: { aux: "pods", axis: "y", scale: 0.16 },
     weapon: {
       type: "sawArms",
       pivot: { x: 0.007, y: 0.659, z: 0.107 }, // MEASURED arm base, game space

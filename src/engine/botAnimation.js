@@ -113,6 +113,38 @@ export function syncBotVisual(visual, spec, state, dt = 1 / 60) {
     const travel = cfg.closeAngle ?? cfg.range ?? 0;
     node.quaternion.setFromAxisAngle(scratchAxis, stroke * travel);
   }
+  // Tracks. A tracked bot has no wheels to turn — rotating a track unit like a
+  // wheel is worse than leaving it still — so the band SCROLLS instead: offset
+  // the material's UVs by the same accumulated ground rotation the wheel meshes
+  // use, which means the tracks and the bot agree about how fast it is going
+  // for free, including while it is being shoved backwards.
+  const tracks = spec.tracks;
+  if (tracks) {
+    const node = tracks.aux ? visual.parts.aux?.[tracks.aux] : visual.parts.body;
+    if (node) {
+      const spins = state.wheelSpin;
+      const spin = spins?.length ? spins.reduce((a, b) => a + b, 0) / spins.length : 0;
+      const axis = tracks.axis === "x" ? "x" : "y";
+      const shift = spin * (tracks.scale ?? 1);
+      node.traverse((mesh) => {
+        if (!mesh.isMesh || !mesh.material?.map) return;
+        let map = mesh.material.map;
+        // The GLTF loader shares one texture across everything that uses it,
+        // including the SECOND bot in the match. Scrolling a shared map drives
+        // both bots' tracks off one bot's speed, so take a copy the first time.
+        if (!map.__trackScroll) {
+          map = map.clone();
+          map.__trackScroll = true;
+          map.wrapS = THREE.RepeatWrapping;
+          map.wrapT = THREE.RepeatWrapping;
+          map.needsUpdate = true;
+          mesh.material = mesh.material.clone();
+          mesh.material.map = map;
+        }
+        map.offset[axis] = shift % 1;
+      });
+    }
+  }
   const punch = visual.parts.aux?.fists;
   if (punch && spec.weapon?.fists) {
     const f = spec.weapon.fists;

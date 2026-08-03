@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { networkInterfaces } from "node:os";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
@@ -125,6 +126,18 @@ process.on("uncaughtException", (error) => {
   console.error(`[server] uncaught: ${error?.stack || error}`);
 });
 
-server.listen(port, "127.0.0.1", () => {
+// Bind every interface by default so a PHONE on the same wifi can open the
+// game and the debug pages. Loopback-only meant the only way to look at
+// anything on a handset was to not look at it. Set HOST=127.0.0.1 to go back
+// to loopback if you are on a network you do not trust.
+const host = process.env.HOST || "0.0.0.0";
+server.listen(port, host, () => {
   console.log(`BattleBot Arena running at http://127.0.0.1:${port}`);
+  if (host === "0.0.0.0") {
+    for (const [name, addrs] of Object.entries(networkInterfaces())) {
+      for (const a of addrs || []) {
+        if (a.family === "IPv4" && !a.internal) console.log(`  on ${name}: http://${a.address}:${port}`);
+      }
+    }
+  }
 });

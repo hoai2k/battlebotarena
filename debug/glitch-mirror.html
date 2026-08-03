@@ -3,6 +3,8 @@
 <head><meta charset="utf-8"/>
 <title>Glitch — pick the mirror plane</title>
 <link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
 <style>
   body { margin:0; background:#181b20; color:#dfe4ea; font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
   #wrap { display:flex; height:100vh; }
@@ -23,6 +25,35 @@
   #stats { margin-top:16px; color:#7d8794; font-size:12px; }
   #stats b { color:#cfd6de; font-weight:600; }
   .hint { margin-top:18px; color:#6b7480; font-size:11.5px; line-height:1.55; }
+
+  /* Phones. The point of this tool is to be looked at, and a 340px side panel
+     next to a sliver of canvas is not looking at anything. Stack it: canvas on
+     top with enough height to judge the silhouette, controls below, thumbable.
+     Sliders and buttons go up to a real touch target — a 4px range thumb is
+     unusable with a finger, and this tool is entirely dragging one slider. */
+  @media (max-width: 820px) {
+    #wrap { flex-direction: column; height: 100dvh; }
+    #view { flex: 0 0 52vh; min-height: 300px; }
+    #panel { width:auto; flex:1; border-left:0; border-top:1px solid #2a2f37;
+             padding:14px 16px calc(18px + env(safe-area-inset-bottom)); }
+    h1 { font-size:17px; }
+    .sub, .hint { font-size:12.5px; }
+    label { margin:16px 0 6px; font-size:13.5px; }
+    input[type=range] { height:34px; }
+    .seg button { padding:13px 0; font-size:13.5px; }
+    #copy { padding:15px 0; font-size:14px; }
+    #out { font-size:13px; }
+    /* The reference photo is the thing you are comparing against, so it should
+       not push the readout off the bottom of a phone screen. */
+    #panel img { max-height:26vh; object-fit:contain; }
+  }
+  /* Range thumbs big enough to grab on any device. */
+  input[type=range] { -webkit-appearance:none; appearance:none; background:transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height:6px; background:#2f3540; border-radius:3px; }
+  input[type=range]::-moz-range-track { height:6px; background:#2f3540; border-radius:3px; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none;
+    width:26px; height:26px; margin-top:-10px; border-radius:50%; background:#35e07a; border:0; }
+  input[type=range]::-moz-range-thumb { width:26px; height:26px; border:0; border-radius:50%; background:#35e07a; }
 </style>
 <script type="importmap">
  { "imports": { "three": "/vendor/three/three.module.js", "three/addons/": "/vendor/three/addons/" } }
@@ -263,9 +294,22 @@ for (const [id, name] of [["vTop", "top"], ["vIso", "iso"], ["vFront", "front"]]
   });
 }
 el("copy").addEventListener("click", async () => {
-  await navigator.clipboard.writeText(el("out").textContent);
-  el("copy").textContent = "Copied";
-  setTimeout(() => { el("copy").textContent = "Copy for Claude"; }, 1200);
+  const text = el("out").textContent;
+  // navigator.clipboard is undefined on plain http, which is exactly how this
+  // page is served to a phone. Fall back to a selection the user can long-press
+  // and copy rather than failing silently on the one device that needs it.
+  try {
+    await navigator.clipboard.writeText(text);
+    el("copy").textContent = "Copied";
+  } catch {
+    const r = document.createRange();
+    r.selectNodeContents(el("out"));
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+    el("copy").textContent = "Selected — long-press to copy";
+  }
+  setTimeout(() => { el("copy").textContent = "Copy for Claude"; }, 2200);
 });
 
 function resize() {
@@ -276,6 +320,7 @@ function resize() {
   frame();
 }
 addEventListener("resize", resize);
+addEventListener("orientationchange", () => setTimeout(resize, 120));
 resize();
 renderer.setAnimationLoop(() => renderer.render(scene, camera));
 </script>
