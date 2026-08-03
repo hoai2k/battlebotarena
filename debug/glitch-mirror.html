@@ -139,7 +139,11 @@
       green forward arrow, then slide the plane until the halves meet without a
       seam. The kept half is drawn solid, the other side is its reflection. If
       the bot looks narrow or fat the plane is off — the silhouette should match
-      the reference arrowhead.
+      the reference arrowhead.<br><br>
+      Note that glitch.glb has ALREADY been mirrored, at yaw +2.00&deg; and
+      plane &minus;0.142, so a fresh load starts from a bot that is symmetric
+      about x = &minus;0.142 rather than from the lopsided scan. Anything you
+      pick here now composes on top of that.
     </p>
   </div>
 </div>
@@ -340,7 +344,11 @@ function frame() {
     camera.position.set(focus.x, focus.y + r * 4.0, focus.z);
   } else if (viewName === "front") {
     camera.up.set(0, 1, 0);
-    camera.position.copy(focus).addScaledVector(fwd, -r * 3.6).setY(focus.y + r * 0.7);
+    // AHEAD of the nose looking back, not behind the tail looking forward. The
+    // sign was wrong and "Front" showed the rear of the bot, which is the one
+    // view where you cannot tell from the picture that you are on the wrong
+    // side of a nearly symmetric machine.
+    camera.position.copy(focus).addScaledVector(fwd, r * 3.6).setY(focus.y + r * 0.7);
   } else {
     camera.up.set(0, 1, 0);
     camera.position.copy(focus).add(new THREE.Vector3(r * 2.2, r * 1.9, r * 2.2));

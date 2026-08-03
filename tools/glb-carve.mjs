@@ -14,6 +14,9 @@
 //              too narrow to pass either side of its own middle wedge)
 //   mirror   — replace the bad half of a SYMMETRIC part with a mirrored copy of
 //              the good half (writes new vertices)
+//   drop     — remove a whole part, node mesh and vertices, for a part that
+//              mirror cannot keep any of because it lies entirely on the
+//              discarded side (Glitch's left pod, cut out on that side only)
 //   clone    — duplicate a part rotated half a turn about an axis, for a bar
 //              spinner whose second end the scan never resolved
 //   paint    — move matching triangles onto a new plain material, for surface
@@ -296,6 +299,45 @@ function nodeIndexByName(name) {
 }
 
 for (const op of ops) {
+  if (op.mode === "drop") {
+    // Remove a whole part: node, mesh and all of its vertex data.
+    //
+    // `delete` cannot express this. It re-points the primitive at the surviving
+    // triangles, so a region that swallows the part leaves a zero-length index
+    // buffer behind — a primitive glTF does not allow and the loader will not
+    // draw. The case that needs it is mirroring: a part lying ENTIRELY on the
+    // discarded side has no half to keep, and its replacement comes from
+    // reflecting its opposite number, so the original has to go. Glitch's
+    // left-hand wheel pod and rear blade were cut out on that side only.
+    //
+    //   {"mode": "drop", "part": 4}
+    const nodeIndex = nodeIndexByName(`tripo_part_${op.part}`);
+    if (json.skins?.length || json.animations?.length) {
+      throw new Error("drop: this file has skins or animations, which index nodes — not supported");
+    }
+    const meshIndex = json.nodes[nodeIndex].mesh;
+    // Detach, then close the gap. Node indices are referenced positionally from
+    // children lists and scene roots, so every one above the hole shifts down.
+    for (const node of json.nodes) {
+      if (!node.children) continue;
+      node.children = node.children.filter((c) => c !== nodeIndex).map((c) => (c > nodeIndex ? c - 1 : c));
+      if (!node.children.length) delete node.children;
+    }
+    for (const scene of json.scenes || []) {
+      scene.nodes = (scene.nodes || []).filter((n) => n !== nodeIndex).map((n) => (n > nodeIndex ? n - 1 : n));
+    }
+    json.nodes.splice(nodeIndex, 1);
+    // Drop the mesh too, or the final prune still sees its accessors as live
+    // and the file keeps every byte of a part nothing draws.
+    if (meshIndex !== undefined) {
+      json.meshes.splice(meshIndex, 1);
+      for (const node of json.nodes) {
+        if (node.mesh !== undefined && node.mesh > meshIndex) node.mesh -= 1;
+      }
+    }
+    console.log(`part ${op.part} [drop]: node and mesh removed`);
+    continue;
+  }
   if (op.mode === "pivot") {
     // Also rewrites weaponAxis, because the two are the same mistake: the
     // partitioner takes both off the part map, and a map that guesses the axle

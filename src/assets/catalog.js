@@ -1911,7 +1911,17 @@ export const CATALOG = {
     // model. Before that this was 2.0361 — the arbitrary-looking angle that
     // made the drum's real axle transverse in game space.
     modelYaw: Math.PI,
-    modelScale: 2.6614,
+    // glitch-mirror.json rebuilt the bot out of its own good half, which
+    // changed its PROPORTIONS: 1.087 x 1.090 in the GLB became 1.205 x 1.062,
+    // because the half Tripo under-resolved was the narrow one and doubling the
+    // good half is what the machine actually measures. Scaling on width alone
+    // (the usual rule, see SIZING) would then shrink Glitch 10% in every
+    // direction to hold widthFt at an estimate that the scan contradicts. This
+    // scale holds the PLANFORM AREA where it was — 8.40 sq ft before and after
+    // — so the mirror changed Glitch's shape without changing how much arena he
+    // takes up, and realWorld.size below now quotes the scan rather than the
+    // class guess.
+    modelScale: 2.5615,
     hideWheels: true, // four omniwheels in an X-drive, tucked under the wedge
     // --- the real machine ---------------------------------------------
     // battlebots.com files the weapon as a vertical bar spinner; the team and
@@ -1922,19 +1932,28 @@ export const CATALOG = {
       team: "Combat Robotics at Berkeley", from: "Berkeley, CA",
       weightLbs: 250,
       topSpeedMph: 12, topSpeedSource: "class-estimate",
-      size: { widthFt: 2.9, lengthFt: 3.15, heightFt: 0.94, source: "class-estimate" },
+      // Was a 2.9 x 3.15 class guess, i.e. longer than wide. The scan says the
+      // opposite and the reference photo agrees: Glitch is a wide, flat
+      // arrowhead. Taken from the mirrored model rather than from the guess,
+      // because a photogrammetric scan of the actual robot is better evidence
+      // of its footprint than a class average is.
+      size: { widthFt: 3.086, lengthFt: 2.72, heightFt: 0.762, source: "scan" },
       weapon: { name: "Eggbeater drum", weightLbs: 58, tipSpeedMph: 180, rpm: null },
       drive: "4x Scorpion SII-4035-450KV (X-drive omni)", power: null,
     },
 
     weightLbs: 250,
     weaponWeightLbs: 58,
-    bodyDims: { x: 2.900, y: 0.698, z: 2.885 }, // MEASURED: flat delta, and the plate is only 8in thick
+    bodyDims: { x: 3.086, y: 0.671, z: 2.720 }, // MEASURED after glitch-mirror.json: flat delta, and the plate is only 8in thick
+    // Moved with the body: x out by the same 6.4% the mirror widened it, z in
+    // by the 5.7% it shortened. y is NOT a length on the bot — it is the
+    // suspension probe origin against sim/vehicle.js's fixed 0.45ft travel —
+    // so it does not scale with the model.
     wheelAnchors: [
-      { x: -1.15, y: 0.21, z: -1.05 },
-      { x: 1.15, y: 0.21, z: -1.05 },
-      { x: -1.15, y: 0.21, z: 1.05 },
-      { x: 1.15, y: 0.21, z: 1.05 },
+      { x: -1.224, y: 0.21, z: -0.990 },
+      { x: 1.224, y: 0.21, z: -0.990 },
+      { x: -1.224, y: 0.21, z: 0.990 },
+      { x: 1.224, y: 0.21, z: 0.990 },
     ],
     maxSpeedFps: mph(6.96), // 10.21 fps
     accel: 6,
@@ -1948,29 +1967,38 @@ export const CATALOG = {
     drive: { type: "holonomic", strafeRatio: 0.9, pushForceScale: 0.4 },
     weapon: {
       type: "drum",
-      pivot: { x: 0.270, y: 0.494, z: -0.178 }, // MEASURED drum axle, game space
-      // MEASURED. glitch-square.json bakes the 27-degree skew out of the model
-      // itself, so the drum's axle is now [0.9984, 0.0567, 0.0003] in model
-      // space and modelYaw is a clean Math.PI. Transverse, as a drum should be.
-      axis: { x: -1, y: 0.057, z: 0 },
-      // MEASURED: the drum is genuinely off-centre — it sits in a bay right of
-      // the centreline, and the wedge extends AHEAD of it. Glitch gets under an
-      // opponent with the plate first and feeds them back into the drum; the
-      // drum is not the leading edge.
+      pivot: { x: 0.000, y: 0.440, z: -0.240 }, // MEASURED best-fit drum axle, game space
+      // MEASURED, and now exactly transverse with no residual tilt: after
+      // glitch-mirror.json the drum is symmetric about the centreline, and a
+      // shape symmetric about a plane perpendicular to X cannot carry an axle
+      // tilted out of that plane. It used to be off-centre AND 3.25 degrees out
+      // of square, both of which were scan error rather than the machine.
+      axis: { x: -1, y: 0, z: 0 },
+      // The wedge still extends AHEAD of the drum, which is the point of the
+      // machine: Glitch gets under an opponent with the plate first and feeds
+      // them back into the drum. The drum is not the leading edge.
       spinUpSeconds: 1.3,
       spinDownSeconds: 1.1,
       inertia: 1.2,
       maxOmega: 620,
       budgetCap: 360,
-      radius: 0.472, // MEASURED swept radius about the axle
-      dims: { x: 0.370, y: 0.300, z: 0.379 },
+      radius: 0.406, // MEASURED swept radius about the axle
+      dims: { x: 0.357, y: 0.289, z: 0.347 },
     },
     // The nose is a WEDGE: it is the whole point of the machine, and test 16
-    // requires nothing but a wedge ahead of the drum's leading edge (-1.196).
+    // requires nothing but a wedge ahead of the drum's leading edge, now
+    // -0.646 (pivot.z - radius).
+    //
+    // Re-fitted rather than re-derived after glitch-mirror.json: the same
+    // stack, with every extent and offset carried over by the factor its axis
+    // moved (x 1.064, y 0.961, z 0.943), and every x OFFSET zeroed. Those
+    // offsets — 0.10, 0.20 and 0.45 — existed only to chase geometry that sat
+    // right of the centreline, and the bot no longer has a right and a left.
+    // The third box is the drum bay, which is why it had the largest one.
     colliders: [
-      { shape: "wedge", halfExtents: { x: 1.30, y: 0.12, z: 0.40 }, offset: { x: 0.10, y: 0.12, z: -1.22 }, tipY: 0.02 },
-      { shape: "box", halfExtents: { x: 1.45, y: 0.20, z: 0.80 }, offset: { x: 0.20, y: 0.20, z: 0.16 } },
-      { shape: "box", halfExtents: { x: 0.45, y: 0.20, z: 0.20 }, offset: { x: 0.45, y: 0.55, z: -0.35 } },
+      { shape: "wedge", halfExtents: { x: 1.383, y: 0.115, z: 0.377 }, offset: { x: 0, y: 0.115, z: -1.150 }, tipY: 0.019 },
+      { shape: "box", halfExtents: { x: 1.543, y: 0.192, z: 0.754 }, offset: { x: 0, y: 0.192, z: 0.151 } },
+      { shape: "box", halfExtents: { x: 0.479, y: 0.192, z: 0.189 }, offset: { x: 0, y: 0.529, z: -0.330 } },
     ],
   },
 
