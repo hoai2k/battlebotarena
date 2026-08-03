@@ -1,0 +1,6 @@
+[
+  { "_comment": "The jaw was pointed at parts 0 and 1 — the long black arm that stuck out the BACK of the machine — so every bite opened and shut a boom behind the robot while the dragon's head sat still. The head is parts 19 (yellow lower scoop, fixed to the chassis) and 20 (black upper snout with the eye, the part that moves). Part 20 is now modelAux-jaw and hinges at the back-top of the skull where it meets the neck: MEASURED rear face of part 20 at z -0.2339, top at y 0.0585, on the centreline. Axis is transverse, so the snout swings down onto the fixed lower scoop the way a Kraken bites.",
+    "mode": "pivot", "node": "modelAux-jaw",
+    "pivotLocal": [0, 0.035, -0.242],
+    "weaponAxis": [1, 0, 0] }
+]
