@@ -1,0 +1,283 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"/>
+<title>Glitch — pick the mirror plane</title>
+<link rel="icon" href="data:,">
+<style>
+  body { margin:0; background:#181b20; color:#dfe4ea; font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  #wrap { display:flex; height:100vh; }
+  #view { flex:1; position:relative; }
+  #panel { width:340px; padding:16px 18px; background:#12151a; border-left:1px solid #2a2f37; overflow:auto; }
+  h1 { font-size:15px; margin:0 0 4px; color:#fff; letter-spacing:.02em; }
+  .sub { color:#7d8794; margin:0 0 18px; font-size:12px; }
+  label { display:block; margin:14px 0 4px; color:#9aa5b1; }
+  input[type=range] { width:100%; }
+  .val { color:#35e07a; }
+  .seg { display:flex; gap:6px; margin-top:6px; }
+  .seg button { flex:1; padding:7px 0; background:#1d222a; color:#cfd6de; border:1px solid #2f3540; border-radius:5px; cursor:pointer; font:inherit; }
+  .seg button.on { background:#35e07a; color:#0d1013; border-color:#35e07a; font-weight:600; }
+  #out { margin-top:20px; padding:11px; background:#0c0f13; border:1px solid #2a2f37; border-radius:6px;
+         white-space:pre-wrap; word-break:break-all; color:#35e07a; }
+  #copy { margin-top:8px; width:100%; padding:9px 0; background:#35e07a; color:#0d1013; border:0;
+          border-radius:5px; font:inherit; font-weight:600; cursor:pointer; }
+  #stats { margin-top:16px; color:#7d8794; font-size:12px; }
+  #stats b { color:#cfd6de; font-weight:600; }
+  .hint { margin-top:18px; color:#6b7480; font-size:11.5px; line-height:1.55; }
+</style>
+<script type="importmap">
+ { "imports": { "three": "/vendor/three/three.module.js", "three/addons/": "/vendor/three/addons/" } }
+</script>
+</head>
+<body>
+<!--
+  Pick Glitch's mirror plane by eye, because measurement could not settle it.
+
+  The model is asymmetric — one side of the plate reaches further than the
+  other — and the fix is to mirror the good half onto the bad. That needs a
+  plane, and three different measurements of where the centreline is disagree
+  by up to 0.15 model units: the plate's bounding-box centre, the best-fit
+  symmetry plane, and the centreline implied by each of the two tips. Picking
+  wrong does visible damage (mirroring about the bbox centre shrinks the plate
+  from 1.09 to 0.99 wide), and no amount of further measurement resolves a
+  question about which half is RIGHT rather than which half is bigger.
+
+  So: drag the plane, watch the bot rebuild itself live, and read off the
+  number. Everything here is in MODEL space, which is the space
+  tools/glb-carve.mjs mirror ops are written in, so the value in the box goes
+  straight into a repair spec with no conversion.
+
+  The green arrow is game FORWARD, derived from the catalog's modelYaw rather
+  than assumed, so it stays right if the yaw changes.
+-->
+<div id="wrap">
+  <div id="view"></div>
+  <div id="panel">
+    <h1>Glitch — mirror plane</h1>
+    <p class="sub">Model space. Drag until the bot looks symmetric and right, then send me the line at the bottom.</p>
+
+    <label>Plane position &nbsp;<span class="val" id="planeV">0.000</span></label>
+    <input type="range" id="plane" min="-0.35" max="0.20" step="0.002" value="0">
+
+    <label>Keep which half</label>
+    <div class="seg">
+      <button id="keepNeg" class="on">&minus;X (bigger)</button>
+      <button id="keepPos">+X</button>
+    </div>
+
+    <label>Extra yaw trim &nbsp;<span class="val" id="yawV">0.0&deg;</span></label>
+    <input type="range" id="yaw" min="-12" max="12" step="0.25" value="0">
+
+    <label>View</label>
+    <div class="seg">
+      <button id="vTop" class="on">Top</button>
+      <button id="vIso">Iso</button>
+      <button id="vFront">Front</button>
+    </div>
+    <div class="seg" style="margin-top:6px">
+      <button id="tMirror" class="on">Mirrored</button>
+      <button id="tRaw">Original</button>
+    </div>
+
+    <label>Reference</label>
+    <img src="/public/reference/glitch.png" style="width:100%;border-radius:5px;border:1px solid #2a2f37" alt="Glitch reference photo">
+
+    <div id="stats"></div>
+    <div id="out">…</div>
+    <button id="copy">Copy for Claude</button>
+
+    <p class="hint">
+      The plane is where the two halves meet. The kept half is drawn solid; the
+      other side is its reflection. If the bot looks narrow or fat, the plane is
+      off — the silhouette should match the reference arrowhead.<br><br>
+      Yaw trim is only needed if the bot still looks skewed when the plane looks
+      right; it means the bake left a residual angle.
+    </p>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { CATALOG } from "/src/assets/catalog.js";
+
+const BOT = new URLSearchParams(location.search).get("bot") || "glitch";
+const spec = CATALOG[BOT];
+
+const view = document.getElementById("view");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+// Clipping is how the two halves are built: the original is clipped to the
+// kept side and a reflected copy is clipped to the other, so together they are
+// the mirrored bot. Doing it with real geometry would mean rebuilding 150k
+// vertices on every drag.
+renderer.localClippingEnabled = true;
+view.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x181b20);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2));
+const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(3, 5, 2); scene.add(key);
+const fill = new THREE.DirectionalLight(0xffffff, 1.1); fill.position.set(-3, -2, -3); scene.add(fill);
+const camera = new THREE.PerspectiveCamera(42, 1, 0.01, 100);
+
+scene.add(new THREE.GridHelper(3, 30, 0x59636f, 0x2c323a));
+
+// Game forward, in MODEL space. The loader applies scene.rotation.y = modelYaw,
+// so the model direction that ends up pointing at game -Z is R_y(-yaw) . -Z.
+const yaw = spec.modelYaw ?? 0;
+const fwd = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), -yaw);
+const arrow = new THREE.Group();
+{
+  const mat = new THREE.MeshBasicMaterial({ color: 0x35e07a, depthTest: false, transparent: true, opacity: 0.95 });
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.004, 0.55), mat);
+  shaft.position.z = -0.42;
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.19, 4), mat);
+  head.position.z = -0.79; head.rotation.set(Math.PI / 2, 0, Math.PI / 4);
+  arrow.add(shaft, head);
+  arrow.renderOrder = 999;
+  arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, -1), fwd.clone().normalize());
+  scene.add(arrow);
+}
+
+// The plane itself, drawn so you can see where the seam is.
+const planeMesh = new THREE.Mesh(
+  new THREE.PlaneGeometry(1.6, 0.6),
+  new THREE.MeshBasicMaterial({ color: 0xffd23d, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }),
+);
+planeMesh.rotation.y = Math.PI / 2;
+scene.add(planeMesh);
+
+const spin = new THREE.Group();   // carries the yaw trim
+const keepSide = new THREE.Group();
+const mirrorSide = new THREE.Group();
+spin.add(keepSide, mirrorSide);
+scene.add(spin);
+
+const clipKeep = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0);
+const clipMirror = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0);
+
+let bounds = null;
+const focus = new THREE.Vector3();
+let radius = 0.6;
+new GLTFLoader().load(spec.modelPath.replace("./", "/"), (gltf) => {
+  const a = gltf.scene;
+  const b = a.clone(true);
+  // Reflection is a negative scale, which flips winding, so the copy has to
+  // render both faces or it turns inside out.
+  b.traverse((n) => {
+    if (!n.isMesh) return;
+    n.material = n.material.clone();
+    n.material.side = THREE.DoubleSide;
+    n.material.clippingPlanes = [clipMirror];
+  });
+  a.traverse((n) => {
+    if (!n.isMesh) return;
+    n.material = n.material.clone();
+    n.material.clippingPlanes = [clipKeep];
+  });
+  keepSide.add(a);
+  mirrorSide.add(b);
+  bounds = new THREE.Box3().setFromObject(a);
+  // Frame on the MODEL, not on the origin. Tripo parts are centred on nothing
+  // in particular and a camera aimed at 0,0,0 puts the bot in a corner.
+  bounds.getCenter(focus);
+  radius = Math.max(...bounds.getSize(new THREE.Vector3()).toArray()) * 0.5;
+  // Ahead of the nose, not through the bot: depthTest is off so it can be seen
+  // from any angle, which also means it would paint a green stripe down the
+  // middle of the model in the top view if it were centred.
+  arrow.position.copy(focus).addScaledVector(fwd, radius * 1.15).setY(bounds.min.y);
+  arrow.scale.setScalar(radius * 0.85);
+  planeMesh.geometry.dispose();
+  planeMesh.geometry = new THREE.PlaneGeometry(radius * 2.6, radius * 1.1);
+  planeMesh.position.y = focus.y;
+  planeMesh.position.z = focus.z;
+  update();
+});
+
+const el = (id) => document.getElementById(id);
+let keep = -1, showMirror = true, viewName = "top";
+
+function frame() {
+  const r = radius;
+  if (viewName === "top") {
+    // Looking straight down, three.js has no preferred up, so it picks one and
+    // the whole scene arrives rotated by an arbitrary angle. Pin it to FORWARD
+    // so up-the-screen is where the bot drives — the whole point of the arrow.
+    camera.up.copy(fwd);
+    camera.position.set(focus.x, focus.y + r * 4.0, focus.z);
+  } else if (viewName === "front") {
+    camera.up.set(0, 1, 0);
+    camera.position.copy(focus).addScaledVector(fwd, -r * 3.6).setY(focus.y + r * 0.7);
+  } else {
+    camera.up.set(0, 1, 0);
+    camera.position.copy(focus).add(new THREE.Vector3(r * 2.2, r * 1.9, r * 2.2));
+  }
+  camera.lookAt(focus);
+}
+
+function update() {
+  const c = parseFloat(el("plane").value);
+  const trim = parseFloat(el("yaw").value);
+  el("planeV").textContent = c.toFixed(3);
+  el("yawV").textContent = `${trim.toFixed(2)}°`;
+  spin.rotation.y = trim * Math.PI / 180;
+  planeMesh.position.x = c;
+
+  // Keep the side the buttons say; the reflected copy fills the other.
+  clipKeep.normal.set(keep, 0, 0);
+  clipKeep.constant = -keep * c;
+  clipMirror.normal.set(-keep, 0, 0);
+  clipMirror.constant = keep * c;
+  mirrorSide.scale.set(-1, 1, 1);
+  mirrorSide.position.x = 2 * c;
+  mirrorSide.visible = showMirror;
+  // With the mirror off you are looking at the raw asymmetric model, so the
+  // kept half must not be clipped away.
+  clipKeep.constant = showMirror ? -keep * c : 1e6;
+
+  if (bounds) {
+    const lo = bounds.min.x, hi = bounds.max.x;
+    const kept = keep < 0 ? c - lo : hi - c;
+    el("stats").innerHTML =
+      `raw plate x <b>${lo.toFixed(3)}</b> to <b>${hi.toFixed(3)}</b><br>` +
+      `kept half reaches <b>${kept.toFixed(3)}</b> from the plane<br>` +
+      `mirrored width <b>${(kept * 2).toFixed(3)}</b> (raw is ${(hi - lo).toFixed(3)})`;
+  }
+  el("out").textContent =
+    `glitch mirror: plane x = ${c.toFixed(3)}, keep = ${keep < 0 ? "-" : "+"}, yaw trim = ${trim.toFixed(2)} deg`;
+  frame();
+}
+
+for (const id of ["plane", "yaw"]) el(id).addEventListener("input", update);
+function seg(onId, offId, fn) {
+  el(onId).addEventListener("click", () => { el(onId).classList.add("on"); el(offId).classList.remove("on"); fn(); update(); });
+}
+seg("keepNeg", "keepPos", () => { keep = -1; });
+seg("keepPos", "keepNeg", () => { keep = 1; });
+seg("tMirror", "tRaw", () => { showMirror = true; });
+seg("tRaw", "tMirror", () => { showMirror = false; });
+for (const [id, name] of [["vTop", "top"], ["vIso", "iso"], ["vFront", "front"]]) {
+  el(id).addEventListener("click", () => {
+    for (const o of ["vTop", "vIso", "vFront"]) el(o).classList.toggle("on", o === id);
+    viewName = name; update();
+  });
+}
+el("copy").addEventListener("click", async () => {
+  await navigator.clipboard.writeText(el("out").textContent);
+  el("copy").textContent = "Copied";
+  setTimeout(() => { el("copy").textContent = "Copy for Claude"; }, 1200);
+});
+
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  frame();
+}
+addEventListener("resize", resize);
+resize();
+renderer.setAnimationLoop(() => renderer.render(scene, camera));
+</script>
+</body>
+</html>
