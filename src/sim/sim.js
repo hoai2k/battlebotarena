@@ -51,6 +51,12 @@ export async function createSim({ bots, emit }) {
       weaponSubAngle: weapons[i].getSubAngle?.() ?? 0,
       // 0..1 along a sliding weapon's track (Tantrum's drum carriage).
       weaponTrack: weapons[i].getTrack?.() ?? 0,
+      // Named aux mechanisms (Dragon King's jaw and its rotating track pods).
+      // The jaw follows the aux button; the pods are driven by the sim itself,
+      // because pod rotation is how this machine self-rights and asking the
+      // player for a fourth button to stand back up is not a mechanic.
+      weaponAuxAngle: weapons[i].getAuxAngle?.() ?? 0,
+      auxPodAngle: vehicles[i].podAngle?.() ?? 0,
       weaponRatio: weapons[i].getRatio(),
       wheelSpin: vehicles[i].getWheelSpin(),
       probeCompression: vehicles[i].probeCompression(),
@@ -121,6 +127,8 @@ export async function createSim({ bots, emit }) {
         weaponAngle: m.lerp(prev[i].weaponAngle, curr[i].weaponAngle, t),
         weaponSubAngle: m.lerp(prev[i].weaponSubAngle, curr[i].weaponSubAngle, t),
         weaponTrack: m.lerp(prev[i].weaponTrack, curr[i].weaponTrack, t),
+        weaponAuxAngle: m.lerp(prev[i].weaponAuxAngle, curr[i].weaponAuxAngle, t),
+        auxPodAngle: m.lerp(prev[i].auxPodAngle, curr[i].auxPodAngle, t),
         weaponRatio: m.lerp(prev[i].weaponRatio, curr[i].weaponRatio, t),
         wheelSpin: curr[i].wheelSpin.map((s, w) => m.lerp(prev[i].wheelSpin[w], s, t)),
         probeCompression: curr[i].probeCompression.slice(),

@@ -35,9 +35,15 @@ const LENGTH_KEYS = new Set([
   "bodyDims", "dims", "pivot",
   "reach", "liftClearance", "sawCenter", "gripReach",
   "wheelRadius",
+  // A flamethrower's nozzles are points on the bot and its reach is a distance
+  // from it; `scale` sizes the jet's puffs in world feet (engine/effects.js), so
+  // it is a length too — a bot that got 12% bigger breathes a 12% bigger flame.
+  "nozzles", "scale",
 ]);
 // Inside these, x/y/z are all lengths. wheelAnchors is handled specially.
-const VECTOR_KEYS = new Set(["halfExtents", "offset", "bodyDims", "dims", "pivot", "sawCenter"]);
+const VECTOR_KEYS = new Set([
+  "halfExtents", "offset", "bodyDims", "dims", "pivot", "sawCenter", "nozzles",
+]);
 
 function botRange(src, id) {
   const head = src.indexOf(`\n  ${id}: {`);

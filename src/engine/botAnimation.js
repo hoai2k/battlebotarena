@@ -95,6 +95,24 @@ export function syncBotVisual(visual, spec, state, dt = 1 / 60) {
   // sub inherits the drum's spin). It hinges off its own aux anchor — which is
   // the axle across the back of the bot, not the arms' bounding box — from the
   // sim's lift stroke.
+  // Dragon King's clamping jaw and its two rotating track pods. Both are named
+  // aux groups driven from the catalog's `aux` block rather than from the
+  // weapon, because on this machine they ARE separate machines: the jaw is the
+  // grip that makes the saws worth anything, and the pods rotate about their
+  // mounting arms to reconfigure the stance, lift the body and self-right.
+  for (const [name, cfg] of Object.entries(spec.aux || {})) {
+    const node = visual.parts.aux?.[name];
+    if (!node) continue;
+    const a = cfg.axis ?? { x: 1, y: 0, z: 0 };
+    scratchAxis.set(a.x, a.y, a.z).normalize();
+    // The jaw runs off the aux channel's 0..1; the pods run off their own
+    // ratio, which the sim drives automatically rather than from a button.
+    const stroke = name === "pods"
+      ? THREE.MathUtils.clamp(state.auxPodAngle ?? 0, 0, 1)
+      : THREE.MathUtils.clamp(state.weaponAuxAngle ?? 0, 0, 1);
+    const travel = cfg.closeAngle ?? cfg.range ?? 0;
+    node.quaternion.setFromAxisAngle(scratchAxis, stroke * travel);
+  }
   const punch = visual.parts.aux?.fists;
   if (punch && spec.weapon?.fists) {
     const f = spec.weapon.fists;

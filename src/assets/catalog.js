@@ -1893,13 +1893,10 @@ export const CATALOG = {
     tagline: "Always pointed at you.",
     referenceImage: "./public/reference/glitch.png",
     modelPath: "./public/models/glitch.glb",
-    // MEASURED off the drum, not off the body. A covariance fit over the drum's
-    // vertices puts its axle at [0.4483, 0.0567, -0.8921] in model space; this
-    // is the yaw that makes that axle transverse in game space, and it drops
-    // the arrowhead's point onto the nose at the same time. Checked by width
-    // profile: the nose slab measures |x| 0.27 and the plate widens to 1.70
-    // behind it, with the two swept blades on the tail.
-    modelYaw: 2.0361,
+    // Clean Math.PI only because glitch-square.json baked the skew out of the
+    // model. Before that this was 2.0361 — the arbitrary-looking angle that
+    // made the drum's real axle transverse in game space.
+    modelYaw: Math.PI,
     modelScale: 2.6614,
     hideWheels: true, // four omniwheels in an X-drive, tucked under the wedge
     // --- the real machine ---------------------------------------------
@@ -1937,11 +1934,10 @@ export const CATALOG = {
     drive: { type: "holonomic", strafeRatio: 0.9, pushForceScale: 0.4 },
     weapon: {
       type: "drum",
-      pivot: { x: 0.472, y: 0.494, z: -0.356 }, // MEASURED drum axle, game space
-      // MEASURED game-space axle, from the drum's own principal axis carried
-      // through modelYaw: (-0.998, 0.057, -0.002). Transverse, as a drum should
-      // be — which it was NOT before, because the part map had guessed a clean
-      // [1,0,0] that is 27 degrees off the real axle.
+      pivot: { x: 0.270, y: 0.494, z: -0.178 }, // MEASURED drum axle, game space
+      // MEASURED. glitch-square.json bakes the 27-degree skew out of the model
+      // itself, so the drum's axle is now [0.9984, 0.0567, 0.0003] in model
+      // space and modelYaw is a clean Math.PI. Transverse, as a drum should be.
       axis: { x: -1, y: 0.057, z: 0 },
       // MEASURED: the drum is genuinely off-centre — it sits in a bay right of
       // the centreline, and the wedge extends AHEAD of it. Glitch gets under an
@@ -1959,7 +1955,7 @@ export const CATALOG = {
     // requires nothing but a wedge ahead of the drum's leading edge (-1.196).
     colliders: [
       { shape: "wedge", halfExtents: { x: 1.30, y: 0.12, z: 0.40 }, offset: { x: 0.10, y: 0.12, z: -1.22 }, tipY: 0.02 },
-      { shape: "box", halfExtents: { x: 1.45, y: 0.20, z: 1.02 }, offset: { x: 0.20, y: 0.20, z: 0.24 } },
+      { shape: "box", halfExtents: { x: 1.45, y: 0.20, z: 0.80 }, offset: { x: 0.20, y: 0.20, z: 0.16 } },
       { shape: "box", halfExtents: { x: 0.45, y: 0.20, z: 0.20 }, offset: { x: 0.45, y: 0.55, z: -0.35 } },
     ],
   },
@@ -2108,12 +2104,28 @@ export const CATALOG = {
       spinUpSeconds: 0.2, // jaw close response
       budgetCap: 160, // enormous force, but it has to get a grip first
       dims: { x: 0.8365, y: 0.5577, z: 1.6218 },
+      // The flamethrower fires from INSIDE the mouth — added in WC IV, aimed
+      // into the bite zone. requiresGrip is not a balance lever, it is what the
+      // weapon is: with the jaw open the jet goes past whatever is in front,
+      // and it only does anything once the jaw is already shut on something.
+      // MEASURED nozzle: the throat, on the jaw's centreline just behind the
+      // fangs, so the jet leaves through the teeth. ridesWeapon parents the
+      // emitter to modelWeapon, so it aims where the jaw points rather than
+      // where the bot points. Nozzle, reach and jet scale all carry the 2.90ft
+      // resize like every other length on this bot.
+      flame: {
+        nozzles: [{ x: 0, y: 1.5058, z: -1.1377 }],
+        dir: { x: 0, y: -0.12, z: -1 },
+        ridesWeapon: true,
+        requiresGrip: true,
+        reach: 3.5692, scale: 0.9481, damagePerSecond: 8,
+      },
       tuning: { strokeSeconds: 0.25, returnSeconds: 0.5, gripReach: 2.1192 },
     },
     // The lower jaw is welded to the chassis and is the get-under wedge. Its
-    // tip MEASURES 0.30 off the floor (0.27 before the 2.90ft resize), which is a
-    // scan artifact rather than the
-    // machine — authored to the floor so it works as the wedge it is.
+    // tip MEASURES 0.30 off the floor (0.27 before the 2.90ft resize), which is
+    // a scan artifact rather than the machine — authored to the floor so it
+    // works as the wedge it is.
     colliders: [
       { shape: "wedge", halfExtents: { x: 0.3792, y: 0.1785, z: 0.5354 }, offset: { x: 0, y: 0.1785, z: -1.1154 }, tipY: 0.0223 },
       { shape: "box", halfExtents: { x: 1.0596, y: 0.6135, z: 0.6135 }, offset: { x: 0, y: 0.6135, z: -0.5019 } },
