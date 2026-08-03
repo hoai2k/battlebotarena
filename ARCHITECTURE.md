@@ -94,6 +94,16 @@ export async function createSim({ bots, emit }) // bots: [BotSimSpec, BotSimSpec
   three separate mechanisms, which today is only Tantrum's punch arms; LB is the
   brake for everyone else, and `game/weaponControls.js` is the one place that
   knows which is which.
+- `liftActive` is a FOURTH held channel (LT), read only by a bot with a `lift`
+  block — today Dragon King, which rears its whole chassis up about the axle at
+  the back of its track pods. It is a real pitch servo in `sim/vehicle.js`, not
+  an animation, because the point of the gesture is that what comes over the top
+  collides with things: it is the only way this machine reaches a bot BEHIND it.
+  `podAngle()` reports how far it has got, and the renderer counter-rotates the
+  pods by exactly that so they stay flat on the floor while the body swings over
+  them — measured through the real loop, the body's up vector goes 1.00 -> 0.10
+  while the pods' stays at 1.00. LT is the brake for every bot without a `lift`
+  block, resolved in `weaponControls.js` the same way LB is.
 - `strafe` and `spin` are read only by a bot whose `drive.type` is `holonomic`
   (Glitch, Shatter): its omniwheels resolve into movement along both chassis
   axes AND yaw, independently, so its sticks are not a tank pair. LEFT STICK
@@ -265,6 +275,14 @@ the sim tests and the roster grid size themselves off it.
   the stroke returns).
 - `tuning.ownerPitchScale > 0` (Deep Six) makes a spinner's own hits tumble it
   — the reason the biggest weapon in the game is not simply the best.
+- `sawArms` (Dragon King) is four mechanisms on four buttons, because none of
+  them means anything alone: RT LATCHES the jaw (press to open, press again to
+  bite and hold — a latch, not a hold, because you have to keep hold of
+  something while both hands are driving), RB latches the saw motors, LB holds
+  the arm tilt, LT holds the body lift. The jaw is the enabling weapon: the saws
+  only cut a bot the jaw is gripping, and only with the arms down on it. It used
+  to share `createHammerSaw` with Sawblaze, which models one swing and could
+  express none of that.
 - `weapon.overheadStall` (Gigabyte) says the rotor IS the roof, so a hammer that
   comes down square on it stops the rotor dead and jams it for a beat: `radius`
   is how far from the bot's centre the head still lands on the spinning face,

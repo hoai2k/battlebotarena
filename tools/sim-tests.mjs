@@ -1031,6 +1031,116 @@ await test("omni bots: left stick translates, right stick rotates", async () => 
 });
 
 // ---------------------------------------------------------------------------
+// Dragon King — four mechanisms, four buttons
+// ---------------------------------------------------------------------------
+
+await test("dragon king: each of its four channels drives its own machine", async () => {
+  // This bot is four separate machines and none of them means anything alone:
+  // the jaw is the grip, the saws only cut what the jaw is holding, the arms
+  // decide where the saws point, and the lift is the only thing that reaches
+  // behind the robot. It used to share Sawblaze's single-swing mechanism, which
+  // could express none of that — and its jaw was pointed at a piece of geometry
+  // out the BACK, so the bite never once moved the mouth.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const { createWeaponInputShaper } = await import("../src/game/weaponControls.js");
+  const spec = CATALOG.dragonking;
+  const shaper = createWeaponInputShaper();
+  await withSim([spec, CATALOG.bronco], (sim) => {
+    sim._test.setPose(1, { x: 0, z: 25 }, 0);
+    sim._test.setPose(0, { x: 0, z: 0 }, 0);
+    const drive = (raw, count) => frames(sim, count, [shaper.shape(raw, spec, 0), {}]);
+    const state = () => sim.getRenderState()[0];
+    drive({}, 90);
+    check(state().weaponAuxAngle < 0.05, "the jaw rests shut");
+
+    // RT LATCHES: one press opens, the next shuts. A hold is one press.
+    drive({ weapon: true }, 1);
+    drive({}, 40);
+    check(state().weaponAuxAngle > 0.95, "one press of RT opens the jaw",
+      `${state().weaponAuxAngle.toFixed(2)}`);
+    drive({ weapon: true }, 1);
+    drive({}, 40);
+    check(state().weaponAuxAngle < 0.05, "the next press shuts it",
+      `${state().weaponAuxAngle.toFixed(2)}`);
+
+    // RB latches the saw motors; LB holds the arm tilt and lets go.
+    drive({ weaponAlt: true }, 1);
+    drive({}, 90);
+    check(state().weaponSubAngle > 0.95, "RB spins the saws up and they stay up",
+      `${state().weaponSubAngle.toFixed(2)}`);
+    drive({ weaponAux: true }, 40);
+    check(state().weaponAngle > 0.95, "LB tilts the arms forward", `${state().weaponAngle.toFixed(2)}`);
+    drive({}, 70);
+    check(state().weaponAngle < 0.05, "and they rake back when it is released",
+      `${state().weaponAngle.toFixed(2)}`);
+  });
+});
+
+await test("dragon king: LT rears the body up and lets it back down", async () => {
+  // The pivot is the axle at the back of the pods, so the pods stay flat and
+  // the body swings up over them — which is the only way the saws reach a bot
+  // BEHIND the robot. Run as a real pitch servo, not an animation, because the
+  // point of the gesture is that what comes over the top hits things.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const { createWeaponInputShaper } = await import("../src/game/weaponControls.js");
+  const spec = CATALOG.dragonking;
+  const shaper = createWeaponInputShaper();
+  await withSim([spec, CATALOG.bronco], (sim) => {
+    sim._test.setPose(1, { x: 0, z: 25 }, 0);
+    sim._test.setPose(0, { x: 0, z: 0 }, 0);
+    const drive = (raw, count) => frames(sim, count, [shaper.shape(raw, spec, 0), {}]);
+    // Nose-up pitch, off the body's own forward vector.
+    const pitchDeg = () => {
+      const q = sim._test.body(0).rotation();
+      const y = -(2 * (q.y * q.z - q.w * q.x));
+      return (Math.asin(Math.max(-1, Math.min(1, y))) * 180) / Math.PI;
+    };
+    drive({}, 90);
+    check(Math.abs(pitchDeg()) < 3, "it sits level", `${pitchDeg().toFixed(1)} deg`);
+    drive({ weaponLift: true }, 150);
+    check(pitchDeg() > 70, "holding LT rears it up onto its tail", `${pitchDeg().toFixed(1)} deg`);
+    check(sim.getRenderState()[0].auxPodAngle > 0.75,
+      "and the pods are told how far, so they can stay flat",
+      `${sim.getRenderState()[0].auxPodAngle.toFixed(2)}`);
+    drive({}, 150);
+    check(Math.abs(pitchDeg()) < 5, "letting go brings it back down", `${pitchDeg().toFixed(1)} deg`);
+  });
+});
+
+await test("dragon king: the jaw grips, tows, and the saws only cut what it holds", async () => {
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const spec = CATALOG.dragonking;
+  await withSim([spec, CATALOG.bronco], (sim, events) => {
+    sim._test.setPose(0, { x: 0, z: 0 }, 0);
+    sim._test.setPose(1, { x: 0, z: -3.4 }, Math.PI);
+    frames(sim, 60);
+    const weapon = sim._test.weapons[0];
+    check(!weapon.isGripping(), "a shut mouth does not grab what wanders into it");
+
+    frames(sim, 40, [{ weapon: true }, {}]); // open
+    frames(sim, 30, [{ weapon: true, leftDrive: 0.5, rightDrive: 0.5 }, {}]); // drive on
+    frames(sim, 40, [{ weapon: false }, {}]); // bite
+    check(weapon.isGripping(), "shutting it on a bot in the mouth grips");
+
+    // Tow: reverse hard and the held bot has to come along.
+    const before = { ...sim._test.body(1).translation() };
+    frames(sim, 120, [{ leftDrive: -1, rightDrive: -1 }, {}]);
+    const towed = sim._test.body(1).translation().z - before.z;
+    check(towed > 1.5, "a bitten bot gets hauled, not just pinned", `moved ${towed.toFixed(2)}ft`);
+
+    // Saws only bite with the arms down on it.
+    events.length = 0;
+    frames(sim, 180, [{ sawActive: true, auxActive: false }, {}]);
+    const armsUp = events.filter((e) => e.type === EV.WEAPON_HIT).length;
+    events.length = 0;
+    frames(sim, 180, [{ sawActive: true, auxActive: true }, {}]);
+    const armsDown = events.filter((e) => e.type === EV.WEAPON_HIT).length;
+    check(armsDown > armsUp * 3, "the saws cut when the arms are down on the held bot",
+      `${armsDown} hits with the arms down vs ${armsUp} with them up`);
+  });
+});
+
+// ---------------------------------------------------------------------------
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

@@ -2283,9 +2283,22 @@ export const CATALOG = {
     },
     // MEASURED aux pivots, game space. The jaw is the enabling weapon; the pods
     // rotate as whole units and drive the self-right.
+    // Rearing the body up about the axle at the back of the pods. LT holds it;
+    // the pods stay flat on the floor and the chassis swings up over them, which
+    // is the only way the saws on its back reach anything BEHIND the robot. The
+    // sim runs it as a real pitch servo on the chassis (sim/vehicle.js) rather
+    // than as an animation, because the whole point of the gesture is that what
+    // comes over the top collides with things.
+    lift: { maxAngleDeg: 90, seconds: 0.9, gain: 70, damping: 8.0, maxAccel: 150 },
     aux: {
+      // MEASURED hinge: the back-top of the skull where it meets the neck. The
+      // upper snout (part 20) is what swings; the yellow lower scoop (part 19)
+      // is welded to the chassis and is what a bitten bot is pressed onto.
+      // The mechanism's angle is how far OPEN it is — rest is shut — so the
+      // snout swings UP off the scoop, which is +x about the hinge.
       jaw: { node: "modelAux-jaw", axis: { x: 1, y: 0, z: 0 },
-             pivot: { x: 0.007, y: 0.461, z: 1.055 }, closeAngle: 0.7, seconds: 0.4 },
+             pivot: { x: 0, y: 0.138, z: -0.956 }, openAngle: 0.62, seconds: 0.4,
+             reach: 1.9, clampForce: 260, holdStrength: 9, breakDistance: 3.2 },
       pods: { node: "modelAux-pods", axis: { x: 1, y: 0, z: 0 },
               pivot: { x: 0.007, y: 0.264, z: 0.463 }, range: 2.2, seconds: 0.8,
               drivesSelfRight: true },

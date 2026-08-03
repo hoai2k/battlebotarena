@@ -55,6 +55,9 @@ export function completeInput(input = {}) {
     // Aux weapon channel (LB): Tantrum's punch arms, which are a separate
     // machine from its drum carriage and so cannot share the saw channel.
     auxActive: Boolean(input.auxActive),
+    // A fourth held channel, for a bot that rears its whole body up rather than
+    // swinging an arm (Dragon King). Only a spec with `lift` reads it.
+    liftActive: Boolean(input.liftActive),
     brake: Boolean(input.brake),
   };
 }
@@ -372,6 +375,46 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
   // shell spinner drives this today; every other bot leaves it alone.
   let gyroYawScale = 1;
 
+  // --- body lift ------------------------------------------------------------
+  // Dragon King rears its whole chassis up about the axle at the back of its
+  // track pods. The pods stay flat on the floor and the body swings up over
+  // them, which is how the saws on its back come down on something BEHIND it —
+  // the machine's one way of hitting anything it is not facing.
+  //
+  // Modelled as a pitch servo on the chassis rather than as an animation,
+  // because the point of the gesture is that it collides with things. The pods
+  // staying flat is the RENDERER's half of it: podAngle() reports the same
+  // angle back and botAnimation counter-rotates them, so what pivots on screen
+  // is the body about the axle, which is what pivots on the real machine.
+  const lift = spec.lift ?? null;
+  let liftStroke = 0; // 0 down, 1 fully reared
+  let liftAngle = 0; // radians of chassis pitch actually achieved
+
+  function updateLift(dt, input, rot, angvel) {
+    if (!lift) return;
+    const seconds = Math.max(0.1, lift.seconds ?? 0.9);
+    const target = input.liftActive ? 1 : 0;
+    liftStroke = m.clamp(liftStroke + Math.sign(target - liftStroke) * (dt / seconds), 0, 1);
+    // Pitch measured off the body's own forward vector, signed so nose-up is
+    // positive whichever way the bot is facing.
+    const fwd = m.qRotate(rot, { x: 0, y: 0, z: -1 });
+    liftAngle = Math.asin(m.clamp(fwd.y, -1, 1));
+    const wanted = liftStroke * ((lift.maxAngleDeg ?? 90) * Math.PI) / 180;
+    if (liftStroke <= 0 && liftAngle <= 0.02) return;
+    // Torque about the body's own lateral axis, servo'd on angle and damped on
+    // rate. It has to beat gravity's restoring torque about the rear axle, so
+    // the gain is expressed as an angular acceleration and scaled by inertia.
+    const lateral = m.qRotate(rot, { x: 1, y: 0, z: 0 });
+    const pitchRate = m.dot(angvel, lateral);
+    // Positive rotation about the body's +X (its right) raises the nose, and
+    // liftAngle and pitchRate are both measured in that same sense, so the
+    // torque goes on POSITIVE. Getting this backwards drives the nose into the
+    // floor and the servo then fights the suspension all the way down.
+    const rate = (wanted - liftAngle) * (lift.gain ?? 26) - pitchRate * (lift.damping ?? 5.5);
+    const clamped = m.clamp(rate, -(lift.maxAccel ?? 40), lift.maxAccel ?? 40);
+    body.applyTorqueImpulse(m.scale(lateral, ix * clamped * dt), true);
+  }
+
   return {
     body,
     spec,
@@ -399,6 +442,7 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
       if (inverted) up = m.scale(up, -1);
       const fwdH = m.flatNorm(m.qRotate(rot, { x: 0, y: 0, z: -1 }));
 
+      updateLift(dt, input, rot, angvel);
       const worldAnchors = updateSuspension(dt, pos, rot, linvel, angvel, up, inverted);
       const grounded = probeState.some((p) => p.grounded);
 
@@ -486,6 +530,13 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
     isGrounded() {
       return probeState.some((p) => p.grounded);
     },
+    /**
+     * How far the body has reared up, 0..1 of its own maximum. The renderer
+     * counter-rotates the track pods by this so they stay flat on the floor
+     * while the chassis swings over them.
+     */
+    podAngle: () => (lift ? m.clamp(liftAngle / (((lift.maxAngleDeg ?? 90) * Math.PI) / 180), 0, 1) : 0),
+    liftStroke: () => liftStroke,
     probeCompression() {
       return probeState.map((p) => p.compression / T.probeTravel);
     },
@@ -500,6 +551,8 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
       body.setLinvel({ x: 0, y: 0, z: 0 }, true);
       body.setAngvel({ x: 0, y: 0, z: 0 }, true);
       for (let i = 0; i < wheelSpin.length; i++) wheelSpin[i] = 0;
+      liftStroke = 0;
+      liftAngle = 0;
     },
   };
 }

@@ -56,6 +56,9 @@ export async function createSim({ bots, emit }) {
       // because pod rotation is how this machine self-rights and asking the
       // player for a fourth button to stand back up is not a mechanic.
       weaponAuxAngle: weapons[i].getAuxAngle?.() ?? 0,
+      // How far the chassis has reared up, 0..1. Named for the node the
+      // RENDERER puts it on: the pods are counter-rotated by it so they stay
+      // flat while the body swings over them.
       auxPodAngle: vehicles[i].podAngle?.() ?? 0,
       weaponRatio: weapons[i].getRatio(),
       wheelSpin: vehicles[i].getWheelSpin(),

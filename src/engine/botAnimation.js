@@ -106,12 +106,22 @@ export function syncBotVisual(visual, spec, state, dt = 1 / 60) {
     if (!node) continue;
     const a = cfg.axis ?? { x: 1, y: 0, z: 0 };
     scratchAxis.set(a.x, a.y, a.z).normalize();
-    // The jaw runs off the aux channel's 0..1; the pods run off their own
-    // ratio, which the sim drives automatically rather than from a button.
-    const stroke = name === "pods"
-      ? THREE.MathUtils.clamp(state.auxPodAngle ?? 0, 0, 1)
-      : THREE.MathUtils.clamp(state.weaponAuxAngle ?? 0, 0, 1);
-    const travel = cfg.closeAngle ?? cfg.range ?? 0;
+    // The jaw runs off the weapon's own 0..1 (1 = shut). The PODS are the odd
+    // one: they do not swing on a button at all, they are counter-rotated by
+    // however far the chassis has reared up so they stay flat on the floor while
+    // the body swings over them. That is what makes the lift read as the body
+    // pivoting about the rear axle rather than the whole robot tipping over.
+    if (name === "pods") {
+      // NEGATIVE: the group above these pods is already carrying the chassis's
+      // nose-up rotation, so cancelling it is what leaves them flat on the
+      // floor. Rotating them the same way as the body stands them on end.
+      const liftAngle = THREE.MathUtils.clamp(state.auxPodAngle ?? 0, 0, 1)
+        * (((spec.lift?.maxAngleDeg ?? 90) * Math.PI) / 180);
+      node.quaternion.setFromAxisAngle(scratchAxis, -liftAngle);
+      continue;
+    }
+    const stroke = THREE.MathUtils.clamp(state.weaponAuxAngle ?? 0, 0, 1);
+    const travel = cfg.openAngle ?? cfg.closeAngle ?? cfg.range ?? 0;
     node.quaternion.setFromAxisAngle(scratchAxis, stroke * travel);
   }
   // Tracks. The band is real geometry built at load time (engine/tracks.js) and
