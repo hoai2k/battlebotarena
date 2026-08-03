@@ -363,7 +363,14 @@ function normalizeScene(scene, spec) {
   wrapper.position.y = -grounded.min.y;
   // Center the footprint on the origin (Tripo models are near-centered but
   // weapon overhangs skew the bbox; recenter on the body when present).
-  const bodyNode = wrapper.getObjectByName("modelBody");
+  // Recentre on modelBody, because a weapon baked mid-stroke drags the whole
+  // bbox off to one side. spec.modelCenterOn names a different node for the one
+  // machine where the body is NOT the thing that defines the footprint:
+  // Gigabyte is a full-body shell spinner, so its modelBody is the passive
+  // self-righting pole, and that pole arcs sideways far enough to shove the
+  // spinning dome nearly half a foot off the chassis origin.
+  const centerName = spec.modelCenterOn ?? "modelBody";
+  const bodyNode = wrapper.getObjectByName(centerName);
   const centerBox = bodyNode ? drawnBox(bodyNode) : grounded;
   const center = new THREE.Vector3();
   centerBox.getCenter(center);

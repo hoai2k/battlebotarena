@@ -573,8 +573,13 @@ await test("catalog: every bot's colliders clear the floor at rest", async () =>
   for (const spec of Object.values(CATALOG)) {
     const minAnchorY = Math.min(...spec.wheelAnchors.map((a) => a.y));
     const originY = (VEHICLE_TUNING.probeTravel - VEHICLE_TUNING.restCompression) - minAnchorY;
+    // A cylinder's vertical half-extent depends on which way it points: a wheel
+    // (axis x) is as tall as its radius, a disc lying flat (axis y, Gigabyte's
+    // shell) only as tall as its half-height.
     const lowest = Math.min(...spec.colliders.map((c) => (c.offset?.y ?? 0)
-      - (c.shape === "cylinder" ? c.radius : (c.halfExtents?.y ?? 0))));
+      - (c.shape === "cylinder"
+        ? ((c.axis ?? "y") === "y" ? c.halfHeight : c.radius)
+        : (c.halfExtents?.y ?? 0))));
     const clearance = originY + lowest;
     check(clearance > -0.02 && clearance < 0.12, `${spec.id}: rests on its wheels`,
       `lowest collider sits ${clearance.toFixed(3)}ft from the floor`);

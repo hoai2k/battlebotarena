@@ -100,7 +100,15 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
   for (const c of spec.colliders) {
     let desc;
     if (c.shape === "cylinder") {
+      // Rapier's cylinder stands on Y. `axis` says which way the round face
+      // points: "x" for a wheel (HUGE's two 40in tyres), "y" for a disc lying
+      // flat, which is what a full-body shell spinner is. The field was already
+      // being authored and silently ignored, so HUGE's wheels were being built
+      // as 2.9ft pancakes lying in the floor instead of standing up.
       desc = RAPIER.ColliderDesc.cylinder(c.halfHeight, c.radius);
+      const axis = c.axis ?? "y";
+      if (axis === "x") desc.setRotation(m.qFromAxisAngle({ x: 0, y: 0, z: 1 }, Math.PI / 2));
+      else if (axis === "z") desc.setRotation(m.qFromAxisAngle({ x: 1, y: 0, z: 0 }, Math.PI / 2));
     } else if (c.shape === "wedge") {
       // A right triangular prism: flat on the floor, its top face climbing from
       // a knife edge at the front (-z, y = tipY) to `halfExtents.y * 2` at the

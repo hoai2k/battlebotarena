@@ -228,6 +228,37 @@ function readVec(accessorIndex, vertexIndex, size) {
   return out;
 }
 
+/** Write a float vector back over the vertex it was read from. `bin` is a view
+ *  into the loaded file and the output is concatenated from it, so this edits
+ *  the geometry in place rather than appending a second copy of the part. */
+function writeVec(accessorIndex, vertexIndex, values) {
+  const accessor = json.accessors[accessorIndex];
+  const view = json.bufferViews[accessor.bufferView];
+  const stride = view.byteStride || values.length * 4;
+  const offset = (view.byteOffset || 0) + (accessor.byteOffset || 0) + vertexIndex * stride;
+  values.forEach((v, i) => bin.writeFloatLE(v, offset + i * 4));
+}
+
+const writePosition = (accessorIndex, vertexIndex, p) => writeVec(accessorIndex, vertexIndex, p);
+
+/** Re-derive an accessor's min/max after moving its vertices. glTF carries them
+ *  as metadata and viewers cull against them, so a stale pair makes a re-posed
+ *  part flicker out at the edge of frame. */
+function refreshAccessorBounds(accessorIndex, size) {
+  const accessor = json.accessors[accessorIndex];
+  const min = new Array(size).fill(Infinity);
+  const max = new Array(size).fill(-Infinity);
+  for (let i = 0; i < accessor.count; i += 1) {
+    const v = readVec(accessorIndex, i, size);
+    for (let k = 0; k < size; k += 1) {
+      if (v[k] < min[k]) min[k] = v[k];
+      if (v[k] > max[k]) max[k] = v[k];
+    }
+  }
+  accessor.min = min;
+  accessor.max = max;
+}
+
 /** Append a float accessor (VEC2/VEC3) and return its index. */
 function appendFloatAccessor(rows, size) {
   const bytes = Buffer.alloc(align4(rows.length * size * 4));
@@ -400,6 +431,57 @@ for (const op of ops) {
     if (holder) { holder.children.push(newNodeIndex); }
     else json.scenes[0].nodes.push(newNodeIndex);
     console.log(`part ${op.part} [clone]: ${cloned.length / 3} tris turned 180 about axis ${axis}`);
+    continue;
+  }
+  if (op.mode === "rotate") {
+    // Re-pose a part about an axis through a point, IN PLACE.
+    //
+    // A segmentation bakes whatever pose the photographs caught, and the
+    // catalog's restAngle can only rotate a group the loader knows about. When
+    // the baked pose is wrong the whole model pays for it, because
+    // normalizeScene grounds on the lowest DRAWN point: Dragon King's front
+    // grabber hung 0.56ft below its own tracks, so the tracks flew and the bot
+    // stood on its chin. Rotating the offending group back is the only fix that
+    // survives into the rest pose, the collider fit and every rig measurement
+    // taken afterwards.
+    //
+    //   "axis": 0|1|2, "angle": radians, "pivot": [x,y,z] in MODEL space
+    const node = json.nodes[nodeIndexByName(`tripo_part_${op.part}`)];
+    const primitive = json.meshes[node.mesh].primitives[0];
+    const posAccessor = primitive.attributes.POSITION;
+    const normalAccessor = primitive.attributes.NORMAL;
+    const indices = readIndices(primitive.indices);
+    const translation = node.translation || [0, 0, 0];
+    const axis = op.axis ?? 0;
+    const angle = op.angle ?? 0;
+    const pivot = op.pivot ?? [0, 0, 0];
+    // The two axes that move, in right-handed order about `axis`.
+    const [a, b] = axis === 0 ? [1, 2] : axis === 1 ? [2, 0] : [0, 1];
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const seen = new Set();
+    let moved = 0;
+    for (const vi of indices) {
+      if (seen.has(vi)) continue;
+      seen.add(vi);
+      const p = readPosition(posAccessor, vi);
+      const pa = p[a] + translation[a] - pivot[a];
+      const pb = p[b] + translation[b] - pivot[b];
+      p[a] = pa * cos - pb * sin + pivot[a] - translation[a];
+      p[b] = pa * sin + pb * cos + pivot[b] - translation[b];
+      writePosition(posAccessor, vi, p);
+      if (normalAccessor !== undefined) {
+        const n = readVec(normalAccessor, vi, 3);
+        const na = n[a];
+        const nb = n[b];
+        n[a] = na * cos - nb * sin;
+        n[b] = na * sin + nb * cos;
+        writeVec(normalAccessor, vi, n);
+      }
+      moved += 1;
+    }
+    refreshAccessorBounds(posAccessor, 3);
+    console.log(`part ${op.part} [rotate]: ${moved} verts by ${angle.toFixed(3)}rad about axis ${axis} at [${pivot.join(", ")}]`);
     continue;
   }
   if (op.mode === "mirror") {

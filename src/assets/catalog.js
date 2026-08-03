@@ -1843,6 +1843,335 @@ export const CATALOG = {
       { shape: "box", halfExtents: { x: 1.2464, y: 0.2059, z: 1.2464 }, offset: { x: 0, y: 0.5527, z: 0.3793 } },
     ],
   },
+
+  glitch: {
+    id: "glitch",
+    name: "Glitch",
+    tagline: "Always pointed at you.",
+    referenceImage: "./public/reference/glitch.png",
+    modelPath: "./public/models/glitch.glb",
+    modelYaw: Math.PI, // MEASURED: model faces +Z, and the drum leads at game -Z
+    modelScale: 3.146,
+    hideWheels: true, // four omniwheels in an X-drive, tucked under the wedge
+    // --- the real machine ---------------------------------------------
+    // battlebots.com files the weapon as a vertical bar spinner; the team and
+    // the wiki both call it an eggbeater drum, and the hardware in the
+    // reference photo is a drum. RPM, drum diameter and impact energy are not
+    // published anywhere — only the tip speed is.
+    realWorld: {
+      team: "Combat Robotics at Berkeley", from: "Berkeley, CA",
+      weightLbs: 250,
+      topSpeedMph: null,
+      size: { widthFt: 2.9, lengthFt: 3.15, heightFt: 0.94, source: "class-estimate" },
+      weapon: { name: "Eggbeater drum", weightLbs: 58, tipSpeedMph: 180, rpm: null },
+      drive: "4x Scorpion SII-4035-450KV (X-drive omni)", power: null,
+    },
+
+    weightLbs: 250,
+    weaponWeightLbs: 58,
+    bodyDims: { x: 2.900, y: 0.825, z: 3.146 }, // MEASURED: flat delta, and the plate is only 10in thick
+    wheelAnchors: [
+      { x: -1.15, y: 0.21, z: -1.05 },
+      { x: 1.15, y: 0.21, z: -1.05 },
+      { x: -1.15, y: 0.21, z: 1.05 },
+      { x: 1.15, y: 0.21, z: 1.05 },
+    ],
+    maxSpeedFps: 15.0,
+    accel: 7.0,
+    turnRate: 1.15,
+    accent: "#7b3fd4",
+    accentDark: "#15161a",
+    // X-drive. Strafing is the whole bot: it circles while holding the drum
+    // square, which is why nearly every exchange it takes is a clean uppercut.
+    // The push penalty is the documented counter — omniwheels have no grip, so
+    // a heavy pusher moves it at will.
+    drive: { type: "holonomic", strafeRatio: 0.9, pushForceScale: 0.4 },
+    weapon: {
+      type: "drum",
+      pivot: { x: -0.157, y: 0.594, z: -0.661 }, // MEASURED drum axle, game space
+      axis: { x: 1, y: 0, z: 0 },
+      // MEASURED: the drum is genuinely off-centre — it sits in a bay left of
+      // the centreline, which is what "asymmetric eggbeater" means on this bot.
+      spinUpSeconds: 1.3,
+      spinDownSeconds: 1.1,
+      inertia: 1.2,
+      maxOmega: 620,
+      budgetCap: 360,
+      radius: 0.535, // MEASURED swept radius about the axle
+      dims: { x: 0.522, y: 0.355, z: 0.457 },
+    },
+    // The nose is a WEDGE: it is the whole point of the machine, and test 16
+    // requires nothing but a wedge ahead of the drum's leading edge (-1.196).
+    colliders: [
+      { shape: "wedge", halfExtents: { x: 1.40, y: 0.13, z: 0.32 }, offset: { x: 0, y: 0.13, z: -1.25 }, tipY: 0.02 },
+      { shape: "box", halfExtents: { x: 1.45, y: 0.22, z: 1.28 }, offset: { x: 0, y: 0.22, z: 0.29 } },
+      { shape: "box", halfExtents: { x: 0.58, y: 0.20, z: 0.16 }, offset: { x: -0.16, y: 0.62, z: -0.20 } },
+    ],
+  },
+
+  gigabyte: {
+    id: "gigabyte",
+    name: "Gigabyte",
+    tagline: "One hit is all it needs.",
+    referenceImage: "./public/reference/gigabyte.png",
+    modelPath: "./public/models/gigabyte.glb",
+    modelYaw: 0, // radially symmetric — yaw is cosmetic
+    modelScale: 3.813,
+    // The SHELL is what gets scaled to widthFt, not the overall bbox, and it is
+    // also what the footprint centres on: modelBody here is the passive
+    // self-righting pole, and that pole arcs out sideways far enough to shove
+    // the spinning dome half a foot off the chassis origin.
+    modelCenterOn: "modelWeapon",
+    hideWheels: true, // two wheels, entirely under the shell
+    // --- the real machine ---------------------------------------------
+    // Robotic Death Company, built by John Mladenik — NOT Hardcore Robotics.
+    // Successor to Megabyte. Four shells are carried; 120lb is the current one.
+    realWorld: {
+      team: "Robotic Death Company", from: "Oceanside, CA",
+      weightLbs: 250,
+      topSpeedMph: null,
+      size: { widthFt: 3.0, lengthFt: 3.0, heightFt: 1.04, source: "class-estimate" },
+      weapon: { name: "Full-body shell", weightLbs: 120, tipSpeedMph: 188, rpm: null },
+      drive: "2x TP5680 brushless", power: null,
+    },
+
+    weightLbs: 250,
+    weaponWeightLbs: 120,
+    bodyDims: { x: 3.108, y: 1.040, z: 3.813 }, // MEASURED shell
+    wheelAnchors: [
+      { x: -1.25, y: 0.21, z: -0.55 },
+      { x: 1.25, y: 0.21, z: -0.55 },
+      { x: -1.25, y: 0.21, z: 0.55 },
+      { x: 1.25, y: 0.21, z: 0.55 },
+    ],
+    maxSpeedFps: 11.0,
+    accel: 5.5,
+    turnRate: 0.7,
+    accent: "#d94a1e",
+    accentDark: "#121214",
+    weapon: {
+      type: "shellSpinner",
+      pivot: { x: -0.012, y: 0.649, z: -0.076 }, // MEASURED shell centre, game space
+      axis: { x: 0, y: 1, z: 0 }, // VERTICAL — the only weapon in the game that is
+      // Six seconds is the published spin-up and it is the whole risk of the
+      // machine: before it is up it is a 250lb dome with two wheels.
+      spinUpSeconds: 6.0,
+      spinDownSeconds: 1.1,
+      inertia: 2.2,
+      maxOmega: 260,
+      budgetCap: 460, // the hardest-hitting weapon in the catalog
+      radius: 1.55, // MEASURED shell radius (the rim teeth reach 1.99)
+      dims: { x: 1.554, y: 0.520, z: 1.554 },
+    },
+    // The shell IS the collider — a disc lying flat, not a wheel, hence axis y.
+    // The pole is the only part that does not rotate and it never reaches the
+    // floor, so it gets no collider of its own.
+    colliders: [
+      { shape: "cylinder", axis: "y", radius: 1.55, halfHeight: 0.50, offset: { x: 0, y: 0.50, z: 0 } },
+    ],
+  },
+
+  kraken: {
+    id: "kraken",
+    name: "Kraken",
+    tagline: "Bite first. Then light them up.",
+    referenceImage: "./public/reference/kraken.png",
+    modelPath: "./public/models/kraken.glb",
+    modelYaw: Math.PI / 2, // MEASURED: model faces +X
+    modelScale: 3.197,
+    // --- the real machine ---------------------------------------------
+    // The only pneumatic crusher ever built — an air BAG between chassis and
+    // jaw lever, not a rod cylinder. It trades holding force for speed, and it
+    // snaps shut far faster than a hydraulic crusher. Crush force grew
+    // 20,000 -> 40,000 -> 100,000 lbf across builds.
+    realWorld: {
+      team: "CE Robots", from: "Titusville, FL",
+      weightLbs: 249,
+      topSpeedMph: null,
+      size: { widthFt: 2.6, lengthFt: 3.2, heightFt: 1.71, source: "class-estimate" },
+      weapon: { name: "Pneumatic crusher", weightLbs: 60, tipSpeedMph: null, rpm: null },
+      drive: "2x NPC-T74", power: null,
+    },
+
+    weightLbs: 249,
+    weaponWeightLbs: 60,
+    bodyDims: { x: 2.600, y: 1.707, z: 3.197 }, // MEASURED
+    wheelAnchors: [
+      { x: -0.90, y: 0.21, z: -0.55 },
+      { x: 0.90, y: 0.21, z: -0.55 },
+      { x: -0.95, y: 0.21, z: 0.955 },
+      { x: 0.95, y: 0.21, z: 0.955 },
+    ],
+    maxSpeedFps: 8.8,
+    accel: 5.2,
+    turnRate: 0.7,
+    accent: "#3fa63f",
+    accentDark: "#16181a",
+    weapon: {
+      type: "crusher",
+      pivot: { x: 0, y: 1.589, z: 0.856 }, // MEASURED top-rear hinge, game space
+      axis: { x: 1, y: 0, z: 0 },
+      // MEASURED: the GLB is baked jaw-OPEN, so the stroke CLOSES it onto the
+      // fixed lower V-scoop. About 30 degrees, which matches the real gape.
+      restAngle: 0,
+      fireAngle: -0.55,
+      spinUpSeconds: 0.2, // jaw close response
+      budgetCap: 160, // enormous force, but it has to get a grip first
+      dims: { x: 0.750, y: 0.500, z: 1.454 },
+      tuning: { strokeSeconds: 0.25, returnSeconds: 0.5, gripReach: 1.9 },
+    },
+    // The lower jaw is welded to the chassis and is the get-under wedge. Its
+    // tip MEASURES 0.27 off the floor, which is a scan artifact rather than the
+    // machine — authored to the floor so it works as the wedge it is.
+    colliders: [
+      { shape: "wedge", halfExtents: { x: 0.34, y: 0.16, z: 0.48 }, offset: { x: 0, y: 0.16, z: -1.00 }, tipY: 0.02 },
+      { shape: "box", halfExtents: { x: 0.95, y: 0.55, z: 0.55 }, offset: { x: 0, y: 0.55, z: -0.45 } },
+      { shape: "box", halfExtents: { x: 1.30, y: 0.45, z: 0.62 }, offset: { x: 0, y: 0.45, z: 0.42 } },
+      { shape: "box", halfExtents: { x: 0.92, y: 0.33, z: 0.58 }, offset: { x: 0, y: 0.33, z: 1.22 } },
+    ],
+  },
+
+  rusty: {
+    id: "rusty",
+    name: "Rusty",
+    tagline: "Held together by hope and a welded nut.",
+    referenceImage: "./public/reference/rusty.png",
+    modelPath: "./public/models/rusty.glb",
+    modelYaw: Math.PI / 2, // MEASURED: model faces +X
+    modelScale: 3.882,
+    hideWheels: true, // tracked — the two rubber track units stay in the body
+    // --- the real machine ---------------------------------------------
+    // A genuine one-man team, and the rust is real rather than paint. The
+    // chrome helmet is an inverted stainless mixing bowl, the battery tray is a
+    // cut street sign, and the mandatory power switch is a nut welded to a
+    // bolt. Head mass, swing energy and gas pressure are not published.
+    realWorld: {
+      team: "Team Iron Force", from: "Antioch, IL",
+      weightLbs: 250,
+      topSpeedMph: null,
+      size: { widthFt: 2.6, lengthFt: 3.88, heightFt: 1.85, source: "class-estimate" },
+      weapon: { name: "Pneumatic hammer", weightLbs: 30, tipSpeedMph: null, rpm: null },
+      drive: "2x rubber tracks", power: null,
+    },
+
+    weightLbs: 250,
+    weaponWeightLbs: 30,
+    bodyDims: { x: 2.600, y: 1.848, z: 3.882 }, // MEASURED
+    wheelAnchors: [
+      { x: -1.15, y: 0.21, z: -1.35 },
+      { x: 1.15, y: 0.21, z: -1.35 },
+      { x: -1.15, y: 0.21, z: 1.35 },
+      { x: 1.15, y: 0.21, z: 1.35 },
+    ],
+    maxSpeedFps: 7.0,
+    accel: 4.2,
+    turnRate: 0.6,
+    accent: "#8a5a32",
+    accentDark: "#2a2118",
+    drive: { type: "tracked" },
+    weapon: {
+      type: "hammer",
+      // MEASURED front-of-yoke hinge, game space. The yoke is a U: two drilled
+      // plate-steel bars down the sides joined by the head fin at the tail, so
+      // the pivot is at the FRONT beside the dome and the head hangs over the
+      // tail at z 2.02. That is why the hammer is invisible in front-on photos.
+      pivot: { x: 0, y: 1.118, z: -1.004 },
+      // Negative X: the head is BEHIND the pivot, so a positive rotation about
+      // +X would drive it into the floor instead of lifting it over the top.
+      axis: { x: -1, y: 0, z: 0 },
+      restAngle: 0, // baked cocked-back over the tail
+      fireAngle: 2.4, // ~140 degrees, up over the top and down in front
+      spinUpSeconds: 0.2,
+      budgetCap: 260,
+      selfRight: true,
+      dims: { x: 0.300, y: 0.546, z: 0.300 },
+      tuning: { strokeSeconds: 0.25, returnSeconds: 1.4, reach: 3.03 },
+    },
+    colliders: [
+      { shape: "wedge", halfExtents: { x: 0.62, y: 0.20, z: 0.30 }, offset: { x: 0, y: 0.20, z: -1.56 }, tipY: 0.03 },
+      { shape: "box", halfExtents: { x: 1.30, y: 0.36, z: 1.55 }, offset: { x: 0, y: 0.36, z: 0.24 } },
+      { shape: "box", halfExtents: { x: 0.78, y: 0.62, z: 0.66 }, offset: { x: 0, y: 1.22, z: -0.85 } },
+      { shape: "box", halfExtents: { x: 1.28, y: 0.30, z: 0.62 }, offset: { x: 0, y: 0.92, z: 0.62 } },
+    ],
+  },
+
+  dragonking: {
+    id: "dragonking",
+    name: "Dragon King",
+    tagline: "Pin it, then cut it open.",
+    referenceImage: "./public/reference/dragonking.png",
+    modelPath: "./public/models/dragonking.glb",
+    modelYaw: Math.PI, // MEASURED: model faces +Z
+    modelScale: 3.949,
+    hideWheels: true, // tracked pods, rigged as modelAux-pods
+    // --- the real machine ---------------------------------------------
+    // Built by Jerome Miles (Team Duct Tape) as the successor to Red Devil, for
+    // the Chinese televised events; now run by Bot Bash Party Crew under Will
+    // Prater. Crediting either alone is incomplete. Weight, blade diameter, saw
+    // RPM and arm actuator type are all unpublished.
+    realWorld: {
+      team: "Bot Bash Party Crew", from: "Birmingham, AL",
+      weightLbs: 250,
+      topSpeedMph: null,
+      size: { widthFt: 3.3, lengthFt: 4.19, heightFt: 1.95, source: "class-estimate" },
+      weapon: { name: "Twin saws", weightLbs: null, tipSpeedMph: null, rpm: null },
+      drive: "2x rotating tracked pods", power: null,
+    },
+
+    weightLbs: 250,
+    weaponWeightLbs: 40,
+    // MEASURED with the pods in their rest position. The real bounding box
+    // CHANGES with pod angle — the pods rotate to reconfigure the stance, lift
+    // the body and self-right — so this is the rest stance, not a fixed truth.
+    bodyDims: { x: 3.300, y: 1.946, z: 4.186 },
+    wheelAnchors: [
+      { x: -1.30, y: 0.21, z: -1.10 },
+      { x: 1.30, y: 0.21, z: -1.10 },
+      { x: -1.30, y: 0.21, z: 0.35 },
+      { x: 1.30, y: 0.21, z: 0.35 },
+    ],
+    maxSpeedFps: 8.0,
+    accel: 4.5,
+    turnRate: 0.65,
+    accent: "#e8b21e",
+    accentDark: "#141414",
+    drive: { type: "tracked" },
+    weapon: {
+      type: "sawArms",
+      pivot: { x: -0.007, y: 0.659, z: -0.107 }, // MEASURED arm base, game space
+      axis: { x: 1, y: 0, z: 0 },
+      restAngle: 0, // baked arms RAISED — the stroke DROPS them, like a hammer
+      fireAngle: 1.4, // ~80 degrees down onto a held opponent
+      spinUpSeconds: 1.0,
+      budgetCap: 180,
+      radius: 1.291, // MEASURED swept radius of the arms about their base
+      dims: { x: 0.716, y: 0.658, z: 0.568 },
+      // The blades keep spinning whatever the arms are doing, so they are their
+      // own nested group. They do nothing without a grip — that IS the bot.
+      sub: {
+        node: "modelWeaponSub-saws",
+        pivot: { x: -0.007, y: 1.409, z: -0.186 }, // MEASURED, both blades share this line
+        axis: { x: 1, y: 0, z: 0 },
+        spinUpSeconds: 1.0, damagePerSecond: 14, requiresGrip: true,
+      },
+      tuning: { strokeSeconds: 0.4, returnSeconds: 0.7, gripReach: 2.2 },
+    },
+    // MEASURED aux pivots, game space. The jaw is the enabling weapon; the pods
+    // rotate as whole units and drive the self-right.
+    aux: {
+      jaw: { node: "modelAux-jaw", axis: { x: 1, y: 0, z: 0 },
+             pivot: { x: -0.007, y: 0.461, z: -1.055 }, closeAngle: 0.7, seconds: 0.4 },
+      pods: { node: "modelAux-pods", axis: { x: 1, y: 0, z: 0 },
+              pivot: { x: -0.007, y: 0.264, z: -0.463 }, range: 2.2, seconds: 0.8,
+              drivesSelfRight: true },
+    },
+    colliders: [
+      { shape: "wedge", halfExtents: { x: 0.34, y: 0.18, z: 0.60 }, offset: { x: 0, y: 0.18, z: -1.95 }, tipY: 0.02 },
+      { shape: "box", halfExtents: { x: 1.05, y: 0.28, z: 1.39 }, offset: { x: 0, y: 0.28, z: 0 } },
+      { shape: "box", halfExtents: { x: 0.68, y: 0.52, z: 0.68 }, offset: { x: 0, y: 0.52, z: -0.17 } },
+      { shape: "box", halfExtents: { x: 1.65, y: 0.27, z: 1.01 }, offset: { x: 0, y: 0.27, z: -0.45 } },
+    ],
+  },
 };
 
 /** Stable display order for UI grids. */
@@ -1852,6 +2181,7 @@ export const BOT_IDS = Object.freeze([
   "whiplash", "witchdoctor",
   "blip", "copperhead", "duck", "endgame", "freeshipping",
   "mammoth", "overhaul", "shatter", "tantrum",
+  "dragonking", "gigabyte", "glitch", "kraken", "rusty",
 ]);
 
 /** @returns {BotSpec} */
