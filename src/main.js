@@ -391,5 +391,6 @@ window.__bba2 = {
   // it is looking at without importing its own copy.
   THREE,
   syncBotVisual,
+  updateWeaponSub,
   render: () => stage.render(),
 };

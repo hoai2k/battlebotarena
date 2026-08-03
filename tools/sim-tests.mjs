@@ -1196,6 +1196,38 @@ await test("tracked bots stop when you let go; wheeled ones coast", async () => 
   });
 });
 
+await test("every animated weapon type is wired to something that moves it", async () => {
+  // Dragon King's saw discs never turned and its arms never tilted, and neither
+  // failure could be seen from the sim: the rotor spun, the grind damage gated
+  // on it, and the two lists that decide what the RENDERER animates — the arm
+  // types in models.weaponVisualAngle and the sub-spinner types in
+  // botAnimation.updateWeaponSub — simply did not mention "sawArms". A type
+  // added to the catalog and to the sim but to neither list is invisible.
+  const { CATALOG, BOT_IDS } = await import("../src/assets/catalog.js");
+  const fs = await import("node:fs");
+  const read = (path) => fs.readFileSync(new URL(path, import.meta.url), "utf8");
+  const armTypes = read("../src/assets/models.js");
+  const subTypes = read("../src/engine/botAnimation.js");
+  // Types whose visual angle is a 0..1 STROKE the renderer has to map onto an
+  // arc; a spinner reports a real angle and needs no entry.
+  const stroked = new Set(["flipper", "hammer", "hammerSaw", "sawArms", "crusher",
+    "lifter", "lifterDisc", "grappler"]);
+  const missingArm = [];
+  const missingSub = [];
+  for (const id of BOT_IDS) {
+    const spec = CATALOG[id];
+    const type = spec.weapon?.type;
+    if (!type) continue;
+    if (stroked.has(type) && !armTypes.includes(`"${type}"`)) missingArm.push(`${id} (${type})`);
+    // A weapon with a `sub` block has a nested spinner the renderer must turn.
+    if (spec.weapon.sub && !subTypes.includes(`"${type}"`)) missingSub.push(`${id} (${type})`);
+  }
+  check(missingArm.length === 0, "every stroke weapon is in models.weaponVisualAngle",
+    missingArm.join(", "));
+  check(missingSub.length === 0, "every weapon with a sub-spinner is in updateWeaponSub",
+    missingSub.join(", "));
+});
+
 // ---------------------------------------------------------------------------
 
 const failed = results.filter((r) => !r.ok);

@@ -1,6 +1,10 @@
 [
-  { "_comment": "Rusty's helmet is an inverted stainless kitchen mixing bowl that had been a popcorn bowl — it is the single most-told fact about this robot, and it came off the scan flat white, which reads as painted plastic. Paint it as polished stainless instead. NOT metalness 1.0: a metal has no diffuse term, so with no environment map in this scene a fully metallic dome renders BLACK — which is why models.js SURFACE sits at 0.28 for every scanned part. 0.45 with a bright base and a low roughness is what actually reads as a mixing bowl here. Flat colour is right here, the scan's texture for it carries no detail worth keeping.",
-    "part": 13, "mode": "paint",
-    "material": { "name": "RustyStainlessDome", "baseColorFactor": [0.78, 0.79, 0.82, 1], "metallicFactor": 0.45, "roughnessFactor": 0.22 },
-    "region": { "type": "box", "min": [-1, -1, -1], "max": [1, 1, 1] } }
+  { "_comment": "Rusty's helmet is a spun steel mixing bowl bolted over a rusted-steel body — bare polished metal with a satin shine and a rolled lip, and the one bright thing on the whole robot. The DOME (part 13) was already repainted onto RustyStainlessDome by an earlier pass, but its ROLLED RIM (part 11) was left on the scan's texture, so the helmet was metal with a photographed band around its edge. The rim gets the same material, and the dome is retuned toward the reference: brighter and glossier.",
+    "part": 11, "mode": "paint",
+    "region": { "type": "box", "min": [-0.2, -0.1, -0.5], "max": [0.7, 0.6, 0.5] },
+    "material": { "name": "RustyStainlessRim", "baseColorFactor": [0.86, 0.88, 0.91, 1], "metallicFactor": 1.0, "roughnessFactor": 0.26 } },
+
+  { "_comment": "metallicFactor 1.0 is only correct because the renderer now has an environment to reflect — see engine/renderer.js. Before that it was 0.45, because a fully metallic material with nothing to mirror renders black, and the compromise read as white plastic.",
+    "mode": "material", "name": "RustyStainlessDome",
+    "baseColorFactor": [0.86, 0.88, 0.91, 1], "metallicFactor": 1.0, "roughnessFactor": 0.26 }
 ]

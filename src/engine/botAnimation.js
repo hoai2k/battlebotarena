@@ -149,7 +149,10 @@ export function syncBotVisual(visual, spec, state, dt = 1 / 60) {
 const SAW_DISC_SPEED = -67.2; // rad/s at full speed (was 42, +60%)
 export function updateWeaponSub(visual, spec, dt, active) {
   const sub = visual.parts.weaponSub;
-  if (!sub || !["hammerSaw", "lifterDisc"].includes(spec.weapon?.type)) return;
+  // sawArms belongs here too, and its absence is why Dragon King's blades have
+  // never turned: the channel latched, the sim spun its rotor up and gated the
+  // grind damage on it, and the two discs on screen sat perfectly still.
+  if (!sub || !["hammerSaw", "sawArms", "lifterDisc"].includes(spec.weapon?.type)) return;
   const state = (visual.__subSpin ||= { angle: 0, speed: 0 });
   const target = active ? SAW_DISC_SPEED : 0;
   state.speed += (target - state.speed) * Math.min(1, dt * (active ? 2.2 : 1.1));

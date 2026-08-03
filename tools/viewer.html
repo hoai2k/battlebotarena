@@ -32,6 +32,27 @@ renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x14161a);
+// Same environment the game reflects, so a material judged here is judged the
+// way it will look in the arena. Metal has no diffuse term — without this a
+// polished part renders black and the viewer lies about it.
+{
+  const c = document.createElement("canvas");
+  c.width = 64; c.height = 128;
+  const g = c.getContext("2d");
+  const sky = g.createLinearGradient(0, 0, 0, c.height);
+  sky.addColorStop(0.0, "#9fb6d8"); sky.addColorStop(0.45, "#54607a");
+  sky.addColorStop(0.52, "#2a2f38"); sky.addColorStop(1.0, "#14120f");
+  g.fillStyle = sky; g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = "rgba(255, 246, 226, 0.85)"; g.fillRect(0, c.height * 0.40, c.width, c.height * 0.045);
+  g.fillStyle = "rgba(190, 214, 255, 0.35)"; g.fillRect(0, c.height * 0.30, c.width, c.height * 0.02);
+  const tex = new THREE.CanvasTexture(c);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromEquirectangular(tex).texture;
+  scene.environmentIntensity = 0.8;
+  pmrem.dispose(); tex.dispose();
+}
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.01, 100);
 // &cam=az,el,dist in degrees/units, so a headless screenshot can look at the
 // bot from somewhere other than the one fixed three-quarter view. Orbiting by
