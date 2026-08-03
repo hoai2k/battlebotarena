@@ -2172,10 +2172,11 @@ export const CATALOG = {
     accent: "#8a5a32",
     accentDark: "#2a2118",
     drive: { type: "tracked" },
-    // Rusty's two rubber tracks stay in the body (no aux group), so the scroll
-    // walks modelBody instead. It catches the tyres and nothing else that has a
-    // texture worth watching move.
-    tracks: { axis: "y", scale: 0.16 },
+    // No `tracks` block: Rusty's tracks are buried under its armour and its
+    // tread guards and are not visible from any angle the camera reaches, so
+    // there is nothing for a band to add. It DID have one, which named no aux
+    // node — so the scroll walked modelBody and dragged the texture on all 23
+    // of Rusty's parts around, the helmet and the hammer yoke included.
     weapon: {
       type: "hammer",
       // MEASURED front-of-yoke hinge, game space. The yoke is a U: two drilled
@@ -2253,10 +2254,13 @@ export const CATALOG = {
     accent: "#e8b21e",
     accentDark: "#141414",
     drive: { type: "tracked" },
-    // Both track units live in modelAux-pods, so the scroll rides the same node
-    // the pod rotation does. scale converts accumulated wheel rotation into UV
-    // travel — one texture repeat per 1/scale radians of ground roll.
-    tracks: { aux: "pods", axis: "y", scale: 0.16 },
+    // The two track units, by mesh name. engine/tracks.js sweeps a band around
+    // each one's silhouette — which for a tensioned track is its convex hull —
+    // and scrolls that along its own length. Naming the meshes is the point:
+    // the previous version scrolled the units' own UVs, and since each unit is
+    // ONE scanned mesh holding wheels, frame and band on a single atlas, that
+    // moved the texture in a different direction on every triangle.
+    tracks: { parts: ["tripo_part_6", "tripo_part_7"], widthAxis: "x", tint: "#232629" },
     weapon: {
       type: "sawArms",
       pivot: { x: 0.007, y: 0.659, z: 0.107 }, // MEASURED arm base, game space

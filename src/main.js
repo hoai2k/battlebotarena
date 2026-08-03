@@ -9,6 +9,7 @@ import { createEffects, spawnBotFlame } from "./engine/effects.js";
 import { createArenaVisuals } from "./engine/arena.js";
 import { createBotPreview } from "./engine/botPreview.js";
 import { syncBotVisual, updateWeaponSub } from "./engine/botAnimation.js";
+import { buildTrackBands } from "./engine/tracks.js";
 
 // Written by the parallel build agents; wired here at integration time.
 import { createUI } from "./ui/ui.js";
@@ -153,6 +154,10 @@ async function startMatch({ playerBotId, rivalBotId, difficulty }) {
       }).then((visual) => {
         modelProgress[i] = 1;
         reportModels();
+        // A tracked bot's band is built from the loaded geometry rather than
+        // shipped in the GLB — see engine/tracks.js for why the scan cannot
+        // provide one. Built once here; botAnimation only scrolls it.
+        visual.trackBands = buildTrackBands(visual, spec);
         return visual;
       })
     )
@@ -378,4 +383,13 @@ window.__bba2 = {
   // headless browser can verify that a bot actually renders and drives rather
   // than only that its catalog entry parses.
   startMatch,
+  // Drive one bot's animation directly, at a state of the caller's choosing, and
+  // draw a frame from it. A moving part that is only reachable through the match
+  // loop can only be checked at whatever speed the match happens to be running;
+  // tools/track-probe.mjs needs a KNOWN wheel speed and successive frames that
+  // differ by nothing else. THREE rides along so a probe can measure the model
+  // it is looking at without importing its own copy.
+  THREE,
+  syncBotVisual,
+  render: () => stage.render(),
 };
