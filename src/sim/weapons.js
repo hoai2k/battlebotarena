@@ -686,6 +686,10 @@ function createCrusher({ vehicle, index, emit }) {
 // ---------------------------------------------------------------------------
 
 function createHammerSaw({ vehicle, index, emit }) {
+  // Dragon King's jaw rides this weapon's aux channel. It is not part of the
+  // arm mechanism at all — it is the grip that makes the saws worth anything,
+  // and it has to be able to hold while the arms are doing something else.
+  let auxStroke = 0;
   const spec = vehicle.spec;
   const w = spec.weapon;
   const tune = resolveWeaponTuning(spec);
@@ -740,6 +744,12 @@ function createHammerSaw({ vehicle, index, emit }) {
   return {
     type: "hammerSaw",
     update(dt, fire, ctx) {
+      // Jaw: held, not latched. Letting go IS letting go of the opponent.
+      const jaw = vehicle.spec.aux?.jaw;
+      if (jaw) {
+        const seconds = Math.max(0.05, jaw.seconds ?? 0.4);
+        auxStroke = m.clamp(auxStroke + (ctx?.input?.auxActive ? dt / seconds : -dt / seconds), 0, 1);
+      }
       if (phase === "idle" && fire) {
         phase = "swinging";
         t = 0;
@@ -765,6 +775,9 @@ function createHammerSaw({ vehicle, index, emit }) {
         if (t >= returnSeconds) phase = "idle";
       }
     },
+    getAuxAngle: () => auxStroke,
+    /** The jaw is the grip: Dragon King's saws do nothing without one. */
+    isGripping: () => auxStroke > 0.6,
     getAngle() {
       if (phase === "swinging") return Math.min(1, t / swingSeconds);
       if (phase === "held") return 1;
