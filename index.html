@@ -118,20 +118,7 @@
             <div class="pod-foot">
               <span class="pod-badge"></span>
               <span class="pod-stats"></span>
-              <span class="pod-controls">
-                <span class="pod-control">
-                  <button id="pod-primary-player" class="pod-test" type="button" hidden data-nav-right="#pod-secondary-player,#btn-fight"><span data-control-label>WEAPON</span></button>
-                  <span class="pod-meter"><i id="pod-primary-meter-player"></i></span>
-                </span>
-                <span class="pod-control">
-                  <button id="pod-secondary-player" class="pod-test pod-test-alt" type="button" hidden data-nav-right="#pod-aux-player,#btn-fight"><span data-control-label>ALT</span></button>
-                  <span class="pod-meter"><i id="pod-secondary-meter-player"></i></span>
-                </span>
-                <span class="pod-control">
-                  <button id="pod-aux-player" class="pod-test pod-test-aux" type="button" hidden data-nav-right="#btn-fight"><span data-control-label>AUX</span></button>
-                  <span class="pod-meter"><i id="pod-aux-meter-player"></i></span>
-                </span>
-              </span>
+              <span id="pod-controls-player" class="pod-controls"></span>
             </div>
           </div>
           <div class="select-mid">
@@ -140,7 +127,7 @@
                     data-nav-left="#slot-player" data-nav-right="#slot-rival"><span>FIGHT</span></button>
             <div class="pod-controls-hint">
               R-STICK ORBIT &middot; LT ZOOM<br />
-              RT WEAPON &middot; RB SECONDARY &middot; LB AUX<br />
+              RT / RB / LB RUN THE WEAPONS<br />
               MOUSE DRAG &middot; WHEEL ZOOM
             </div>
           </div>
@@ -156,20 +143,7 @@
             <div class="pod-foot">
               <span class="pod-badge"></span>
               <span class="pod-stats"></span>
-              <span class="pod-controls">
-                <span class="pod-control">
-                  <button id="pod-primary-rival" class="pod-test" type="button" hidden data-nav-left="#pod-secondary-rival,#btn-fight"><span data-control-label>WEAPON</span></button>
-                  <span class="pod-meter"><i id="pod-primary-meter-rival"></i></span>
-                </span>
-                <span class="pod-control">
-                  <button id="pod-secondary-rival" class="pod-test pod-test-alt" type="button" hidden data-nav-left="#pod-aux-rival,#btn-fight"><span data-control-label>ALT</span></button>
-                  <span class="pod-meter"><i id="pod-secondary-meter-rival"></i></span>
-                </span>
-                <span class="pod-control">
-                  <button id="pod-aux-rival" class="pod-test pod-test-aux" type="button" hidden data-nav-left="#btn-fight"><span data-control-label>AUX</span></button>
-                  <span class="pod-meter"><i id="pod-aux-meter-rival"></i></span>
-                </span>
-              </span>
+              <span id="pod-controls-rival" class="pod-controls"></span>
             </div>
           </div>
         </div>

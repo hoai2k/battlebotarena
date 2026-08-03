@@ -32,6 +32,21 @@ export const VEHICLE_TUNING = Object.freeze({
   driveMinUpY: 0.55, // drive cutoff
   brakeBlendBoost: 2.2, // brake servo closes the gap faster
   idleBrakeBoost: 1.35, // gentle no-input settle; v1 coasts, it doesn't pin
+  // --- tracks ----------------------------------------------------------------
+  // A tracked machine does not coast. Two things stop it that a wheeled bot has
+  // neither of: the contact patch is the whole length of the track instead of
+  // four small circles, and the drive is geared down far enough that it resists
+  // being back-driven at all — let go of the sticks and the tracks are simply
+  // held. Wheels roll on; tracks stop where they are.
+  //
+  // Both numbers are deliberately deceleration-only. trackedStopBoost saturates
+  // the velocity servo so a stop is COMMANDED in full the instant the input
+  // goes, and trackedBrakeGrip lifts the friction ceiling that would otherwise
+  // limit it — but only while stopping, so it buys a tracked bot no extra
+  // acceleration and no extra grip in a turn. It is not a grippier tyre, it is
+  // a drivetrain that will not freewheel.
+  trackedStopBoost: 40,
+  trackedBrakeGrip: 2.2,
   speedCap: 60, // ft/s safety rail
   escapeMargin: 0.5, // ft outside walls before inward nudge kicks in
   escapeAccel: 25, // ft/s^2 gentle inward push
@@ -275,10 +290,14 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
     // then clamp by tire traction (the longitudinal half of the friction circle).
     // Idle/brake gets a stronger blend: tires hold position statically.
     const idle = Math.abs(targets.forward) < 0.05 && Math.abs(targets.yawRate) < 0.05;
-    const boost = targets.brake ? T.brakeBlendBoost : idle ? T.idleBrakeBoost : 1;
+    const stopping = idle || targets.brake;
+    const boost = targets.brake ? T.brakeBlendBoost
+      : idle ? (tracked ? T.trackedStopBoost : T.idleBrakeBoost)
+        : 1;
     const blend = Math.min(1, dt * spec.accel * sideGrip * boost);
     let impulse = (targetSpeed - current) * (mass / 2) * blend;
-    const tractionCap = T.tireMu * sideN * dt;
+    // Tracks are held by their gearing, so what limits a stop is not the tyre.
+    const tractionCap = T.tireMu * (tracked && stopping ? T.trackedBrakeGrip : 1) * sideN * dt;
     impulse = m.clamp(impulse, -tractionCap, tractionCap);
     const perProbe = impulse / groundedIdx.length;
     for (const i of groundedIdx) {
@@ -368,6 +387,7 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
   // tracks a commanded sideways velocity instead of killing slip, and grip is
   // scaled back because omniwheels have far less of it.
   const holonomic = spec.drive?.type === "holonomic";
+  const tracked = spec.drive?.type === "tracked";
   const strafeRatio = spec.drive?.strafeRatio ?? 0.9;
   const gripScale = holonomic ? (spec.drive?.pushForceScale ?? 0.55) : 1;
 

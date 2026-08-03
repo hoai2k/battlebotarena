@@ -138,6 +138,13 @@ export async function createSim({ bots, emit }) // bots: [BotSimSpec, BotSimSpec
    left to come out of tyre slip. Lateral: friction-circle clamp
    `|F_lat| ≤ μ·F_n` (μ≈1.1) — no velocity scrubbing. Extra yaw damping torque
    when no turn input. Airborne: no drive forces, light angular damping only.
+   A `drive.type === "tracked"` bot does not coast: the stop is commanded in
+   full the instant the input goes (`trackedStopBoost`) and the friction ceiling
+   that would otherwise limit it is lifted (`trackedBrakeGrip`). Both are
+   DECELERATION-ONLY, so a track buys no extra acceleration and no extra grip in
+   a turn — it is not a grippier tyre, it is a drivetrain that will not
+   freewheel. Neither tracked bot needs a brake as a result, which is what frees
+   LT on Dragon King for its body lift.
 3. **Spinners** (bar/drum): spin state is scalar energy `E = ½Iω²`; weapon
    mesh spins visually. Weapon collider is a thin solid cuboid/cylinder in its
    own collision group (hits opponent + props, not floor). On contact with
@@ -655,7 +662,10 @@ long RT was held.
 
 **The pods are a PRACTICE viewer, not a showreel.** The owner orbits with the
 right stick, leans in with LT, and works the weapon on RT/RB/LB — the same
-channels as a fight. Raw presses go through `game/weaponControls.js`, the ONE
+channels as a fight, driven by the PAD — the pod carries no test buttons, only a
+read-only legend of the selected bot's channels (`describeWeaponControls`), which
+can list all four of Dragon King's where a fixed row of buttons covered three.
+Raw presses go through `game/weaponControls.js`, the ONE
 definition of which button does what, shared with main.js's match loop; the
 motion comes from `engine/previewWeapon.js`, which mirrors the phase machines
 in `sim/weapons.js` off the same `resolveWeaponTuning` numbers, and is drawn

@@ -1140,6 +1140,62 @@ await test("dragon king: the jaw grips, tows, and the saws only cut what it hold
   });
 });
 
+await test("tracked bots stop when you let go; wheeled ones coast", async () => {
+  // A tracked machine does not freewheel: the contact patch is the whole length
+  // of the track rather than four small circles, and the drive is geared down
+  // far enough to resist being back-driven at all. Let go of the sticks and it
+  // stops where it is — which is why neither tracked bot needs a brake, and why
+  // Dragon King can spend LT on its body lift instead.
+  //
+  // It used to be the other way round: Dragon King took 0.48s to stop from
+  // 6.7 ft/s while Tombstone took 0.32s from 8.8, because the stop is servo'd at
+  // a rate proportional to spec.accel and the tracked bots are the slowest bots
+  // in the game.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const coast = async (id) => {
+    const spec = CATALOG[id];
+    return withSim([spec, CATALOG.bronco], (sim) => {
+      sim._test.setPose(1, { x: 18, z: 18 }, 0);
+      sim._test.setPose(0, { x: 0, z: 17 }, 0); // forward is -z: start at the far end
+      frames(sim, 90);
+      frames(sim, 100, [{ leftDrive: 1, rightDrive: 1 }, {}]);
+      const speed = speedXZ(sim._test.body(0));
+      const from = { ...sim._test.body(0).translation() };
+      let ticks = 0;
+      for (let f = 0; f < 600; f++) {
+        frames(sim, 1);
+        ticks++;
+        if (speedXZ(sim._test.body(0)) < 0.3) break;
+      }
+      const to = sim._test.body(0).translation();
+      return { speed, feet: Math.hypot(to.x - from.x, to.z - from.z), seconds: ticks / 60 };
+    });
+  };
+  const dragon = await coast("dragonking");
+  const rusty = await coast("rusty");
+  const tombstone = await coast("tombstone");
+  check(dragon.speed > 3 && tombstone.speed > 3, "both got up to speed first",
+    `${dragon.speed.toFixed(1)} and ${tombstone.speed.toFixed(1)} ft/s`);
+  for (const [id, r] of [["dragon king", dragon], ["rusty", rusty]]) {
+    check(r.seconds < tombstone.seconds * 0.7, `${id} stops quicker than a wheeled bot`,
+      `${r.seconds.toFixed(2)}s from ${r.speed.toFixed(1)}ft/s vs tombstone ${tombstone.seconds.toFixed(2)}s from ${tombstone.speed.toFixed(1)}ft/s`);
+    check(r.feet < 0.6, `${id} stops in under an inch or two`, `${r.feet.toFixed(2)}ft`);
+  }
+  // Deceleration-only: it must not have made them quicker or grippier.
+  const spec = CATALOG.dragonking;
+  await withSim([spec, CATALOG.bronco], (sim) => {
+    sim._test.setPose(1, { x: 18, z: 18 }, 0);
+    sim._test.setPose(0, { x: 0, z: 17 }, 0);
+    frames(sim, 90);
+    let peak = 0;
+    frames(sim, 150, [{ leftDrive: 1, rightDrive: 1 }, {}], () => {
+      peak = Math.max(peak, speedXZ(sim._test.body(0)));
+    });
+    check(peak < spec.maxSpeedFps * 1.1, "and it is no faster than its own top speed",
+      `${peak.toFixed(1)} vs ${spec.maxSpeedFps}`);
+  });
+});
+
 // ---------------------------------------------------------------------------
 
 const failed = results.filter((r) => !r.ok);

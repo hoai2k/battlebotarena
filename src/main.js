@@ -41,14 +41,14 @@ const loader = createLoader();
 // 3D showcase on the bot select screen: each chosen bot renders on a lit
 // turntable inside its pod. ui.js only emits selection actions; the routing
 // to this module happens below (UI never imports three.js).
+// The pod is a showcase and a controller test bench, nothing more: its weapons
+// run off the pad's own triggers, the same ones the match reads. It used to
+// carry three on-screen test buttons as well, which could only ever cover the
+// channels someone remembered to add a button for — Dragon King has four
+// mechanisms and there were three buttons.
 const podEls = (side) => ({
   view: document.querySelector(`#pod-view-${side}`),
-  primary: document.querySelector(`#pod-primary-${side}`),
-  secondary: document.querySelector(`#pod-secondary-${side}`),
-  aux: document.querySelector(`#pod-aux-${side}`),
-  primaryMeter: document.querySelector(`#pod-primary-meter-${side}`),
-  secondaryMeter: document.querySelector(`#pod-secondary-meter-${side}`),
-  auxMeter: document.querySelector(`#pod-aux-meter-${side}`),
+  controls: document.querySelector(`#pod-controls-${side}`),
 });
 const botPreview = createBotPreview({
   canvas: document.querySelector("#preview-canvas"),
