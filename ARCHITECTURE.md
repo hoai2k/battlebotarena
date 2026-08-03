@@ -87,12 +87,19 @@ export async function createSim({ bots, emit }) // bots: [BotSimSpec, BotSimSpec
 
 - Fixed timestep 1/120s accumulator inside `stepFrame`; render state is
   interpolated between the last two ticks. Cap 8 substeps per frame.
-- `DriveInput = { leftDrive: -1..1, rightDrive: -1..1, weapon: bool, sawActive: bool,
-  auxActive: bool, brake: bool }` — `sawActive` is the secondary (RB) channel:
-  Sawblaze's saw motor, Whiplash's disc, Tantrum's drum carriage. `auxActive` is
-  a THIRD channel (LB) for a bot with three separate mechanisms, which today is
-  only Tantrum's punch arms; LB is the brake for everyone else, and
-  `game/weaponControls.js` is the one place that knows which is which.
+- `DriveInput = { leftDrive: -1..1, rightDrive: -1..1, strafe: -1..1, spin: -1..1,
+  weapon: bool, sawActive: bool, auxActive: bool, brake: bool }` — `sawActive`
+  is the secondary (RB) channel: Sawblaze's saw motor, Whiplash's disc,
+  Tantrum's drum carriage. `auxActive` is a THIRD channel (LB) for a bot with
+  three separate mechanisms, which today is only Tantrum's punch arms; LB is the
+  brake for everyone else, and `game/weaponControls.js` is the one place that
+  knows which is which.
+- `strafe` and `spin` are read only by a bot whose `drive.type` is `holonomic`
+  (Glitch, Shatter): its omniwheels resolve into movement along both chassis
+  axes AND yaw, independently, so its sticks are not a tank pair. LEFT STICK
+  translates (Y forward/back, X strafes), RIGHT STICK rotates. Same split on the
+  keyboard: W/S, A/D, Q/E. `game/weaponControls.js` decides which bots get which
+  mapping; the input layer just derives all the channels for everyone.
 - `BotSimSpec` comes from the catalog (below): masses, dims, wheel probe
   anchors, weapon type/params, collider spec.
 - Arena colliders (floor/walls/ceiling/deck slab/saw slots/screw shafts) are
@@ -112,7 +119,13 @@ export async function createSim({ bots, emit }) // bots: [BotSimSpec, BotSimSpec
    damping ζ≈0.4, force via `applyImpulseAtPoint` at the probe. Longitudinal:
    velocity-servo toward `drive * maxSpeed` (accel-limited, the v1 servo shape
    — keep it, it feels controllable), applied as force at grounded probes,
-   split per side for tank steering. Lateral: friction-circle clamp
+   split per side for tank steering, with moment arms measured from the WHEEL
+   CENTRE (the mean of the probe anchors) — a machine on wheels pivots about the
+   middle of its contact patches, not about its centre of mass, and on this
+   roster those are up to a third of a foot apart. The yaw servo pairs its
+   torque with the linear impulse that holds that point still, and the
+   centripetal term for orbiting the COM around it is fed forward rather than
+   left to come out of tyre slip. Lateral: friction-circle clamp
    `|F_lat| ≤ μ·F_n` (μ≈1.1) — no velocity scrubbing. Extra yaw damping torque
    when no turn input. Airborne: no drive forces, light angular damping only.
 3. **Spinners** (bar/drum): spin state is scalar energy `E = ½Iω²`; weapon
@@ -577,8 +590,9 @@ at the height of the side skirts had the blade passing straight through it.
   weapon-type-aware behavior (spinner keeps weapon toward foe; flipper waits
   for proximity), difficulty scales speed/aggression.
 - `input.js`: keyboard (W/S/A/D + Q/E split, Space weapon, Shift brake) +
-  gamepad (v1 mapping: sticks tank, RT weapon, LB brake) + haptics on
-  EV.IMPACT/EV.WEAPON_HIT strength.
+  gamepad (v1 mapping: stick Ys tank, stick Xs strafe/rotate for the omni bots,
+  RT weapon, LB brake) + haptics on EV.IMPACT/EV.WEAPON_HIT strength. It knows
+  no bots: it derives every channel and `game/weaponControls.js` picks.
 - `audio.js`: port root `src/gameAudio.js` verbatim synthesis, but subscribe
   to the event bus instead of exported hook functions; keep keep-alive loop
   pattern; storage key `bba2-sound` via settings store; default off.

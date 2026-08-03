@@ -186,6 +186,27 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
   const leftIdx = anchors.map((a, i) => i).filter((i) => anchors[i].x < 0);
   const rightIdx = anchors.map((a, i) => i).filter((i) => anchors[i].x >= 0);
 
+  // WHERE THE BOT TURNS. A tracked machine pivots about the centre of its
+  // contact patches — throw one side forward and the other back and it spins
+  // about the middle of its wheels, not about its centre of mass and not about
+  // whatever point the model happens to call the origin. Those are three
+  // different places on most of this roster: the COM is deliberately low and
+  // slightly rear (see `com`), and a bot like Tombstone carries skids up front
+  // and tyres at the back, so its wheel centre sits well ahead of both. Driving
+  // yaw about the COM put the pivot a third of a foot behind where the wheels
+  // say it is, which reads as the nose swinging wide.
+  //
+  // Everything that commands or corrects a turn measures its moment arms from
+  // here: the per-side speed target, the lateral-slip reference, and the yaw
+  // servo (which pairs its torque with the linear impulse that holds this point
+  // still). y is the contact plane, so the arm is the same one the tyres have.
+  const wheelCenter = {
+    x: anchors.reduce((sum, a) => sum + a.x, 0) / anchors.length,
+    y: minAnchorY,
+    z: anchors.reduce((sum, a) => sum + a.z, 0) / anchors.length,
+  };
+  const wheelCenterOffset = m.sub(wheelCenter, com); // body-local, COM -> pivot
+
   function pointVelocity(worldPoint, pos, rot, linvel, angvel) {
     const comWorld = m.add(pos, m.qRotate(rot, com));
     return m.add(linvel, m.cross(angvel, m.sub(worldPoint, comWorld)));
@@ -234,7 +255,10 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
     const sideGrip = groundedIdx.length / sideIdx.length;
     const sideN = groundedIdx.reduce((sum, i) => sum + probeState[i].normalForce, 0);
     const sideX = sideIdx.reduce((sum, i) => sum + anchors[i].x, 0) / sideIdx.length;
-    const targetSpeed = targets.forward + targets.yawRate * sideX;
+    // Moment arm from the pivot, not from the model origin: a bot whose wheels
+    // are not centred on x=0 would otherwise be commanded two side speeds that
+    // describe a rotation about a point it has no wheels at.
+    const targetSpeed = targets.forward + targets.yawRate * (sideX - wheelCenter.x);
 
     const sidePoint = m.add(basis.pos, m.qRotate(basis.rot, { x: sideX, y: minAnchorY + 0.15, z: 0 }));
     const current = m.dot(pointVelocity(sidePoint, basis.pos, basis.rot, basis.linvel, basis.angvel), fwdH);
@@ -262,15 +286,15 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
 
   function applyLateralGrip(dt, basis, worldAnchors, yawTarget, strafeTarget = 0) {
     const { rightH } = basis;
-    const comWorld = m.add(basis.pos, m.qRotate(basis.rot, com));
+    const pivotWorld = m.add(basis.pos, m.qRotate(basis.rot, wheelCenter));
     for (let i = 0; i < anchors.length; i++) {
       const state = probeState[i];
       if (!state.grounded) continue;
       const vLat = m.dot(pointVelocity(worldAnchors[i], basis.pos, basis.rot, basis.linvel, basis.angvel), rightH);
-      // Lateral SLIP relative to the commanded rotation about the COM: pure
-      // rotation at the target yaw rate is not slip, so grip doesn't fight the
-      // turn (or pin the pivot to the grippier axle and make the bot orbit).
-      const r = m.sub(worldAnchors[i], comWorld);
+      // Lateral SLIP relative to the commanded rotation about the WHEEL CENTRE:
+      // pure rotation at the target yaw rate is not slip, so grip doesn't fight
+      // the turn (or pin the pivot to the grippier axle and make the bot orbit).
+      const r = m.sub(worldAnchors[i], pivotWorld);
       // An omniwheel's rollers let it slide sideways freely, so on a holonomic
       // bot "lateral slip" is not slip at all — it is a commanded velocity, and
       // the servo tracks it instead of killing it. That single change is what
@@ -294,7 +318,7 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
     }
   }
 
-  function applyYawServo(dt, turnInput, yawTarget, grip, angvel) {
+  function applyYawServo(dt, turnInput, yawTarget, grip, angvel, rot) {
     const wy = angvel.y;
     const maxImpulse = iy * T.maxYawAccel * dt;
     let impulse;
@@ -304,7 +328,16 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
       impulse = -wy * iy * Math.min(0.5, dt * T.yawSettleRate * Math.max(grip, 0.2));
     }
     impulse = m.clamp(impulse, -maxImpulse, maxImpulse);
-    if (Math.abs(impulse) > 1e-6) body.applyTorqueImpulse({ x: 0, y: impulse, z: 0 }, true);
+    if (Math.abs(impulse) <= 1e-6) return;
+    body.applyTorqueImpulse({ x: 0, y: impulse, z: 0 }, true);
+    // A torque impulse alone spins the body about its CENTRE OF MASS — that is
+    // what a free rigid body does, and it is not what a bot on wheels does. The
+    // servo's job is to turn the machine about its wheel centre, so it pairs
+    // the torque with the linear impulse that leaves that point's velocity
+    // untouched: dw x d is what the pivot would otherwise pick up, so cancel it.
+    const d = m.qRotate(rot, wheelCenterOffset);
+    const dw = impulse / iy;
+    body.applyImpulse({ x: -mass * dw * d.z, y: 0, z: mass * dw * d.x }, true);
   }
 
   function applySafetyRails(dt, pos, linvel) {
@@ -390,6 +423,11 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
         if (holonomic) {
           yawRate = -input.spin * T.baseTurnRate * turnScale
             * (Math.abs(input.spin) > 0.55 ? T.counterRotateBoost : 1);
+          // Same ceiling the tank pair gets when it counter-rotates. Without it
+          // a fast X-drive on full stick was commanded nearly three revolutions
+          // a second — the rate is the product of the bot's top speed and its
+          // tightness, and on Glitch both are high.
+          yawRate = m.clamp(yawRate, -T.counterRotateCap, T.counterRotateCap);
         }
         const targets = {
           forward: input.brake ? 0 : throttle * spec.maxSpeedFps,
@@ -403,8 +441,20 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
           ? input.strafe * spec.maxSpeedFps * strafeRatio
           : 0;
         applyLateralGrip(dt, basis, worldAnchors, targets.yawRate, strafeTarget);
+        // Turning about a point that is not the centre of mass means the COM is
+        // travelling in a circle, and something has to supply m*w^2*d to hold it
+        // there. Left to the grip servos it comes out of SLIP — they are
+        // proportional, so a standing demand buys a standing error, and the
+        // pivot creeps back toward the COM the faster the bot spins. Handing
+        // them the known term up front leaves them only the disturbances, which
+        // is what they are for.
+        const wy = angvel.y;
+        if (Math.abs(wy) > 0.1) {
+          const d = m.qRotate(rot, wheelCenterOffset);
+          body.applyImpulse({ x: mass * wy * wy * d.x * dt, y: 0, z: mass * wy * wy * d.z * dt }, true);
+        }
         const grip = probeState.filter((p) => p.grounded).length / probeState.length;
-        applyYawServo(dt, turnInput, targets.yawRate, grip, angvel);
+        applyYawServo(dt, holonomic ? input.spin : turnInput, targets.yawRate, grip, angvel, rot);
       } else if (!grounded) {
         // Airborne: no drive forces, light angular damping only.
         const damp = Math.min(0.3, dt * T.airAngularDamp);
