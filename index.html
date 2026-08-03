@@ -84,7 +84,12 @@
       <!-- Hangar layout: each chosen bot renders live in its pod's 3D window
            (engine/botPreview.js draws into #preview-canvas behind the DOM;
            the pod view areas are transparent scissor rects into it). -->
-      <section id="screen-botSelect" class="screen screen-select" data-screen-name="botSelect" aria-hidden="true">
+      <!-- data-nav-wrap-down: coming off the bottom of the roster, wrap to
+           FIGHT rather than to whatever geometry says is topmost. Ignored while
+           FIGHT is disabled, so before both bots are picked it wraps to the top
+           of the screen as usual. -->
+      <section id="screen-botSelect" class="screen screen-select" data-screen-name="botSelect"
+               data-nav-wrap-down="#btn-fight" aria-hidden="true">
         <div class="screen-backdrop"></div>
         <canvas id="preview-canvas" aria-hidden="true"></canvas>
         <header class="select-head">
