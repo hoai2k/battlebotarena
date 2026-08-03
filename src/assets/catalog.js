@@ -1919,7 +1919,12 @@ export const CATALOG = {
     tagline: "One hit is all it needs.",
     referenceImage: "./public/reference/gigabyte.png",
     modelPath: "./public/models/gigabyte.glb",
-    modelYaw: 0, // radially symmetric — yaw is cosmetic
+    // MEASURED: the self-righting pole's bend points 276.9 degrees at yaw 0,
+    // i.e. straight out to the bot's left. The shell is radially symmetric so
+    // yaw is cosmetic for the weapon, but the pole is the one part that does
+    // NOT rotate and it wants to lie back over the tail rather than stick out
+    // sideways where it reads as a broken antenna.
+    modelYaw: 1.6912,
     modelScale: 3.813,
     // The SHELL is what gets scaled to widthFt, not the overall bbox, and it is
     // also what the footprint centres on: modelBody here is the passive
@@ -1941,7 +1946,7 @@ export const CATALOG = {
 
     weightLbs: 250,
     weaponWeightLbs: 120,
-    bodyDims: { x: 3.108, y: 1.040, z: 3.813 }, // MEASURED shell
+    bodyDims: { x: 3.113, y: 1.040, z: 3.098 }, // MEASURED shell, after gigabyte-round.json made it circular
     wheelAnchors: [
       { x: -1.25, y: 0.21, z: -0.55 },
       { x: 1.25, y: 0.21, z: -0.55 },
@@ -1968,7 +1973,7 @@ export const CATALOG = {
       // unsteerable once up to speed is the price of the six-second wind-up.
       recoilScale: 1.8,
       gyroPenalty: 0.55,
-      radius: 1.55, // MEASURED shell radius (the rim teeth reach 1.99)
+      radius: 1.55, // MEASURED shell radius (the rim teeth reach 1.62)
       dims: { x: 1.554, y: 0.520, z: 1.554 },
     },
     // The shell IS the collider — a disc lying flat, not a wheel, hence axis y.
@@ -2088,7 +2093,10 @@ export const CATALOG = {
       // +X would drive it into the floor instead of lifting it over the top.
       axis: { x: -1, y: 0, z: 0 },
       restAngle: 0, // baked cocked-back over the tail
-      fireAngle: 2.4, // ~140 degrees, up over the top and down in front
+      // MEASURED by sweeping: at Math.PI the yoke has carried the head all the
+      // way over the top and out to the front, horizontal, head leading. A full
+      // half turn is the whole stroke this gantry has.
+      fireAngle: Math.PI,
       spinUpSeconds: 0.2,
       budgetCap: 260,
       selfRight: true,

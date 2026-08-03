@@ -1,0 +1,6 @@
+[
+  { "_comment": "The upper jaw is more than the shell. Part 14 is the toothed inner strip that lines the roof of the mouth, and parts 1 and 18 are the two small mounts either side of it — all three were filed under modelBody, so biting swung the shell down and left the tooth row hanging in the air behind it. Everything inside the head travels with the head; only the lower V-scoop (part 10) is welded to the chassis, and that one stays.",
+    "part": 14, "mode": "reparent", "parent": "modelWeapon" },
+  { "part": 1, "mode": "reparent", "parent": "modelWeapon" },
+  { "part": 18, "mode": "reparent", "parent": "modelWeapon" }
+]

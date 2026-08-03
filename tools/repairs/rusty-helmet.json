@@ -1,0 +1,6 @@
+[
+  { "_comment": "Rusty's helmet is an inverted stainless kitchen mixing bowl that had been a popcorn bowl — it is the single most-told fact about this robot, and it came off the scan flat white, which reads as painted plastic. Paint it as polished stainless instead. NOT metalness 1.0: a metal has no diffuse term, so with no environment map in this scene a fully metallic dome renders BLACK — which is why models.js SURFACE sits at 0.28 for every scanned part. 0.45 with a bright base and a low roughness is what actually reads as a mixing bowl here. Flat colour is right here, the scan's texture for it carries no detail worth keeping.",
+    "part": 13, "mode": "paint",
+    "material": { "name": "RustyStainlessDome", "baseColorFactor": [0.78, 0.79, 0.82, 1], "metallicFactor": 0.45, "roughnessFactor": 0.22 },
+    "region": { "type": "box", "min": [-1, -1, -1], "max": [1, 1, 1] } }
+]

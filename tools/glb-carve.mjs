@@ -433,6 +433,40 @@ for (const op of ops) {
     console.log(`part ${op.part} [clone]: ${cloned.length / 3} tris turned 180 about axis ${axis}`);
     continue;
   }
+  if (op.mode === "scale") {
+    // Stretch or squash a part about a point, per axis, IN PLACE.
+    //
+    // Tripo resolves a body of revolution as an ellipse surprisingly often, and
+    // on anything that SPINS that is not cosmetic: Gigabyte's shell measured
+    // 3.81ft one way and 3.11ft the other, 18% out of round, which on a
+    // full-body spinner reads as a wobble rather than as a dome. Scaling the
+    // long axis back to the short one about the spin centre makes it circular
+    // without touching the texture, because UVs do not move.
+    //
+    //   "factor": [sx,sy,sz], "pivot": [x,y,z] in MODEL space
+    const node = json.nodes[nodeIndexByName(`tripo_part_${op.part}`)];
+    const primitive = json.meshes[node.mesh].primitives[0];
+    const posAccessor = primitive.attributes.POSITION;
+    const indices = readIndices(primitive.indices);
+    const translation = node.translation || [0, 0, 0];
+    const factor = op.factor ?? [1, 1, 1];
+    const pivot = op.pivot ?? [0, 0, 0];
+    const seen = new Set();
+    let moved = 0;
+    for (const vi of indices) {
+      if (seen.has(vi)) continue;
+      seen.add(vi);
+      const p = readPosition(posAccessor, vi);
+      for (let k = 0; k < 3; k += 1) {
+        p[k] = (p[k] + translation[k] - pivot[k]) * factor[k] + pivot[k] - translation[k];
+      }
+      writePosition(posAccessor, vi, p);
+      moved += 1;
+    }
+    refreshAccessorBounds(posAccessor, 3);
+    console.log(`part ${op.part} [scale]: ${moved} verts by [${factor.join(", ")}] about [${pivot.join(", ")}]`);
+    continue;
+  }
   if (op.mode === "rotate") {
     // Re-pose a part about an axis through a point, IN PLACE.
     //
