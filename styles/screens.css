@@ -180,12 +180,22 @@
 .screen-select {
   padding: clamp(12px, 2vh, 26px) clamp(16px, 3vw, 40px);
   gap: clamp(10px, 1.6vh, 18px);
-  /* The roster is a full grid, so the screen scrolls rather than squeezing the
-     cards. The pods shrink until both are picked (see --stage-h) so the first
-     view still fits without scrolling on a normal display. */
+  /* This screen NEVER scrolls. Everything you need in order to choose has to be
+     on it at once: scrolling meant picking a bot from the bottom row updated a
+     pod you could not see, which reads as nothing happening, and it took a pile
+     of scroll-into-view rules to paper over. The grid is a fixed cost — it is
+     the whole roster and every card has to stay reachable — so the STAGE is
+     what flexes, taking whatever is left over. That also gets the viewers as
+     big as this screen can make them for free, which is what the fixed 56vh
+     heights were reaching for and what made it overflow.
+
+     `auto` rather than `hidden` is a safety valve, not a plan: below about
+     560px of viewport a pod cannot be drawn at a usable size AND leave room for
+     three rows of roster, and a scrollbar there is far better than clipping the
+     FIGHT button out of reach. At every size anyone plays at, there is nothing
+     to scroll. */
   overflow-y: auto;
   overscroll-behavior: contain;
-  scroll-behavior: smooth;
 }
 
 /* The live showcase canvas is FIXED to the viewport, not to the scrolling
@@ -199,12 +209,6 @@
   height: 100vh;
   z-index: 0;
   pointer-events: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .screen-select {
-    scroll-behavior: auto;
-  }
 }
 
 .screen-select > .select-head,
@@ -299,40 +303,24 @@
    3D view window in the middle (transparent — the canvas draws behind it),
    and a foot row with weapon badge, stat pips and the TEST WEAPON trigger. */
 
-/* Stage height is the whole layout trick. COMPACT while the player is still
-   choosing, so the roster grid fits on screen under it; FULL once both bays
-   are filled, which pushes the grid below the fold and hands the screen over
-   to the viewers (ui.js scrolls back to the top at that moment). */
+/* The stage takes everything the header and the roster do not. There is no
+   fixed height and no size classes any more: a vh figure is a guess about how
+   tall the grid will be, and every guess that was too generous overflowed a
+   screen that must not scroll. `flex: 1 1 auto` with `min-height: 0` is the
+   same intent stated as a constraint instead — as big as it can be, never
+   bigger than fits. The floor is there so a very short window still shows a
+   usable window rather than a sliver. */
 .select-stage {
-  --stage-h: clamp(178px, 25vh, 244px);
-  /* One bot picked: there is a live bot to look at but still a roster to read,
-     so the bay grows as far as it can while leaving the last grid row peeking
-     above the fold. Both picked -> .is-ready below, which takes the lot. */
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  /* A flat number, not a vh: this is "the least a pod can be and still be a
+     pod" — plate, a window you can see a bot in, and the foot row. Expressed as
+     a fraction of the viewport it collapses on a short window and the roster
+     draws straight over the pods instead of pushing them. */
+  min-height: 240px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: clamp(14px, 2.2vw, 34px);
   align-items: stretch;
-  transition: min-height 0.35s ease;
-  min-height: var(--stage-h);
-}
-
-.screen-select.is-picking .select-stage {
-  /* Nearly the whole screen: with a bot staged there is something worth looking
-     at, and the roster only has to stay reachable, not fully visible. Sized so
-     the last grid row is pushed mostly under the fold with a sliver showing —
-     enough to say "there is more down here" without wasting the bay. */
-  --stage-h: clamp(300px, 56vh, 600px);
-}
-
-.screen-select.is-ready .select-stage {
-  --stage-h: clamp(300px, 58vh, 640px);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .select-stage {
-    transition: none;
-  }
 }
 
 .preview-pod {
@@ -1167,6 +1155,21 @@
 @media (max-height: 640px) {
   .bot-card-badge {
     display: none;
+  }
+
+  /* The roster is a fixed cost the stage has to be paid out of, and on a short
+     window it is three rows tall whatever the cards' width, so the saving has
+     to come out of each card's HEIGHT. A wider thumbnail crop and a smaller
+     name give back about 20px a row, which is what keeps the pods at a usable
+     size here instead of the screen having to scroll. */
+  .bot-card-img {
+    aspect-ratio: 16 / 10;
+  }
+
+  .bot-card-name {
+    margin-top: 4px;
+    margin-bottom: 2px;
+    font-size: 0.7rem;
   }
 
   .pod-plate {

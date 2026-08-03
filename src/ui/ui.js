@@ -44,6 +44,10 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   };
   /** True while two controllers are connected. */
   let duoMode = false;
+  /** The gamepad navigator, built near the bottom of this function. Declared
+   *  here because a pick handler moves the cursor, and a `const` down there
+   *  would be in the temporal dead zone for anything that runs on the way. */
+  let nav = /** @type {ReturnType<typeof createGamepadNav>|null} */ (null);
 
   const SLOT_KEYS = /** @type {const} */ (["playerBotId", "rivalBotId"]);
   const getSlot = (slot) => sel[SLOT_KEYS[slot]];
@@ -117,12 +121,25 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     el.className = "bot-card bot-card-random";
     el.dataset.botId = RANDOM_CARD.id;
     el.style.setProperty("--accent", RANDOM_CARD.accent);
-    el.setAttribute("aria-label", "Random opponent");
+    el.setAttribute("aria-label", "Random bot");
     el.innerHTML = `
       <span class="bot-card-img"><span class="random-glyph">?</span></span>
       <span class="bot-card-name">${RANDOM_CARD.name}</span>
       <span class="bot-card-badge">ANY OF THE ${BOT_CARDS.length}</span>`;
     return el;
+  }
+
+  /**
+   * What Random means depends on WHOSE bay it lands in. For a bay someone is
+   * going to drive it has to resolve now — you cannot practise on a mystery,
+   * and the whole point of the pod is that you can. Only the AI's bay in solo
+   * keeps the card itself, because there the surprise IS the feature and it
+   * resolves at the box (see the startMatch action).
+   * @returns {string} a concrete bot id, or "random" to keep the mystery
+   */
+  function resolveRandom(id, { mystery = false, exclude = null } = {}) {
+    if (id !== "random") return id;
+    return mystery ? "random" : pickRandomBotId(exclude);
   }
 
   /**
@@ -132,29 +149,32 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
    * @returns {boolean} true if the press was consumed
    */
   function duoToggle(slot, id) {
-    if (!id || id === "random") return true; // random is solo-only
-    const mine = getSlot(slot);
+    if (!id) return true;
     const theirs = getSlot(slot === 0 ? 1 : 0);
-    if (mine === id) setSlot(slot, null);
-    else if (theirs === id) return true; // taken — ignore rather than steal
-    else setSlot(slot, id);
+    // Both bays are driven by a person here, so Random rolls straight away —
+    // and rolls around whatever the other player already holds, so it can never
+    // hand you a mirror match you did not ask for.
+    const pick = resolveRandom(id, { exclude: theirs });
+    const mine = getSlot(slot);
+    if (mine === pick && id !== "random") setSlot(slot, null);
+    else if (theirs === pick) return true; // taken — ignore rather than steal
+    else setSlot(slot, pick);
     refreshAfterPick(slot);
     return true;
   }
 
   /** Solo flow: the single cursor fills YOU, then RIVAL. */
   function soloPick(id) {
-    let slot = 1;
     if (sel.stage === "player") {
-      if (id === "random") return;
-      sel.playerBotId = id;
-      if (sel.rivalBotId === id) sel.rivalBotId = null; // no mirror match via direct pick collision
+      // Your own bay: Random rolls now, because you are about to drive it.
+      sel.playerBotId = resolveRandom(id, { exclude: sel.rivalBotId });
+      if (sel.rivalBotId === sel.playerBotId) sel.rivalBotId = null; // no mirror match via direct pick collision
       sel.stage = "rival";
-      slot = 0;
     } else {
-      sel.rivalBotId = id;
+      // The AI's bay: Random stays Random and is rolled at the box.
+      sel.rivalBotId = resolveRandom(id, { mystery: true });
     }
-    refreshAfterPick(slot);
+    refreshAfterPick(0);
   }
 
   if (grid) {
@@ -200,50 +220,6 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     }
   }
 
-  // ------------------------------------------------------------- stage size
-  // The pods start compact so the whole roster grid fits without scrolling.
-  // Once BOTH bays are filled the picking is done and the viewers are the
-  // point, so they grow and push the grid below the fold.
-  function syncStageSize() {
-    const bothPicked = Boolean(sel.playerBotId && sel.rivalBotId);
-    // Three sizes, not two: with ONE bot picked there is something live to look
-    // at, so the bay grows well past its browsing size even though the roster
-    // is still in use. Both picked and it takes everything.
-    selectScreen?.classList.toggle("is-picking", !bothPicked && Boolean(sel.playerBotId || sel.rivalBotId));
-    selectScreen?.classList.toggle("is-ready", bothPicked);
-    return bothPicked;
-  }
-
-  /** Is this element fully inside the scrolling screen's viewport? */
-  function isFullyVisible(el) {
-    if (!el || !selectScreen) return true;
-    const a = el.getBoundingClientRect();
-    const b = selectScreen.getBoundingClientRect();
-    return a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
-  }
-
-  const smooth = () =>
-    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
-
-  /**
-   * Keep the pick and its consequence on screen together. Picking a bot from
-   * the bottom of a scrolled grid otherwise updates a pod the player cannot
-   * see, which reads as nothing happening at all.
-   * @param {number|null} slot which pod just changed; null = both are done
-   */
-  function revealSelection(slot) {
-    if (!selectScreen) return;
-    // Both picked: the viewers are now full size, so go back to the top and
-    // show them off rather than leaving the player parked in the roster.
-    if (slot === null) {
-      selectScreen.scrollTo({ top: 0, behavior: smooth() });
-      return;
-    }
-    const pod = pods[slot]?.root;
-    if (!pod || isFullyVisible(pod)) return;
-    pod.scrollIntoView({ behavior: smooth(), block: "nearest" });
-  }
-
   /** Tell the integrator what to stage in the 3D pods and who owns the
    *  camera sticks. Solo, focus follows the pick flow: your bay until you
    *  have picked a real rival, then theirs. */
@@ -267,9 +243,11 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       const id = el.dataset.botId;
       el.classList.toggle("is-player", id === sel.playerBotId);
       el.classList.toggle("is-rival", id === sel.rivalBotId);
-      // Random is a stand-in for the AI opponent; with two humans, both sides
-      // are real picks, so it is off the table entirely.
-      el.classList.toggle("is-disabled", id === "random" && (duoMode || sel.stage === "player"));
+      // Random is always pickable. It used to be greyed out for your own bay
+      // and in duo — the card was there, it just refused — because it only knew
+      // how to be the AI's mystery opponent. It resolves on the spot for a bay
+      // a person is going to drive; see resolveRandom.
+      el.classList.remove("is-disabled");
     });
     document.body.classList.toggle("is-duo", duoMode);
     fillPod(
@@ -295,18 +273,18 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       stepEl.textContent = sel.stage === "player" ? "STEP 1 — CHOOSE YOUR BOT" : "STEP 2 — CHOOSE THE OPPONENT";
     }
     fightBtn.disabled = !(sel.playerBotId && sel.rivalBotId);
-    syncStageSize();
     emitSelection();
   }
 
   /** refreshSelect() runs on every screen entry too; only a real PICK should
-   *  move the scroll position, so the pick handlers call this instead. */
-  function refreshAfterPick(slot) {
-    const wasReady = selectScreen?.classList.contains("is-ready");
+   *  move the cursor, so the pick handlers call this instead.
+   *  @param {number} player which pad made the pick (solo is always 0) */
+  function refreshAfterPick(player = 0) {
     refreshSelect();
-    const isReady = selectScreen?.classList.contains("is-ready");
-    // The stage only just grew, so let layout settle before measuring.
-    requestAnimationFrame(() => revealSelection(isReady && !wasReady ? null : slot));
+    // Once both bays are full there is exactly one thing left to do, so put the
+    // cursor on it: the pick and the press that starts the match become one
+    // gesture instead of a hunt back up the screen for FIGHT.
+    if (!fightBtn.disabled) nav?.focus(fightBtn, player);
   }
 
   /** Second pad plugged in / pulled out — reshape the screen around it. */
@@ -314,9 +292,12 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     const next = Boolean(active);
     if (next === duoMode) return;
     duoMode = next;
-    // Entering duo, a half-finished solo flow leaves the rival slot armed and
-    // the stage mid-flight; the per-slot model does not use either.
-    if (duoMode && sel.rivalBotId === "random") sel.rivalBotId = null;
+    // A pending "random" rival was the AI's mystery, and P2 is not the AI —
+    // roll it into a real bot rather than emptying the bay someone is now
+    // sitting in front of.
+    if (duoMode && sel.rivalBotId === "random") {
+      sel.rivalBotId = resolveRandom("random", { exclude: sel.playerBotId });
+    }
     if (!duoMode) sel.stage = sel.playerBotId ? "rival" : "player";
     refreshSelect();
   }
@@ -723,7 +704,9 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
 
   // ------------------------------------------------------- controller / keys
   // Full menu navigation from a gamepad (and arrows/WASD) — see gamepadNav.js.
-  const nav = createGamepadNav({
+  // Assigned below; refreshAfterPick reaches for it, and a `const` here would
+  // be in the temporal dead zone for anything that runs during construction.
+  nav = createGamepadNav({
     screens,
     modal,
     // Bot select is the one screen where "who pressed the button" matters.
