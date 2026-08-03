@@ -405,9 +405,14 @@ them relative to that body is not a teleport of a dynamic body and the
 no-`setTranslation` rule does not apply. Author them at REST, which is the pose
 the collider invariants here measure.
 
-`tools/sim-tests.mjs` asserts both halves for every bot that carries one: the
-collider must actually travel when the arm lifts, and driving the plow under a
-parked opponent and raising it must take that opponent off the floor.
+`tools/sim-tests.mjs` asserts the MECHANISM for every bot that carries one: at
+full lift each collider must sit exactly where the arm's own arc puts it, and a
+`ridesArm` one must actually have travelled. It does not assert an outcome.
+"A foe gets lifted this far" is the obvious test and is not one — measured over
+eight opponents the same scoop is worth 0.02ft to 1.11ft, and for two of them a
+hologram plow scored HIGHER than a solid one, because what dominates is where
+the contact happens to bite. There is no threshold in there that means
+anything; the arc is exact, so the arc is what is checked.
 
 ## Model contract (v2/src/assets/models.js — GAME agent)
 
