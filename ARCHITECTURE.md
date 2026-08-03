@@ -288,6 +288,16 @@ the sim tests and the roster grid size themselves off it.
   the stroke returns).
 - `tuning.ownerPitchScale > 0` (Deep Six) makes a spinner's own hits tumble it
   — the reason the biggest weapon in the game is not simply the best.
+- A ROTOR'S PIVOT is not its bounding-box centre. `glb-partition` has nothing
+  better to offer and uses the box, but a drum part is never just the drum —
+  Tantrum's carries the attack lip, Minotaur's the teeth — and whatever stands
+  proud of the barrel drags the box off the axle, so the mesh turns about a line
+  it is not mounted on and runs out of true. The axle is recoverable by fitting
+  a circle to the barrel's cross-section and re-fitting while rejecting the
+  points that disagree, because those points ARE the lip. `tools/sim-tests.mjs`
+  does that fit for every drum on the roster and asserts the pivot sits on it,
+  skipping any barrel whose fit is not confident (under half the vertices
+  agreeing means it is not a solid of revolution and the fit means nothing).
 - A weapon type must be named in THREE places to be visible, not two: the
   catalog, the sim, and the renderer's two lists —
   `models.weaponVisualAngle` (arm types whose 0..1 stroke maps onto an arc) and

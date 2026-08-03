@@ -70,7 +70,16 @@
 //                       at the scene root, so it inherits that part's transform
 //                       and the runtime loader sees it as body geometry.
 import fs from "node:fs";
-import sharp from "sharp";
+// Imported lazily, because the docs above already promise it: sharp is needed
+// only to decode a texture for a COLOUR region. A top-level import made every
+// op need it — a pivot rewrite that touches nothing but a JSON field failed
+// outright on a machine without it, which is most machines, since it is
+// deliberately not a dependency.
+let sharpModule = null;
+async function sharp(...args) {
+  sharpModule ||= (await import("sharp")).default;
+  return sharpModule(...args);
+}
 
 function align4(value) {
   return (value + 3) & ~3;
@@ -129,7 +138,7 @@ async function loadTexture(materialIndex) {
   if (!textureCache.has(image)) {
     const view = json.bufferViews[json.images[image].bufferView];
     const bytes = bin.subarray(view.byteOffset || 0, (view.byteOffset || 0) + view.byteLength);
-    const raw = await sharp(bytes).raw().toBuffer({ resolveWithObject: true });
+    const raw = await (await sharp(bytes)).raw().toBuffer({ resolveWithObject: true });
     textureCache.set(image, {
       width: raw.info.width, height: raw.info.height, channels: raw.info.channels, data: raw.data,
     });

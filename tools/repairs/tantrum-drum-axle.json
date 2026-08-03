@@ -1,0 +1,6 @@
+[
+  { "_comment": "The drum's render pivot was the bounding-box centre of parts 24 and 23, which is not its axle: part 24 is the barrel PLUS the attack lip that stands proud of it, and the lip drags the box off the axis. Fitted instead — least-squares circle on the (z,y) cross-section, re-fitted five times rejecting points more than 18% of the radius off, which is exactly the lip: centre (-0.1833, 0.0501) radius 0.0849 from 4565 of 6041 vertices. Part 23, the pulley on the same shaft, independently fits (-0.1862, 0.0542) radius 0.0382, so the two agree on the axle to within 0.003. The pivot below is the inlier-weighted mean of the two. The old value was 0.0136 off in the turning plane, which is 0.05ft once scaled — 16% of the drum's own radius, and that is the wobble.",
+    "mode": "pivot", "node": "modelWeapon",
+    "pivotLocal": [-0.0394, 0.0508, -0.1838],
+    "weaponAxis": [1, 0, 0] }
+]

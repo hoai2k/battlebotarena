@@ -1768,7 +1768,13 @@ export const CATALOG = {
       // the bar across the back that segmentation filed as modelWeapon — that
       // bar is the axle the punch arms hinge on.
       // MEASURED with rig-inspect --axle over the drum alone.
-      pivot: { x: 0.0041, y: 0.7398, z: -0.6082 },
+      // MEASURED, then corrected onto the drum's fitted axle: the old value was
+      // the bounding-box centre of the barrel PLUS its attack lip, which sits
+      // 0.05ft off the axis — 16% of the drum's radius, i.e. a visible wobble.
+      // See repairs/tantrum-drum-axle.json for the circle fit; the same
+      // correction is applied there to the RENDER pivot, so the collider and
+      // the mesh turn about the same line.
+      pivot: { x: 0.0041, y: 0.7594, z: -0.5635 },
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 1.3, // second-quickest, just inside v1's band (see Endgame)
       inertia: 1.0,
@@ -1787,7 +1793,15 @@ export const CATALOG = {
       // closing speed on top of the rotor, which is not far off half the bot's
       // own top speed.
       track: {
-        offset: { x: 0, y: 0.30, z: 1.0 },
+        // The full length of the rail, not half of it. MEASURED: the centre rail
+        // (part 16) runs from model z -0.128 to +0.365, which at this bot's
+        // scale is 1.79ft — and the drum was being given 1.0, so it stopped
+        // dead in the middle of a rail it visibly had more of. At full retract
+        // the axle sits at z 1.23 and the drum's own radius reaches 1.60,
+        // just inside the 1.71 tail; 2.0 of travel hangs it over the back.
+        // The climb is gentler than the travel because a proportional one would
+        // lift the axle to 1.3ft on a bot 1.08ft tall.
+        offset: { x: 0, y: 0.35, z: 1.79 },
         retractSeconds: 0.55,
         flingSeconds: 0.16,
         hitBoost: 1.5,
