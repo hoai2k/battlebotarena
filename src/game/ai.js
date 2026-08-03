@@ -223,7 +223,9 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
 
   // --- weapon-type behavior -------------------------------------------------
   const type = spec?.weapon?.type;
-  const spinner = type === "bar" || type === "drum";
+  // A shell spinner is a rotor for AI purposes too, but see below: six seconds
+  // of spin-up means it has to commit to the toggle long before contact.
+  const spinner = type === "bar" || type === "drum" || type === "shellSpinner";
   const engage = AI_ENGAGE_DISTANCE * level.range;
   const strikeRange = AI_STRIKE_DISTANCE * level.range;
   let weapon = false;
@@ -233,7 +235,11 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
 
   if (spinner) {
     // Spin up early; hang back a touch until the weapon carries real energy.
-    weapon = distance < engage + 1.5;
+    // Gigabyte's shell takes six seconds, which is longer than most approaches
+    // last — so a bot with a long wind-up latches its rotor on and leaves it
+    // on rather than waiting to be in range, which is what its drivers do.
+    const alwaysOn = (spec.weapon.spinUpSeconds ?? 1) >= 3.5;
+    weapon = alwaysOn || distance < engage + 1.5;
     const ratio = Number.isFinite(selfState.weaponRatio) ? selfState.weaponRatio : 1;
     if (weapon && ratio < 0.7 && ai.mode === "approach" && distance < engage) throttleScale = 0.55;
     if (ratio > 0.85 && ai.mode === "strike") throttleScale = 1.1;
@@ -249,7 +255,7 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
     if (distance < strikeRange * 0.7) ai.latchedUntil = ai.t + 1.6;
     weapon = ai.t < ai.latchedUntil;
     if (weapon && distance < 2.2) throttleScale = 0.45; // stay planted while biting
-  } else if (type === "hammerSaw") {
+  } else if (type === "hammerSaw" || type === "sawArms") {
     // Close in, then rhythmic swings while on target.
     if (distance < strikeRange + 0.35 && ai.mode === "strike") {
       weapon = (ai.t - ai.lastStrikeAt) % 1.1 < 0.55;
@@ -307,14 +313,19 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
     // whole point of the mechanic. Outside strike range it winds back up.
     sawActive = distance > strikeRange * 0.75;
   } else if (spec?.weapon?.flame) sawActive = distance < (spec.weapon.flame.reach ?? 3) + 1;
-  else if (type === "hammerSaw" || type === "lifterDisc") sawActive = distance < engage + 3;
+  else if (type === "hammerSaw" || type === "sawArms" || type === "lifterDisc") sawActive = distance < engage + 3;
 
   // Tantrum's punch arms are their own channel. They pulse so the arms cycle
   // instead of parking upright, and only in close, where a lifted arm can
   // actually land on something.
-  const auxActive = Boolean(spec?.weapon?.fists)
-    && distance < strikeRange * 0.9
-    && Math.floor(ai.t * 2.6) % 2 === 0;
+  // Dragon King's jaw is the enabling weapon — its saws do nothing without a
+  // grip — so it clamps and HOLDS whenever it is close enough to have one,
+  // rather than pulsing the way Tantrum's arms do.
+  const auxActive = spec?.aux?.jaw
+    ? distance < strikeRange * 0.9
+    : Boolean(spec?.weapon?.fists)
+      && distance < strikeRange * 0.9
+      && Math.floor(ai.t * 2.6) % 2 === 0;
 
   const throttle = steer.throttle * level.drive * throttleScale;
   const turn = clamp(steer.turn * level.turnGain, -1, 1);

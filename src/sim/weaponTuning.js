@@ -127,7 +127,10 @@ export function spinnerBiasKey(spec) {
 export function resolveWeaponTuning(spec) {
   const w = spec.weapon || {};
   const t = w.tuning || {};
-  const base = w.type === "bar" || w.type === "drum" ? SPINNER_DEFAULTS : STROKE_DEFAULTS;
+  // shellSpinner is a rotor like any other as far as tuning goes — the thing
+  // that makes it different is that its collider is the whole hull.
+  const base = w.type === "bar" || w.type === "drum" || w.type === "shellSpinner"
+    ? SPINNER_DEFAULTS : STROKE_DEFAULTS;
   const out = { ...STROKE_DEFAULTS, ...base };
   for (const key of Object.keys(out)) {
     const value = t[key] !== undefined ? t[key] : w[key];

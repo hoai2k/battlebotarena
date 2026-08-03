@@ -202,7 +202,7 @@ export function createPreviewWeapon(spec) {
     if (SPINNER_TYPES.has(type)) updateSpinner(dt, fire, alt, aux);
     else if (type === "flipper") updateOneShot(dt, fire, tune.strokeSeconds, tune.returnSeconds);
     else if (type === "hammer") updateOneShot(dt, fire, tune.strokeSeconds, tune.returnSeconds);
-    else if (type === "hammerSaw") updateHammerSaw(dt, fire, alt);
+    else if (type === "hammerSaw" || type === "sawArms") updateHammerSaw(dt, fire, alt);
     else if (type === "crusher") updateCrusher(dt, fire);
     else if (type === "lifter" || type === "lifterDisc") updateLifter(dt, fire, alt);
     else if (type === "grappler") updateGrappler(dt, fire, alt);
@@ -244,7 +244,7 @@ export function createPreviewWeapon(spec) {
     /** 0..1 secondary readiness — disc speed, saw motor, flame ramp, jaw, carriage. */
     subRatio() {
       if (disc) return subOmega / discMaxOmega;
-      if (w.flame || type === "hammerSaw") return subOmega;
+      if (w.flame || type === "hammerSaw" || type === "sawArms") return subOmega;
       if (track) return carriage; // how far back the drum is wound, i.e. how big the shot is
       return sub;
     },

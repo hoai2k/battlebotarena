@@ -306,12 +306,17 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
     }, true);
 
     // Attacker: kickback along -h, a little downward, plus counter-yaw.
+    // recoilScale is Gigabyte's: every hit throws IT as hard as its target, and
+    // that ricochet is why it loses control the moment it connects. Momentum
+    // says a hit is equal and opposite whatever the weapon, so this is a
+    // statement about how much of it the chassis absorbs rather than physics.
+    const recoil = w.recoilScale ?? 1;
     vehicle.body.applyImpulseAtPoint(
-      m.add(m.scale(h, -hit.kickback), m.scale(UP, -hit.kickbackLift)),
+      m.scale(m.add(m.scale(h, -hit.kickback), m.scale(UP, -hit.kickbackLift)), recoil),
       pivotWorld(),
       true,
     );
-    vehicle.body.applyTorqueImpulse({ x: 0, y: -hit.ownerYawTorque, z: 0 }, true);
+    vehicle.body.applyTorqueImpulse({ x: 0, y: -hit.ownerYawTorque * recoil, z: 0 }, true);
     if (hit.ownerPitchTorque) {
       // Tumble the attacker about its own lateral axis — Deep Six beaching
       // itself on a big hit is the whole reason it is not simply the best bot.
@@ -389,6 +394,11 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
       angle += omega * dt;
 
       const ratio = omega / w.maxOmega;
+      // A spun-up rotor fights the steering. Only a full-body shell is heavy
+      // enough for this to be worth modelling, and on Gigabyte it is half the
+      // character of the machine: six seconds of nearly helpless spin-up buys
+      // the hardest hit in the game and costs most of the turning.
+      if (w.gyroPenalty) vehicle.setGyroYawScale?.(1 - w.gyroPenalty * ratio);
       // Emit on a POWER change too, not just a speed change: the rumble has to
       // stop the instant the trigger does, and at a held full ratio there is no
       // speed change to carry the news.
@@ -1222,10 +1232,18 @@ function createGrappler({ vehicle, index, emit }) {
 /** Create the weapon system for one bot from its BotSimSpec. */
 export function createWeapon(args) {
   const type = args.vehicle.spec.weapon?.type;
-  if (type === "bar" || type === "drum") return createSpinner(args);
+  // A full-body shell spinner runs the same rotor machine; what makes Gigabyte
+  // different is that createSpinner sizes the weapon collider from
+  // weapon.radius and weapon.dims, and on this bot that IS the whole hull —
+  // so there is no safe side and no weapon face to aim, which is the point.
+  if (type === "bar" || type === "drum" || type === "shellSpinner") return createSpinner(args);
   if (type === "flipper") return createFlipper(args);
   if (type === "crusher") return createCrusher(args);
-  if (type === "hammerSaw") return createHammerSaw(args);
+  // Dragon King's saw arms are Sawblaze's machine: the arm swings and HOLDS at
+  // full extension while the trigger is down (that is the cut), and the blades
+  // are their own latched channel. The difference is the jaw, which is an aux
+  // group rather than part of the weapon.
+  if (type === "hammerSaw" || type === "sawArms") return createHammerSaw(args);
   if (type === "hammer") return createHammer(args);
   if (type === "lifterDisc" || type === "lifter") return createLifterDisc(args);
   if (type === "grappler") return createGrappler(args);

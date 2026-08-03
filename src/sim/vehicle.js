@@ -315,11 +315,16 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
     }
   }
 
+  // Yaw authority, scaled down by a spun-up rotor. 1 = full. Only Gigabyte's
+  // shell spinner drives this today; every other bot leaves it alone.
+  let gyroYawScale = 1;
+
   return {
     body,
     spec,
     index,
     mass,
+    setGyroYawScale(v) { gyroYawScale = m.clamp(v, 0.15, 1); },
     inertia: { x: ix, y: iy, z: iz },
     restCenterHeight,
     wedgeColliders,
@@ -351,7 +356,12 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
         // multiplier, boosted (and capped) when spinning in place.
         const counterRotating = Math.abs(turnInput) > 0.55 && Math.abs(throttle) < 0.18;
         const turnScale = (spec.maxSpeedFps / T.baseSpeed) * m.clamp(spec.turnRate || 1, 0.45, 1.35);
-        let yawRate = -turnInput * T.baseTurnRate * turnScale * (counterRotating ? T.counterRotateBoost : 1);
+        // A spun-up rotor resists being yawed. Gigabyte's shell is the only one
+        // heavy enough for it to matter, and it is most of why the bot loses
+        // control the moment it is up to speed: gyroYawScale is driven down by
+        // its weapon in proportion to spin ratio.
+        let yawRate = -turnInput * T.baseTurnRate * turnScale * gyroYawScale
+          * (counterRotating ? T.counterRotateBoost : 1);
         if (counterRotating) yawRate = m.clamp(yawRate, -T.counterRotateCap, T.counterRotateCap);
         const targets = {
           forward: input.brake ? 0 : throttle * spec.maxSpeedFps,

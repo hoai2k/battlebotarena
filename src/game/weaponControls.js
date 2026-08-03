@@ -22,16 +22,26 @@
 //                           brake here for them so the v1 mapping is untouched.
 
 /** Rotors: the primary button LATCHES them on and off. */
-export const SPINNER_TYPES = new Set(["bar", "drum"]);
+export const SPINNER_TYPES = new Set(["bar", "drum", "shellSpinner"]);
 
 /** Arms whose SECONDARY channel latches (saw motor, disc, jaw, flame). */
-export const ALT_TOGGLE_TYPES = new Set(["hammerSaw", "lifterDisc", "grappler", "lifter"]);
+export const ALT_TOGGLE_TYPES = new Set(["hammerSaw", "sawArms", "lifterDisc", "grappler", "lifter"]);
+
+/** Does RB LATCH on this bot? The type set covers the arms whose second
+ *  mechanism is a motor; a flame, a disc or a jaw latches whatever the arm
+ *  underneath it is, which is how Kraken gets a flamethrower on a crusher. */
+function altLatches(spec) {
+  const w = spec?.weapon;
+  if (!w) return false;
+  return ALT_TOGGLE_TYPES.has(w.type) || Boolean(w.flame) || Boolean(w.disc) || Boolean(w.claw);
+}
 
 const PRIMARY_LABELS = {
   flipper: "FLIP",
   crusher: "BITE",
   hammer: "SWING",
   hammerSaw: "SWING",
+  sawArms: "ARMS",
   lifter: "LIFT",
   lifterDisc: "LIFT",
   grappler: "FORKS",
@@ -39,7 +49,9 @@ const PRIMARY_LABELS = {
 
 /** Does this bot spend the aux channel, i.e. is LB something other than brake? */
 export function usesAuxChannel(spec) {
-  return Boolean(spec?.weapon?.fists);
+  // Tantrum's punch arms and Dragon King's clamping jaw. Both are a third
+  // machine that cannot share a button with the second one.
+  return Boolean(spec?.weapon?.fists) || Boolean(spec?.aux?.jaw);
 }
 
 /**
@@ -75,10 +87,14 @@ export function describeWeaponControls(spec) {
   else if (w.disc) secondary = { label: "DISC", toggle: true };
   else if (w.flame) secondary = { label: "FLAME", toggle: true };
   else if (w.claw) secondary = { label: "JAW", toggle: true };
-  else if (w.type === "hammerSaw") secondary = { label: "SAW", toggle: true };
+  else if (w.type === "hammerSaw" || w.type === "sawArms") secondary = { label: "SAWS", toggle: true };
   // The punch arms are their own machine, on their own button, and momentary:
   // latching them would leave the arms standing up in the air.
-  const aux = w.fists ? { label: "FISTS", toggle: false } : null;
+  // The jaw is held, not latched: it is the grip, and letting go is how you
+  // let go. Dragon King's saws do nothing without it.
+  const aux = w.fists ? { label: "FISTS", toggle: false }
+    : spec.aux?.jaw ? { label: "JAW", toggle: false }
+      : null;
   return { primary, secondary, aux };
 }
 
@@ -123,9 +139,9 @@ export function createWeaponInputShaper() {
     // Two-way arm: both channels are momentary directions, so neither latches.
     // Checked before the toggle set because a plain lifter is in that set.
     if (spec?.weapon?.twoWayArm) return { ...raw, sawActive: Boolean(raw.weaponAlt), brake };
-    if (ALT_TOGGLE_TYPES.has(type)) {
+    if (altLatches(spec)) {
       if (altEdge) sawLatch[slot] = !sawLatch[slot];
-      return { ...raw, sawActive: sawLatch[slot], brake };
+      return { ...raw, sawActive: sawLatch[slot], auxActive: aux, brake };
     }
     // flipper fires on press, crusher bites while held, hammer swings while held
     return { ...raw, brake };

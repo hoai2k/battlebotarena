@@ -1960,6 +1960,10 @@ export const CATALOG = {
       inertia: 2.2,
       maxOmega: 260,
       budgetCap: 460, // the hardest-hitting weapon in the catalog
+      // Every hit throws Gigabyte as hard as its target, and being nearly
+      // unsteerable once up to speed is the price of the six-second wind-up.
+      recoilScale: 1.8,
+      gyroPenalty: 0.55,
       radius: 1.55, // MEASURED shell radius (the rim teeth reach 1.99)
       dims: { x: 1.554, y: 0.520, z: 1.554 },
     },
