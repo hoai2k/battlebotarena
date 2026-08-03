@@ -102,6 +102,9 @@ function centerOf(el) {
  * @param {(screen: string|null, player: number) => boolean} [opts.onStart] return true if handled
  * @param {(el: HTMLElement, player: number) => boolean} [opts.onActivate] return true if handled
  * @param {(count: number) => void} [opts.onPlayerCountChange] fires when the connected-pad count changes
+ * @param {(el: HTMLElement|null, player: number) => void} [opts.onFocusChange] fires whenever a cursor lands
+ *   somewhere new. The screen owns what that MEANS — bot select uses it to stage
+ *   the bot under the cursor in the 3D bay.
  * @param {string[]} [opts.duoScreens] screens that give each pad its own cursor
  * @param {HTMLElement|null} [opts.modal] settings modal element
  */
@@ -111,6 +114,7 @@ export function createGamepadNav({
   onStart,
   onActivate,
   onPlayerCountChange,
+  onFocusChange,
   duoScreens = [],
   modal = null,
 } = {}) {
@@ -213,8 +217,10 @@ export function createGamepadNav({
   }
 
   function setFocus(el, { scroll = true, player = 0 } = {}) {
+    const moved = cursors[player] !== (el || null);
     clearFocusClass(player);
     cursors[player] = el || null;
+    if (moved) onFocusChange?.(el || null, player);
     if (!el) return;
     paintFocus(el, player);
     // Only the primary cursor owns real DOM focus — there is just one

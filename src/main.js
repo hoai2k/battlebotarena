@@ -248,17 +248,19 @@ const ui = createUI({
         difficulty: session.difficulty,
       });
       else if (action.type === "previewSelection") {
-        // Selection changed on the bot select screen: mirror it into the
-        // showcase bays. Random stays a mystery — no model until the box opens.
-        const ids = [
-          action.playerBotId,
-          action.rivalBotId === "random" ? null : action.rivalBotId,
-        ];
-        ids.forEach((id, slot) => {
+        // What the bot select screen wants staged in each bay. This is NOT the
+        // selection: an unclaimed bay stages whatever the cursor is over, so
+        // the ids arrive already resolved (and "random" already reduced to
+        // nothing, since a mystery opponent has no model to show).
+        (action.showIds || []).forEach((id, slot) => {
           if (id) botPreview.showBot(slot, getBotSpec(id));
           else botPreview.clearBot(slot);
         });
         botPreview.setControl({ duo: action.duo, focusSlot: action.focusSlot });
+        // A bay that just went from browsed to claimed spins and lights up. The
+        // model is usually already loaded — browsing put it there — so this is
+        // the only thing that distinguishes the press from the hover.
+        if (typeof action.claimSlot === "number") botPreview.claimBot(action.claimSlot);
       }
       else if (action.type === "toTitle" || action.type === "changeBots") {
         loader.hide();

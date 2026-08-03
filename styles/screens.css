@@ -495,6 +495,29 @@
   }
 }
 
+/* Browsing: this bay is showing the bot under the cursor, which is NOT the same
+   claim as one you have pressed A on. It keeps the armed dashes so it still
+   reads as an open bay, and its plate and pips are held back so the difference
+   between "what you are looking at" and "what you have taken" is visible
+   without having to read either. Claiming it is what brings them to full. */
+.preview-pod.is-preview .pod-plate,
+.preview-pod.is-preview .pod-stats,
+.preview-pod.is-preview .pod-badge {
+  opacity: 0.62;
+}
+
+.preview-pod.is-preview .pod-plate {
+  filter: saturate(0.65);
+}
+
+.preview-pod .pod-plate,
+.preview-pod .pod-stats,
+.preview-pod .pod-badge {
+  transition:
+    opacity 0.18s ease,
+    filter 0.18s ease;
+}
+
 .pod-empty {
   position: absolute;
   inset: 0;
@@ -682,6 +705,28 @@
   grid-template-columns: repeat(auto-fill, minmax(var(--card-min), 1fr));
   gap: clamp(8px, 1vw, 13px);
   padding: 4px 2px 10px;
+}
+
+/* Once a bot is CLAIMED the roster stops being the main event and pays for the
+   bay. Narrower cards mean more per row and one row fewer, and since the stage
+   simply takes whatever is left (see .select-stage) that row goes straight into
+   the viewers — about 120px of it. The badge goes too: at this width it is a
+   truncated word, and the pod beside it now says the same thing in full.
+   Browsing deliberately does NOT do this; the cursor is still in the grid, and
+   resizing it under the cursor is the screen moving while you read it. */
+.screen-select.is-showcase .bot-grid {
+  --card-min: clamp(58px, 5vw, 74px);
+  gap: clamp(6px, 0.7vw, 9px);
+}
+
+.screen-select.is-showcase .bot-card-badge {
+  display: none;
+}
+
+.screen-select.is-showcase .bot-card-name {
+  margin-top: 4px;
+  margin-bottom: 2px;
+  font-size: 0.66rem;
 }
 
 /* The roster's cost is ROWS, not columns, so on a short viewport the cards get
