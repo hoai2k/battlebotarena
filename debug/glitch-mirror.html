@@ -9,6 +9,10 @@
   body { margin:0; background:#181b20; color:#dfe4ea; font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; }
   #wrap { display:flex; height:100vh; }
   #view { flex:1; position:relative; }
+  #status { position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+            text-align:center; padding:24px; color:#9aa5b1; pointer-events:none; }
+  #status.err { color:#ff7b6b; }
+  #status.done { display:none; }
   #panel { width:340px; padding:16px 18px; background:#12151a; border-left:1px solid #2a2f37; overflow:auto; }
   h1 { font-size:15px; margin:0 0 4px; color:#fff; letter-spacing:.02em; }
   .sub { color:#7d8794; margin:0 0 18px; font-size:12px; }
@@ -56,8 +60,17 @@
   input[type=range]::-moz-range-thumb { width:26px; height:26px; border:0; border-radius:50%; background:#35e07a; }
 </style>
 <script type="importmap">
- { "imports": { "three": "/vendor/three/three.module.js", "three/addons/": "/vendor/three/addons/" } }
+ { "imports": { "three": "../vendor/three/three.module.js", "three/addons/": "../vendor/three/addons/" } }
 </script>
+<!--
+  Every path on this page is RELATIVE to the page, never rooted at "/".
+  This file is served two ways: from the dev server, where the repo IS the
+  site root, and from GitHub Pages, where it is under /battlebotarena/. An
+  absolute "/vendor/three.module.js" resolves to hoai2k.github.io/vendor/...
+  on Pages and 404s, and because a failed module import produces no visible
+  output the whole viewer just renders black. "../vendor/..." is correct in
+  both places.
+-->
 </head>
 <body>
 <!--
@@ -81,7 +94,7 @@
   than assumed, so it stays right if the yaw changes.
 -->
 <div id="wrap">
-  <div id="view"></div>
+  <div id="view"><div id="status">Loading Glitch…</div></div>
   <div id="panel">
     <h1>Glitch — mirror plane</h1>
     <p class="sub">Model space. Drag until the bot looks symmetric and right, then send me the line at the bottom.</p>
@@ -110,7 +123,7 @@
     </div>
 
     <label>Reference</label>
-    <img src="/public/reference/glitch.png" style="width:100%;border-radius:5px;border:1px solid #2a2f37" alt="Glitch reference photo">
+    <img id="ref" src="../public/reference/glitch.png" style="width:100%;border-radius:5px;border:1px solid #2a2f37" alt="Glitch reference photo">
 
     <div id="stats"></div>
     <div id="out">…</div>
@@ -129,7 +142,7 @@
 <script type="module">
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { CATALOG } from "/src/assets/catalog.js";
+import { CATALOG } from "../src/assets/catalog.js";
 
 const BOT = new URLSearchParams(location.search).get("bot") || "glitch";
 const spec = CATALOG[BOT];
@@ -190,7 +203,15 @@ const clipMirror = new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0);
 let bounds = null;
 const focus = new THREE.Vector3();
 let radius = 0.6;
-new GLTFLoader().load(spec.modelPath.replace("./", "/"), (gltf) => {
+// The model is 16MB, so on a phone this is a real wait — and a wait with no
+// feedback is indistinguishable from a broken page, which is exactly how this
+// tool first arrived. Report progress, and report failure loudly: a module or
+// asset that 404s otherwise leaves nothing behind but a black rectangle.
+const status = document.getElementById("status");
+addEventListener("error", (e) => {
+  if (e.target?.id === "ref") { status.className = "err"; status.textContent = "Reference photo failed to load — check the path."; }
+}, true);
+new GLTFLoader().load(spec.modelPath.replace(/^\.\//, "../"), (gltf) => {
   const a = gltf.scene;
   const b = a.clone(true);
   // Reflection is a negative scale, which flips winding, so the copy has to
@@ -222,7 +243,17 @@ new GLTFLoader().load(spec.modelPath.replace("./", "/"), (gltf) => {
   planeMesh.geometry = new THREE.PlaneGeometry(radius * 2.6, radius * 1.1);
   planeMesh.position.y = focus.y;
   planeMesh.position.z = focus.z;
+  status.className = "done";
   update();
+}, (ev) => {
+  if (ev.lengthComputable) {
+    status.textContent = `Loading Glitch… ${Math.round((ev.loaded / ev.total) * 100)}%`;
+  } else {
+    status.textContent = `Loading Glitch… ${(ev.loaded / 1e6).toFixed(1)} MB`;
+  }
+}, (err) => {
+  status.className = "err";
+  status.textContent = `Could not load ${spec.modelPath}\n${err?.message || err}`;
 });
 
 const el = (id) => document.getElementById(id);
