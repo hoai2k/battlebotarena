@@ -1,0 +1,6 @@
+[
+  { "_comment": "The part map guessed Glitch's drum axle as a clean transverse [1,0,0]. It is not: a covariance fit over the drum's own vertices puts its principal axis — which for a drum IS the axle — at [0.4483, 0.0567, -0.8921] in model space, 27 degrees off what the map claimed. The loader spins the mesh about extras.weaponAxis, so the drum was turning about a line it is not mounted on and wobbled instead of spinning. Squaring the body up to this axle is also what fixes the bot's yaw: modelYaw 5.1777 is the rotation that makes this axle transverse in game space, and it drops the arrowhead's point onto the nose at the same time, which is the shape the reference has.",
+    "mode": "pivot", "node": "modelWeapon",
+    "pivotLocal": [0.0406, 0.0366, 0.2184],
+    "weaponAxis": [0.4483, 0.0567, -0.8921] }
+]

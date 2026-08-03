@@ -39,6 +39,23 @@ const grid = new THREE.GridHelper(20, 40, 0x778899, 0x3a4048);
 scene.add(grid);
 // Axis marks: red = +X (bot's right), blue = +Z (BACK, since forward is -Z).
 const ax = new THREE.AxesHelper(2.5); scene.add(ax);
+// A big green arrow lying on the floor, pointing where the bot drives (-Z).
+// Three coloured axis lines are not an orientation indicator: you have to know
+// the convention to read them, and in a top-down shot they are three lines on
+// a grid. Anyone looking at a screenshot needs to see FORWARD without being
+// told which line means what.
+const forwardArrow = new THREE.Group();
+{
+  const mat = new THREE.MeshBasicMaterial({ color: 0x35e07a, depthTest: false, transparent: true, opacity: 0.95 });
+  const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.02, 3.0), mat);
+  shaft.position.set(0, 0.02, -1.9);
+  const head = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.1, 4), mat);
+  head.position.set(0, 0.02, -3.85);
+  head.rotation.set(Math.PI / 2, 0, Math.PI / 4);
+  forwardArrow.add(shaft, head);
+  forwardArrow.renderOrder = 999;
+}
+scene.add(forwardArrow);
 
 let current = null;         // { group, parts, spec }
 const overlays = new THREE.Group(); scene.add(overlays);
