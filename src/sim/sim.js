@@ -68,6 +68,10 @@ export async function createSim({ bots, emit }) {
     for (let i = 0; i < weapons.length; i++) {
       weapons[i].update(FIXED_DT, inputs[i].weapon, {
         foe: vehicles[1 - i],
+        // Weapons that can act ON another weapon (a rotor clash, a hammer coming
+        // down on a spinning shell) need the other machine's mechanism, not just
+        // its body.
+        foeWeapon: weapons[1 - i],
         simTime,
         world,
         // Spinner gyro and the lifter's disc toggle both need more than the

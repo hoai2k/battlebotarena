@@ -747,6 +747,154 @@ await test("roster: the catalog, the display order and the select cards agree", 
 });
 
 // ---------------------------------------------------------------------------
+// Gigabyte — the full-body shell
+// ---------------------------------------------------------------------------
+
+// Drive a spinner into a parked target with its rotor pinned at `ratio` until
+// the moment of contact, so the hit under test is at an exact speed. Returns
+// the first hit on the target and the rotor speed on the frame after it.
+async function spinnerRunIn(attackerId, ratio = 1, opts = {}) {
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const attacker = CATALOG[attackerId];
+  const target = opts.target ?? CATALOG.bronco;
+  return withSim([attacker, target], (sim, events) => {
+    sim._test.setPose(0, { x: 0, z: 0 }, 0);
+    sim._test.setPose(1, { x: 0, z: -5.4 }, Math.PI);
+    frames(sim, 30);
+    let rotorAfter = null;
+    let rotorEnd = 0;
+    const drive = { leftDrive: 0.6, rightDrive: 0.6, weapon: Boolean(opts.holdTrigger) };
+    frames(sim, 120, [drive, {}], () => {
+      const landed = events.some((e) => e.type === EV.WEAPON_HIT && e.payload.targetIndex === 1);
+      if (!landed) sim._test.setWeaponOmega(0, attacker.weapon.maxOmega * ratio);
+      else if (rotorAfter === null) rotorAfter = sim._test.weapons[0].getRatio();
+      rotorEnd = sim._test.weapons[0].getRatio();
+    });
+    const hits = events.filter((e) => e.type === EV.WEAPON_HIT && e.payload.targetIndex === 1);
+    check(hits.length >= 1, `${attackerId} landed a hit at ratio ${ratio}`);
+    return { hit: hits[0].payload, rotorAfter, rotorEnd };
+  });
+}
+
+await test("gigabyte: six seconds of wind-up, then it hits harder than the bar", async () => {
+  // The wind-up IS the machine. Six seconds is the published figure and it is
+  // the whole risk: until it is up, Gigabyte is a 250lb dome on two wheels.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  await withSim([CATALOG.gigabyte, CATALOG.bronco], (sim) => {
+    sim._test.setPose(0, { x: 0, z: 0 }, 0);
+    sim._test.setPose(1, { x: 0, z: 20 }, 0); // out of the way
+    frames(sim, 60);
+    frames(sim, 180, [{ weapon: true }, {}]);
+    const half = sim._test.weapons[0].getRatio();
+    check(Math.abs(half - 0.5) < 0.05, "half speed at three seconds", `ratio ${half.toFixed(2)}`);
+    frames(sim, 180, [{ weapon: true }, {}]);
+    check(sim._test.weapons[0].getRatio() > 0.99, "full speed at six seconds",
+      `ratio ${sim._test.weapons[0].getRatio().toFixed(2)}`);
+  });
+
+  // And what six seconds buys: the same KIND of hit as Tombstone's bar — a
+  // horizontal spinner that throws you sideways — only harder. Both are run
+  // into the same target at full spin, so the only difference is the weapon.
+  const shell = await spinnerRunIn("gigabyte");
+  const bar = await spinnerRunIn("tombstone");
+  check(shell.hit.appliedImpulse > bar.hit.appliedImpulse,
+    "the shell shoves harder than the bar",
+    `${shell.hit.appliedImpulse.toFixed(0)} vs ${bar.hit.appliedImpulse.toFixed(0)}`);
+  check(shell.hit.impulse > bar.hit.impulse, "and hurts more",
+    `${shell.hit.impulse.toFixed(0)} vs ${bar.hit.impulse.toFixed(0)}`);
+});
+
+await test("gigabyte: a hit costs the shell speed, the more so the harder it lands", async () => {
+  // v1 drained 72-97% of blade SPEED on every hit whatever it was worth. On a
+  // six-second rotor that means one graze ends the fight, so Gigabyte's drain is
+  // proportional to the hit instead (weapon.tuning.spinLossScale). A clean
+  // connection has to cost it seconds; a glance must not.
+  const light = await spinnerRunIn("gigabyte", 0.3);
+  const heavy = await spinnerRunIn("gigabyte", 1.0);
+  const lightRetained = light.rotorAfter / 0.3;
+  const heavyRetained = heavy.rotorAfter / 1.0;
+  check(heavyRetained < lightRetained, "the bigger hit takes more spin with it",
+    `kept ${(heavyRetained * 100).toFixed(0)}% at full spin vs ${(lightRetained * 100).toFixed(0)}% at 30%`);
+  check(heavyRetained > 0.3 && heavyRetained < 0.85,
+    "a hard hit staggers the shell without stopping it",
+    `kept ${(heavyRetained * 100).toFixed(0)}%`);
+
+  // ...and it winds back up, which is the other half of the mechanic.
+  const held = await spinnerRunIn("gigabyte", 1.0, { holdTrigger: true });
+  check(held.rotorEnd > held.rotorAfter + 0.1, "the shell recovers with the trigger held",
+    `${held.rotorAfter.toFixed(2)} -> ${held.rotorEnd.toFixed(2)}`);
+});
+
+await test("weapon on weapon: one clash, both machines hit, both rotors slowed", async () => {
+  // Weapon colliders used to pass through each other — two live rotors met and
+  // nothing happened until one of them reached the other's chassis. A clash is
+  // one exchange that lands on BOTH bots, resolved once for the pair however
+  // many contact pairs the step reports.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  await withSim([CATALOG.gigabyte, CATALOG.tombstone], (sim, events) => {
+    sim._test.setPose(0, { x: 0, z: 0 }, 0);
+    sim._test.setPose(1, { x: 0, z: -8 }, Math.PI);
+    frames(sim, 30);
+    const drive = { leftDrive: 0.5, rightDrive: 0.5, weapon: true };
+    frames(sim, 150, [drive, drive], () => {
+      // Pinned until first contact so both arrive at a known speed.
+      if (!events.some((e) => e.type === EV.WEAPON_HIT)) {
+        sim._test.setWeaponOmega(0, CATALOG.gigabyte.weapon.maxOmega);
+        sim._test.setWeaponOmega(1, CATALOG.tombstone.weapon.maxOmega);
+      }
+    });
+    const onShell = events.filter((e) => e.type === EV.WEAPON_HIT && e.payload.targetIndex === 0);
+    const onBar = events.filter((e) => e.type === EV.WEAPON_HIT && e.payload.targetIndex === 1);
+    check(onShell.length >= 1, "Gigabyte took damage from the clash");
+    check(onBar.length >= 1, "Tombstone took damage from the clash");
+    check(onShell[0].payload.attackerIndex === 1 && onBar[0].payload.attackerIndex === 0,
+      "each hit is credited to the other bot");
+    // One exchange, not one per contact pair: a full-body shell's weapon and
+    // chassis colliders are the same steel and both pairs report together.
+    check(onShell.length <= 2 && onBar.length <= 2, "the pair resolves once, not once per collider",
+      `${onBar.length} on the bar, ${onShell.length} on the shell`);
+    check(sim._test.weapons[0].getRatio() < 0.95 && sim._test.weapons[1].getRatio() < 0.95,
+      "both rotors came out of it slower",
+      `${sim._test.weapons[0].getRatio().toFixed(2)} / ${sim._test.weapons[1].getRatio().toFixed(2)}`);
+  });
+});
+
+await test("hammer on the shell: the rotor stops dead and has to start again", async () => {
+  // The one way into a spun-up full-body spinner that does not involve
+  // out-hitting it. The shell IS the roof, so a hammer that comes down square on
+  // it drives the rim into the chassis. Only a weapon that declares
+  // weapon.overheadStall can be stopped this way — every other rotor presents an
+  // edge up there and an overhead blow glances off.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  await withSim([CATALOG.rusty, CATALOG.gigabyte], (sim, events) => {
+    sim._test.setPose(0, { x: 0, z: 0 }, 0);
+    sim._test.setPose(1, { x: 0, z: -3.6 }, 0); // under the head, out of shell reach
+    frames(sim, 30);
+    frames(sim, 30, [{}, { weapon: true }], () => {
+      sim._test.setWeaponOmega(1, CATALOG.gigabyte.weapon.maxOmega);
+    });
+    check(sim._test.weapons[1].getRatio() > 0.99, "the shell is up to speed before the swing");
+
+    // Swing, and hold Gigabyte's trigger down the whole way: a jammed rotor
+    // stays jammed, so leaning on the button must not get it back.
+    frames(sim, 60, [{ weapon: true }, { weapon: true }]);
+    const hits = events.filter((e) => e.type === EV.WEAPON_HIT && e.payload.targetIndex === 1);
+    check(hits.length >= 1, "the hammer landed");
+    check(hits.some((h) => h.payload.stalledWeapon), "and it landed on the spinning face");
+    check(hits[0].payload.impulse > 0, "the hit still deals its damage",
+      `impulse ${hits[0].payload.impulse.toFixed(0)}`);
+    check(sim._test.weapons[1].getRatio() === 0, "the shell stopped",
+      `ratio ${sim._test.weapons[1].getRatio().toFixed(2)}`);
+
+    frames(sim, 30, [{}, { weapon: true }]);
+    check(sim._test.weapons[1].getRatio() === 0, "and stays stopped while it is jammed");
+    frames(sim, 150, [{}, { weapon: true }]);
+    check(sim._test.weapons[1].getRatio() > 0.05, "then winds up again from nothing",
+      `ratio ${sim._test.weapons[1].getRatio().toFixed(2)}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

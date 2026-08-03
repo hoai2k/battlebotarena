@@ -57,6 +57,17 @@ export const WEAPON_TUNING = Object.freeze({
   crusherDragBlendRate: 3.5, // 1/s velocity bleed while clamped
   hammerContactAfter: 0.35, // fraction of swing before the head can connect
   hammerGrindTickSeconds: 0.3,
+  // --- weapon on weapon --------------------------------------------------------
+  // Two live rotors meeting is one exchange that lands on BOTH machines, not a
+  // hit in either direction. Each bot eats the other rotor's push plus the
+  // kickback off its own, so a clash separates them harder than either hit does
+  // alone — but a blade that catches a blade deflects rather than bites, so less
+  // of the budget goes into the shove and less again into damage.
+  clashPushShare: 0.7,
+  clashDamageShare: 0.55,
+  clashLift: 0.18, // of the horizontal impulse — weapons meeting kick both noses up
+  clashSpinLoss: 0.4, // extra rotor speed lost, x the OTHER weapon's hit strength
+  clashCooldownSeconds: 0.2, // per pair, and it blocks the body hit for the same window
 });
 
 const TU = WEAPON_TUNING;
@@ -213,6 +224,9 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
 
   let omega = 0;
   let angle = 0;
+  // A rotor whose face IS the roof can be stopped dead by a blow from directly
+  // above (see overheadStall). Until this time the motor cannot pull against it.
+  let stallUntil = -Infinity;
   let lastEmittedRatio = -1;
   let lastEmittedPowered = false;
   const lastHitAt = new Map(); // "foe" | "arena" -> simTime
@@ -365,23 +379,108 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
     lastHitAt.set("arena", simTime);
   }
 
+  /**
+   * Weapon into weapon. Resolved ONCE for the pair, by whichever side notices
+   * first — the other one is stood down through applyClash() below, which is
+   * also what stops a rotor that is under the hit cooldown from being counted
+   * twice in the same tick.
+   *
+   * Both machines are hit. Each side's outgoing hit is computed from its own
+   * spinner model at its own current speed, so the exchange is decided by who
+   * has the energy: a spun-up shell meeting a dead bar throws the bar's owner
+   * and takes almost nothing back.
+   */
+  function clashWeapons(foe, foeWeapon, contact, simTime) {
+    const energyBefore = energy();
+    const rel = m.sub(foe.body.linvel(), vehicle.body.linvel());
+    const h = horizontalBetween(vehicle.body.translation(), foe.body.translation());
+    const approachSpeed = Math.max(0, -m.dot(rel, h));
+    const mine = model.hit({ ratio: omega / w.maxOmega, targetSpec: foe.spec, approachSpeed });
+    const theirs = foeWeapon?.clashOutput?.(spec, approachSpeed) ?? null;
+    const myRecoil = w.recoilScale ?? 1;
+
+    // Each bot gets the other rotor's push plus the kickback off its own.
+    const onFoe = (mine.push * TU.clashPushShare) + (theirs?.kickback ?? 0);
+    const onMe = ((theirs?.push ?? 0) * TU.clashPushShare) + mine.kickback * myRecoil;
+    foe.body.applyImpulseAtPoint(
+      m.add(m.scale(h, onFoe), m.scale(UP, onFoe * TU.clashLift)),
+      contact.point,
+      true,
+    );
+    vehicle.body.applyImpulseAtPoint(
+      m.add(m.scale(h, -onMe), m.scale(UP, onMe * TU.clashLift)),
+      contact.point,
+      true,
+    );
+
+    // Both rotors are slowed, each by how hard the OTHER one landed on top of
+    // its own post-hit drain. This is the moment a shell spinner loses its
+    // fight: it takes seconds to get that speed back.
+    const myRetained = m.clamp(mine.spinRetained - TU.clashSpinLoss * (theirs?.strength ?? 0), 0.03, 1);
+    const theirRetained = theirs
+      ? m.clamp(theirs.spinRetained - TU.clashSpinLoss * mine.strength, 0.03, 1)
+      : 1;
+    omega *= myRetained;
+    lastHitAt.set("foe", simTime);
+    lastHitAt.set("clash", simTime);
+    foeWeapon?.applyClash?.(simTime, theirRetained);
+
+    if (mine.push >= 1) {
+      emit(EV.WEAPON_HIT, {
+        attackerIndex: index,
+        targetIndex: foe.index,
+        point: contact.point,
+        normal: contact.normal,
+        impulse: mine.damageImpulse * TU.clashDamageShare,
+        appliedImpulse: onFoe,
+        energyBefore,
+        heavy: mine.strength >= 0.6,
+      });
+    }
+    if (theirs && theirs.push >= 1) {
+      emit(EV.WEAPON_HIT, {
+        attackerIndex: foe.index,
+        targetIndex: index,
+        point: contact.point,
+        normal: m.scale(contact.normal, -1),
+        impulse: theirs.damageImpulse * TU.clashDamageShare,
+        appliedImpulse: onMe,
+        energyBefore: 0,
+        heavy: theirs.strength >= 0.6,
+      });
+    }
+  }
+
+  const since = (key, simTime) => simTime - (lastHitAt.get(key) ?? -Infinity);
+
   function checkContacts(ctx) {
     const { foe, simTime } = ctx;
+    // Classify first, act after. A full-body shell's weapon collider and its
+    // chassis collider are the same lump of steel, so hitting one reports both
+    // pairs in the same step — and a rotor that has met the other bot's WEAPON
+    // has met the weapon, whatever else it touched on the way.
+    let foeWeaponHit = null;
+    let foeBodyHit = null;
+    let arenaHit = null;
     world.contactPairsWith(collider, (other) => {
       const info = meta.get(other.handle);
       if (!info) return;
-      if (info.kind === "bot" && info.botIndex === foe.index) {
-        const last = lastHitAt.get("foe");
-        if (last !== undefined && simTime - last < TU.hitCooldownSeconds) return;
-        const contact = contactPointBetween(world, collider, other);
-        if (contact) hitTarget(foe, contact, simTime);
-      } else if (info.kind === "arena" && info.surface !== "floor") {
-        const last = lastHitAt.get("arena");
-        if (last !== undefined && simTime - last < TU.wallHitCooldownSeconds) return;
-        const contact = contactPointBetween(world, collider, other);
-        if (contact) hitArena(contact, simTime);
-      }
+      if (info.botIndex === foe.index && info.kind === "weapon") foeWeaponHit = other;
+      else if (info.botIndex === foe.index && info.kind === "bot") foeBodyHit ??= other;
+      else if (info.kind === "arena" && info.surface !== "floor") arenaHit ??= other;
     });
+
+    if (foeWeaponHit && since("clash", simTime) >= TU.clashCooldownSeconds) {
+      const contact = contactPointBetween(world, collider, foeWeaponHit);
+      if (contact) clashWeapons(foe, ctx.foeWeapon, contact, simTime);
+    } else if (foeBodyHit && since("foe", simTime) >= TU.hitCooldownSeconds) {
+      const contact = contactPointBetween(world, collider, foeBodyHit);
+      if (contact) hitTarget(foe, contact, simTime);
+    }
+    if (arenaHit && since("arena", simTime) >= TU.wallHitCooldownSeconds) {
+      const contact = contactPointBetween(world, collider, arenaHit);
+      if (contact) hitArena(contact, simTime);
+    }
   }
 
   return {
@@ -389,7 +488,11 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
     update(dt, fire, ctx) {
       const spinUpRate = w.maxOmega / Math.max(0.05, w.spinUpSeconds);
       const spinDownRate = w.maxOmega / Math.max(0.05, coastSeconds);
-      if (fire) omega = Math.min(w.maxOmega, omega + spinUpRate * dt);
+      // A jammed rotor stays jammed: the motor is already pulling against it and
+      // holding the trigger does nothing until it frees itself.
+      const jammed = ctx.simTime < stallUntil;
+      if (jammed) omega = 0;
+      else if (fire) omega = Math.min(w.maxOmega, omega + spinUpRate * dt);
       else omega = Math.max(0, omega - spinDownRate * dt);
       angle += omega * dt;
 
@@ -467,12 +570,62 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
     getSubAngle: () => fistStroke,
     getTrack: () => carriage,
     getRatio: () => omega / w.maxOmega,
+
+    /**
+     * What this rotor would deliver right now, for the OTHER bot's clash
+     * resolver. Null when it is not turning fast enough to be a weapon, which is
+     * what makes a live rotor into a dead one a one-sided exchange.
+     */
+    clashOutput(targetSpec, approachSpeed) {
+      if (omega / w.maxOmega <= TU.minHitRatio) return null;
+      const hit = model.hit({ ratio: omega / w.maxOmega, targetSpec, approachSpeed });
+      // kickback already carries this bot's recoilScale, so the other side can
+      // use it the same way it uses its own without knowing whose it is.
+      return { ...hit, kickback: hit.kickback * (w.recoilScale ?? 1) };
+    },
+
+    /** The other side resolved the clash: take the drain and stand down. */
+    applyClash(simTime, retained) {
+      omega *= retained;
+      lastHitAt.set("foe", simTime);
+      lastHitAt.set("clash", simTime);
+    },
+
+    /**
+     * How far out from the bot's centre the rotor still forms the roof, so an
+     * overhead weapon can tell whether it landed ON the spinning face or beside
+     * it. 0 for every weapon that is not its own bodywork.
+     */
+    roofRadius: () => w.overheadStall?.radius ?? 0,
+
+    /**
+     * A blow straight down onto the rotor face. On a full-body shell the rotor
+     * IS the roof, so a hammer that lands square on top drives the rim into the
+     * chassis and stops it dead — the one thing that beats a spun-up shell
+     * without having to out-hit it. Opt-in per bot via weapon.overheadStall;
+     * every other weapon presents an edge up there and ignores this.
+     * @returns {boolean} whether it actually stopped a turning rotor
+     */
+    overheadStall(power, simTime) {
+      const cfg = w.overheadStall;
+      if (!cfg || power < (cfg.minPower ?? 0.4)) return false;
+      const stopped = omega / w.maxOmega > TU.minHitRatio;
+      omega = 0;
+      // Anything hard enough to reach the rotor at all jams it for at least half
+      // the window; the rest scales with the arc. The real cost is not the jam
+      // anyway, it is that the rotor restarts from nothing.
+      const seconds = (cfg.seconds ?? 1.2) * (0.5 + 0.5 * m.clamp(power, 0, 1));
+      stallUntil = Math.max(stallUntil, simTime + seconds);
+      return stopped;
+    },
+
     setOmega(value) {
       omega = m.clamp(value, 0, w.maxOmega);
     },
     reset() {
       omega = 0;
       angle = 0;
+      stallUntil = -Infinity;
       lastEmittedRatio = -1;
       lastHitAt.clear();
       fistStroke = 0;
@@ -814,7 +967,21 @@ function createHammer({ vehicle, index, emit }) {
   const strikeAt = w.strikeAt ?? 0.82;
   const arcPower = (stroke) => m.clamp(stroke, 0, 1) ** 2;
 
-  function trySlam(foe, stroke) {
+  // Where the head plants: straight ahead in the bot's own centre plane, about
+  // half its reach past the nose. The zone that decides whether a strike lands
+  // at all is far looser than this — this is the point that answers the narrower
+  // question of what the head came down ON.
+  function headStrikePoint() {
+    const at = {
+      x: w.pivot?.x ?? 0,
+      y: 0,
+      z: -(spec.bodyDims.z / 2 + (tune.reach ?? 1.6) * 0.5),
+    };
+    return m.add(vehicle.body.translation(), m.qRotate(vehicle.body.rotation(), at));
+  }
+
+  function trySlam(ctx, stroke) {
+    const foe = ctx.foe;
     const local = toLocal(vehicle, foe.body.translation());
     if (!localZoneContains(zone, local)) return;
     const power = arcPower(stroke);
@@ -822,6 +989,14 @@ function createHammer({ vehicle, index, emit }) {
     hitThisSwing = true;
     const impulse = w.budgetCap * power;
     const h = horizontalBetween(vehicle.body.translation(), foe.body.translation());
+
+    // Square on top of a spinning roof. Only a weapon that IS the bodywork
+    // reports a roof radius, so this is a shell spinner and nothing else: the
+    // head drives the rim down into the chassis and the rotor stops.
+    const roof = ctx.foeWeapon?.roofRadius?.() ?? 0;
+    const offset = m.sub(foe.body.translation(), headStrikePoint());
+    const onTop = roof > 0 && Math.hypot(offset.x, offset.z) <= roof;
+    const jammed = onTop && Boolean(ctx.foeWeapon.overheadStall(power, ctx.simTime));
     // Overhead arc lands on the target's roof: almost straight down, so it gets
     // driven into the floor rather than shoved away.
     const dir = m.norm(m.add(m.scale(h, 0.2), m.scale(UP, -0.98)));
@@ -842,7 +1017,10 @@ function createHammer({ vehicle, index, emit }) {
       impulse,
       appliedImpulse: impulse,
       energyBefore: 0,
-      heavy: power > 0.6,
+      // A blow that stops a rotor is a solid one by definition, whatever the
+      // arc was worth on its own.
+      heavy: power > 0.6 || jammed,
+      stalledWeapon: jammed,
     });
   }
 
@@ -865,7 +1043,7 @@ function createHammer({ vehicle, index, emit }) {
       if (phase === "swinging") {
         t += dt;
         const stroke = Math.min(1, t / strokeSeconds);
-        if (!hitThisSwing && stroke >= strikeAt) trySlam(ctx.foe, stroke);
+        if (!hitThisSwing && stroke >= strikeAt) trySlam(ctx, stroke);
         armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
         if (t >= strokeSeconds) {
           phase = holdsStroke && fire ? "held" : "returning";
