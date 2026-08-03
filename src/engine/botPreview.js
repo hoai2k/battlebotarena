@@ -58,8 +58,6 @@ const AUTO_SPIN_SPEED = 0.22; // rad/s
 // missed edge is a button that silently does nothing; a seconds-based floor
 // loses that race whenever a frame runs long. Two frames is always enough and
 // is never perceptible.
-const MIN_PRESS_FRAMES = 2;
-const CLICK_PRESS_FRAMES = 4; // a synthetic click (pad A / keyboard) has no hold behind it
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
@@ -176,24 +174,19 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       spec: null,
       token: 0,
       viewEl: pods[slot]?.view || null,
-      // Three channels, matching the pad: primary is RT, secondary is RB and
-      // aux is LB. Only a bot with three separate mechanisms shows the third.
-      buttons: {
-        primary: pods[slot]?.primary || null,
-        secondary: pods[slot]?.secondary || null,
-        aux: pods[slot]?.aux || null,
-      },
-      meters: {
-        primary: pods[slot]?.primaryMeter || null,
-        secondary: pods[slot]?.secondaryMeter || null,
-        aux: pods[slot]?.auxMeter || null,
-      },
+      // The pod has no test buttons any more: a controller runs the weapons
+      // here exactly as it does in the arena, and a fixed row of buttons could
+      // only ever cover the channels someone remembered to add one for — Dragon
+      // King has four mechanisms and there were three buttons. What is on
+      // screen instead is a read-only legend of THIS bot's channels, which can
+      // list all four.
+      controlsEl: pods[slot]?.controls || null,
       loadingEl: pods[slot]?.view?.querySelector?.(".pod-loading") || null,
       // Orbit state: yaw mirrored so both bots open on a facing 3/4 view.
       orbit: { yaw: slot === 0 ? 0.7 : -0.7, pitch: 0.4, zoom: 1, dist: 9, targetY: 1.1, lean: 0, idleFor: 99 },
       /** Mirrors the sim's weapon stroke machine for this bot. */
       weapon: null,
-      controls: { primary: null, secondary: null, aux: null },
+      controls: { primary: null, secondary: null, aux: null, lift: null },
       state: {
         position: new THREE.Vector3(x, PLINTH_HEIGHT, 0),
         quaternion: new THREE.Quaternion(),
@@ -205,12 +198,6 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       // RAW (pre-latch) button state per channel, from pointer holds, click
       // pulses and the pad. The shaper turns these into shaped weapon input.
       raw: {
-        primaryHeld: false,
-        secondaryHeld: false,
-        auxHeld: false,
-        primaryFrames: 0, // frames this press must still be reported for
-        secondaryFrames: 0,
-        auxFrames: 0,
         primaryPad: false,
         secondaryPad: false,
         auxPad: false,
@@ -272,48 +259,6 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       });
     }
 
-    // Each weapon button reports a RAW press — held while the pointer is down,
-    // a short pulse for a click with no hold behind it (pad A / keyboard).
-    // Everything about latch-vs-momentary is decided downstream by the shared
-    // shaper, so these two handlers are identical for every weapon in the game.
-    const wireButton = (el, heldKey, framesKey) => {
-      if (!el) return;
-      // A pointer sequence sets the hold plus a two-frame floor, so even a tap
-      // shorter than a frame still shows the loop a rising edge. A bare click
-      // event — keyboard Enter, or gamepadNav's A -> el.click() — has no
-      // pointer behind it and is replayed as the floor alone.
-      let fromPointer = false;
-      const onDown = () => {
-        fromPointer = true;
-        bay.raw[heldKey] = true;
-        bay.raw[framesKey] = Math.max(bay.raw[framesKey], MIN_PRESS_FRAMES);
-      };
-      const release = () => {
-        bay.raw[heldKey] = false;
-      };
-      const onClick = () => {
-        if (fromPointer) {
-          fromPointer = false;
-          return; // the pointer press already delivered the edge
-        }
-        bay.raw[framesKey] = CLICK_PRESS_FRAMES;
-      };
-      el.addEventListener("pointerdown", onDown);
-      el.addEventListener("pointerup", release);
-      el.addEventListener("pointerleave", release);
-      el.addEventListener("pointercancel", release);
-      el.addEventListener("click", onClick);
-      bay.cleanups.push(() => {
-        el.removeEventListener("pointerdown", onDown);
-        el.removeEventListener("pointerup", release);
-        el.removeEventListener("pointerleave", release);
-        el.removeEventListener("pointercancel", release);
-        el.removeEventListener("click", onClick);
-      });
-    };
-    wireButton(bay.buttons.primary, "primaryHeld", "primaryFrames");
-    wireButton(bay.buttons.secondary, "secondaryHeld", "secondaryFrames");
-    wireButton(bay.buttons.aux, "auxHeld", "auxFrames");
   });
 
   // ------------------------------------------------------------- gamepads
@@ -374,14 +319,10 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       leftDrive: 0,
       rightDrive: 0,
       brake: false,
-      weapon: raw.primaryHeld || raw.primaryPad || raw.primaryFrames > 0,
-      weaponAlt: raw.secondaryHeld || raw.secondaryPad || raw.secondaryFrames > 0,
-      weaponAux: raw.auxHeld || raw.auxPad || raw.auxFrames > 0,
+      weapon: raw.primaryPad,
+      weaponAlt: raw.secondaryPad,
+      weaponAux: raw.auxPad,
     };
-    // Consumed only once this frame has actually reported it.
-    raw.primaryFrames = Math.max(0, raw.primaryFrames - 1);
-    raw.secondaryFrames = Math.max(0, raw.secondaryFrames - 1);
-    raw.auxFrames = Math.max(0, raw.auxFrames - 1);
     return press;
   }
 
@@ -412,17 +353,6 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     // sawActive channel it does in the match.
     updateWeaponSub(bay.visual, bay.spec, dt, Boolean(shaped.sawActive));
 
-    // Button + meter feedback. On a latching channel "live" means latched, so
-    // the button stays lit after you let go — which is the thing the player
-    // most needs to see about a spinner.
-    const primaryLive = Boolean(shaped.weapon);
-    const secondaryLive = Boolean(shaped.sawActive);
-    bay.buttons.primary?.classList.toggle("is-live", primaryLive);
-    bay.buttons.secondary?.classList.toggle("is-live", secondaryLive);
-    bay.buttons.aux?.classList.toggle("is-live", Boolean(shaped.auxActive));
-    if (bay.meters.primary) bay.meters.primary.style.transform = `scaleX(${bay.weapon.ratio().toFixed(3)})`;
-    if (bay.meters.secondary) bay.meters.secondary.style.transform = `scaleX(${bay.weapon.subRatio().toFixed(3)})`;
-    if (bay.meters.aux) bay.meters.aux.style.transform = `scaleX(${(bay.weapon.auxRatio?.() ?? 0).toFixed(3)})`;
   }
 
   // --------------------------------------------------------------- camera
@@ -612,50 +542,46 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     bay.state.weaponAngle = 0;
     bay.state.weaponSubAngle = 0;
     bay.state.weaponTrack = 0;
-    bay.raw.primaryHeld = false;
-    bay.raw.secondaryHeld = false;
-    bay.raw.auxHeld = false;
-    bay.raw.primaryFrames = 0;
-    bay.raw.secondaryFrames = 0;
-    bay.raw.auxFrames = 0;
     bay.orbit.yaw = bay.slot === 0 ? 0.7 : -0.7;
     bay.orbit.pitch = 0.4;
     bay.orbit.idleFor = 99; // start on the slow showcase drift
-    bay.buttons.primary?.classList.remove("is-live");
-    bay.buttons.secondary?.classList.remove("is-live");
-    bay.buttons.aux?.classList.remove("is-live");
   }
 
-  /** Label the two channel buttons for this bot and hide the one it lacks. */
+  // Which pad control and which key run each channel. Naming the CHANNEL as
+  // well as the mechanism is the point: "FLAME" says what a button does but not
+  // which trigger it is, and a bot whose interesting mechanism is on the second
+  // channel (Free Shipping's flamethrower) gets reported as broken when the
+  // player holds RT and nothing burns.
+  const CHANNEL_KEYS = {
+    primary: { pad: "RT", key: "Space" },
+    secondary: { pad: "RB", key: "R" },
+    aux: { pad: "LB", key: "F" },
+    lift: { pad: "LT", key: "C" },
+  };
+
+  /** Write this bot's channels into the pod as a read-only legend. */
   function applyControls(bay, spec) {
     const controls = describeWeaponControls(spec);
     bay.controls = controls;
-    const dress = (el, meterEl, channel) => {
-      if (!el) return;
-      el.hidden = !channel;
-      if (meterEl?.parentElement) meterEl.parentElement.hidden = !channel;
-      if (!channel) return;
-      const labelEl = el.querySelector("[data-control-label]") || el;
-      // Name the CHANNEL as well as the mechanism. "LIFT" and "FLAME" say what
-      // the two buttons do but not which trigger is which, and a bot whose
-      // second channel is the interesting one (Free Shipping's flamethrower)
-      // gets reported as broken when the player holds RT and nothing burns.
-      const chan = el === bay.buttons.aux ? "LB" : el === bay.buttons.secondary ? "RB" : "RT";
-      const key = el === bay.buttons.aux ? "F" : el === bay.buttons.secondary ? "R" : "Space";
-      // Non-breaking space: "RT" and "LIFT" are one label, not two words.
-      labelEl.textContent = `${chan}\u00a0${channel.label}`;
+    const el = bay.controlsEl;
+    if (!el) return;
+    el.textContent = "";
+    for (const name of ["primary", "secondary", "aux", "lift"]) {
+      const channel = controls[name];
+      if (!channel) continue;
+      const { pad, key } = CHANNEL_KEYS[name];
+      const row = document.createElement("span");
+      row.className = "pod-control";
+      const chan = document.createElement("b");
+      chan.textContent = pad;
+      row.append(chan, `\u00a0${channel.label}\u00a0`);
       // Toggle vs hold is the single most useful thing to tell the player here.
-      el.dataset.mode = channel.toggle ? "toggle" : "hold";
-      el.setAttribute(
-        "aria-label",
-        `${channel.label} — ${chan} / ${key}, `
-        + `${channel.toggle ? "toggles on and off" : "hold"}`,
-      );
-      if (meterEl) meterEl.style.transform = "scaleX(0)";
-    };
-    dress(bay.buttons.primary, bay.meters.primary, controls.primary);
-    dress(bay.buttons.secondary, bay.meters.secondary, controls.secondary);
-    dress(bay.buttons.aux, bay.meters.aux, controls.aux);
+      const mode = document.createElement("i");
+      mode.textContent = channel.toggle ? "(toggle)" : "(hold)";
+      row.append(mode);
+      row.title = `${channel.label} — ${pad} / ${key}, ${channel.toggle ? "toggles on and off" : "hold"}`;
+      el.append(row);
+    }
   }
 
   /** Load spec's model into the slot's bay (no-op if it is already showing). */
