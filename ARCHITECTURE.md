@@ -591,6 +591,7 @@ driven by a checked-in spec so the edit is reviewable and repeatable:
 | `glb-carve.mjs` | `tools/repairs/tantrum-drum.json` | the wrong assembly called the weapon — `modelWeapon` held the bar across the back, which is the axle the punch arms hinge on, while the drum in the middle of the machine sat in `modelBody`. Also moves both authored pivots: the rotor's onto the drum's own axle, and the arms' off the fist end and onto the boss at their base |
 | `glb-add-panels.mjs` | `tools/repairs/blip-flipper-pan.json` | openings the scan never closed — down both long edges of Blip's flipper there was a strip of nothing between the plate and the frame, and you looked straight through into the machine |
 | `glb-carve.mjs` | `tools/repairs/duck-plow-tabs.json` | geometry that held the machine off the floor — two stray prongs under the back of Duck's plow reached lower than the plow's own lip, so grounding stood the whole bot 0.18ft up on invisible stilts |
+| `glb-carve.mjs` | `tools/repairs/glitch-mirror.json` | a machine the scan resolved LOPSIDED — one side of Glitch's wedge reached 0.60 from the centreline and the other only 0.48, and three different measurements of where that centreline was disagreed by up to 0.15. Rebuilt out of the good half: yaw the model, then mirror it (`drop` mode for the six sub-parts that only existed on the discarded side, `transform` to slide the drum onto the plane first so the cut does not shorten it). The plane was chosen by eye in `debug/glitch-mirror.html` — see "Picking a number by eye" below |
 | `glb-carve.mjs` | `tools/repairs/freeshipping-lifter.json` | a part built at the wrong SIZE and PLACE for the rest of the machine — Free Shipping's fork carriage was narrower than the middle one of its own three front wedges, so at rest the whole lifter was buried inside that wedge instead of dropping its tines down the channels either side of it (`transform` mode: node scale + offset, no vertices touched) |
 
 Blip is worth knowing about before reaching for a re-segmentation: the raw
@@ -615,6 +616,44 @@ A panel's coordinates have to respect the parts that MOVE. Tombstone's floor
 pan sits below the bar's swept disc rather than at skirt height, because the
 bar pivots at its own centre and sweeps most of the chassis footprint — a pan
 at the height of the side skirts had the blade passing straight through it.
+
+### Picking a number by eye (`debug/`)
+
+Some repair coordinates are not measurable. Glitch's mirror plane was the first:
+the bounding-box centre, a best-fit symmetry plane and the centreline implied by
+the two wing tips disagreed by up to 0.15 model units, and the question they
+disagree about — which half is RIGHT, not which half is bigger — has no
+measurement that answers it. Guessing does visible damage, because mirroring
+about the bounding-box centre shrinks the plate.
+
+`debug/glitch-mirror.html` is the pattern for that case: load the GLB, apply the
+candidate op live, show it beside the reference photo, and print the op's
+parameters as a line to paste into a spec. Points that transfer to the next one:
+
+- **Compose the controls in the order the carve runs them.** Its yaw slider
+  turns the model BEFORE the reflection, which is what lets the two sliders
+  together reach any plane. Turning the finished mirror only spins a symmetric
+  result and cannot fix a skew.
+- **Preview with clipping planes, not geometry.** The original clipped to the
+  kept side plus a reflected copy clipped to the other is the mirrored bot,
+  without rebuilding 150k vertices on every drag. Note that clipping planes are
+  WORLD space, so anything that transforms the model has to transform the plane
+  with it or the two halves stop meeting at the seam.
+- **Pin `camera.up` in a top view.** Looking straight down, three.js has no
+  preferred up and picks one, and every screenshot arrives rotated by an
+  arbitrary angle. Draw the forward direction as an arrow too, derived from
+  `modelYaw` rather than assumed.
+- **Every path relative to the page.** These are served both from the dev server
+  root and from GitHub Pages under `/battlebotarena/`, and a failed module
+  import renders a black rectangle with nothing in the console the user can see.
+  Report load progress: these GLBs are 16-22MB and a silent wait on a phone is
+  indistinguishable from a broken page.
+
+The preview is only honest if the shipped carve reproduces it. Glitch's does
+one thing the preview could not show: the plane cut the drum off-centre, which
+would have cost a fifth of the weapon's length, so the spec slides the drum onto
+the plane first. Anything the preview clipped ENTIRELY away needs `drop`, since
+`delete` would leave a zero-length index buffer where a primitive should be.
 
 ## Game layer (v2/src/game/ — GAME agent)
 
