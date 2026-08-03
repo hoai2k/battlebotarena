@@ -1983,6 +1983,29 @@ export const CATALOG = {
       gyroPenalty: 0.55,
       radius: 1.55, // MEASURED shell radius (the rim teeth reach 1.62)
       dims: { x: 1.554, y: 0.520, z: 1.554 },
+      // The shell is the roof, which is the one way in to a spun-up full-body
+      // spinner: a hammer that comes down square on the rim drives it into the
+      // chassis and the rotor stops dead. No other weapon in the catalog sets
+      // this — everything else presents an edge or a bar up there, and an
+      // overhead blow glances off it. `radius` is how far out from the bot's
+      // centre the head still lands on the spinning face; it is the shell, not
+      // the teeth, because a hit on the rim itself is a graze.
+      overheadStall: { radius: 1.4, minPower: 0.45, seconds: 2.0 },
+      // Tombstone's chain, sized for a rotor half again as heavy. Gigabyte hits
+      // harder than the bar does — that is the whole bot — but the hit is the
+      // same KIND of hit: a horizontal spinner throws you sideways and doesn't
+      // lift much (spinType comes off the vertical axis, so the horizontal bias
+      // is already in play). It costs him more than it costs Tombstone: with
+      // spinLossScale set, the rotor's drain is proportional to how hard the hit
+      // landed instead of v1's flat 72-97%, so a graze barely marks the spin-up
+      // while a clean connection buys the opponent three or four seconds of a
+      // Gigabyte that is only a heavy dome on two wheels.
+      tuning: {
+        efficiency: 0.86, impulseScale: 12.5, kickbackScale: 1.45,
+        liftScale: 6.0, liftVelocity: 4.0,
+        gyroScale: 1.4, impactScale: 1.6, damageScale: 0.85,
+        spinLossBase: 0.08, spinLossScale: 0.55,
+      },
     },
     // The shell IS the collider — a disc lying flat, not a wheel, hence axis y.
     // The pole is the only part that does not rotate and it never reaches the

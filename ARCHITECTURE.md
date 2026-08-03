@@ -56,7 +56,7 @@ and haptics subscribe. This replaces v1's tangled direct calls.
 Event payloads (all positions world-space `{x,y,z}`):
 
 - `EV.IMPACT` — `{ botIndex, otherIndex|null, surface: 'bot'|'wall'|'floor'|'ceiling'|'prop', point, normal, force, relSpeed }` from contact force events.
-- `EV.WEAPON_HIT` — `{ attackerIndex, targetIndex|null, point, normal, impulse, appliedImpulse, energyBefore, heavy }` scripted weapon hits. `impulse` is the DAMAGE proxy (what `match.js` scales); `appliedImpulse` is the physical impulse the body received (effects, haptics).
+- `EV.WEAPON_HIT` — `{ attackerIndex, targetIndex|null, point, normal, impulse, appliedImpulse, energyBefore, heavy, stalledWeapon? }` scripted weapon hits. A clash emits one in each direction; `stalledWeapon` marks the overhead blow that jammed a shell spinner. `impulse` is the DAMAGE proxy (what `match.js` scales); `appliedImpulse` is the physical impulse the body received (effects, haptics).
 - `EV.WEAPON_FIRED` — `{ botIndex, weaponType }` flipper stroke / hammer swing start.
 - `EV.WEAPON_SPIN` — `{ botIndex, weaponType, ratio, hapticScale }` emitted when spin ratio changes ≥0.01.
 - `EV.HAZARD_CONTACT` — `{ botIndex, kind: 'killSaw'|'screw', point, intensity }` continuous while grinding.
@@ -87,12 +87,19 @@ export async function createSim({ bots, emit }) // bots: [BotSimSpec, BotSimSpec
 
 - Fixed timestep 1/120s accumulator inside `stepFrame`; render state is
   interpolated between the last two ticks. Cap 8 substeps per frame.
-- `DriveInput = { leftDrive: -1..1, rightDrive: -1..1, weapon: bool, sawActive: bool,
-  auxActive: bool, brake: bool }` — `sawActive` is the secondary (RB) channel:
-  Sawblaze's saw motor, Whiplash's disc, Tantrum's drum carriage. `auxActive` is
-  a THIRD channel (LB) for a bot with three separate mechanisms, which today is
-  only Tantrum's punch arms; LB is the brake for everyone else, and
-  `game/weaponControls.js` is the one place that knows which is which.
+- `DriveInput = { leftDrive: -1..1, rightDrive: -1..1, strafe: -1..1, spin: -1..1,
+  weapon: bool, sawActive: bool, auxActive: bool, brake: bool }` — `sawActive`
+  is the secondary (RB) channel: Sawblaze's saw motor, Whiplash's disc,
+  Tantrum's drum carriage. `auxActive` is a THIRD channel (LB) for a bot with
+  three separate mechanisms, which today is only Tantrum's punch arms; LB is the
+  brake for everyone else, and `game/weaponControls.js` is the one place that
+  knows which is which.
+- `strafe` and `spin` are read only by a bot whose `drive.type` is `holonomic`
+  (Glitch, Shatter): its omniwheels resolve into movement along both chassis
+  axes AND yaw, independently, so its sticks are not a tank pair. LEFT STICK
+  translates (Y forward/back, X strafes), RIGHT STICK rotates. Same split on the
+  keyboard: W/S, A/D, Q/E. `game/weaponControls.js` decides which bots get which
+  mapping; the input layer just derives all the channels for everyone.
 - `BotSimSpec` comes from the catalog (below): masses, dims, wheel probe
   anchors, weapon type/params, collider spec.
 - Arena colliders (floor/walls/ceiling/deck slab/saw slots/screw shafts) are
@@ -112,7 +119,13 @@ export async function createSim({ bots, emit }) // bots: [BotSimSpec, BotSimSpec
    damping ζ≈0.4, force via `applyImpulseAtPoint` at the probe. Longitudinal:
    velocity-servo toward `drive * maxSpeed` (accel-limited, the v1 servo shape
    — keep it, it feels controllable), applied as force at grounded probes,
-   split per side for tank steering. Lateral: friction-circle clamp
+   split per side for tank steering, with moment arms measured from the WHEEL
+   CENTRE (the mean of the probe anchors) — a machine on wheels pivots about the
+   middle of its contact patches, not about its centre of mass, and on this
+   roster those are up to a third of a foot apart. The yaw servo pairs its
+   torque with the linear impulse that holds that point still, and the
+   centripetal term for orbiting the COM around it is fed forward rather than
+   left to come out of tyre slip. Lateral: friction-circle clamp
    `|F_lat| ≤ μ·F_n` (μ≈1.1) — no velocity scrubbing. Extra yaw damping torque
    when no turn input. Airborne: no drive forces, light angular damping only.
 3. **Spinners** (bar/drum): spin state is scalar energy `E = ½Iω²`; weapon
@@ -123,6 +136,14 @@ export async function createSim({ bots, emit }) // bots: [BotSimSpec, BotSimSpec
    component included, tuned per weapon type vertical/horizontal), equal-and-
    opposite kickback to attacker, subtract transferred energy from E and
    recompute ω. Per-hit cooldown ~90ms per pair.
+   Weapon colliders also collide with EACH OTHER: a contact between two weapon
+   colliders is a **clash**, resolved once for the pair by whichever side
+   notices first (the other stands down through `applyClash`). Both machines are
+   hit — each side's outgoing hit comes from its own spinner model at its own
+   current speed — both are thrown apart, and both rotors are slowed by how hard
+   the other one landed. A weapon-vs-weapon contact takes priority over a
+   weapon-vs-body one in the same step, which matters for a full-body shell
+   where the two colliders are the same steel.
 4. **Flipper** (bronco): press → stroke window (~0.18s); if opponent chassis
    overlaps the flip zone AABB during stroke, apply upward+forward impulse at
    contact (budget from CO2 pressure param), then return/reload delay.
@@ -244,6 +265,14 @@ the sim tests and the roster grid size themselves off it.
   the stroke returns).
 - `tuning.ownerPitchScale > 0` (Deep Six) makes a spinner's own hits tumble it
   — the reason the biggest weapon in the game is not simply the best.
+- `weapon.overheadStall` (Gigabyte) says the rotor IS the roof, so a hammer that
+  comes down square on it stops the rotor dead and jams it for a beat: `radius`
+  is how far from the bot's centre the head still lands on the spinning face,
+  `minPower` how far into the arc it has to be, `seconds` the jam. The hammer
+  asks through `roofRadius()` / `overheadStall()`; a weapon that does not
+  declare it cannot be stopped this way, which is every other rotor in the
+  catalog — they present an edge up there and an overhead blow glances off.
+  `EV.WEAPON_HIT.stalledWeapon` flags the hit that did it.
 
 ## Weapon tuning (v2/src/sim/weaponTuning.js — SIM)
 
@@ -265,6 +294,12 @@ Consequences worth knowing before touching it:
   reads the former, effects/haptics the latter.
 - `DAMAGE_CALIBRATION` sets match pace; `WEAPON_TUNING.hitCooldownSeconds`
   sets hit rate. Those two are the knobs, in that order.
+- `tuning.spinLossScale` (v2-only, default null) changes what a hit costs the
+  ATTACKER'S rotor. v1 drained 72-97% of blade speed on every hit whatever it
+  was worth; set this and the drain becomes `spinLossBase + spinLossScale *
+  hit.strength`, where `strength` is the hit's share of the weapon's own budget
+  cap. It exists for long wind-ups — on a six-second rotor a flat drain means
+  one graze ends the fight.
 - `tuning.damageScale` (v2-only, default 1) scales ONLY the damage a hit does.
   `impactScale` moves the whole hit — damage and shove together — because it
   feeds the raw impulse before the split; `damageScale` orders how much bots
@@ -555,8 +590,9 @@ at the height of the side skirts had the blade passing straight through it.
   weapon-type-aware behavior (spinner keeps weapon toward foe; flipper waits
   for proximity), difficulty scales speed/aggression.
 - `input.js`: keyboard (W/S/A/D + Q/E split, Space weapon, Shift brake) +
-  gamepad (v1 mapping: sticks tank, RT weapon, LB brake) + haptics on
-  EV.IMPACT/EV.WEAPON_HIT strength.
+  gamepad (v1 mapping: stick Ys tank, stick Xs strafe/rotate for the omni bots,
+  RT weapon, LB brake) + haptics on EV.IMPACT/EV.WEAPON_HIT strength. It knows
+  no bots: it derives every channel and `game/weaponControls.js` picks.
 - `audio.js`: port root `src/gameAudio.js` verbatim synthesis, but subscribe
   to the event bus instead of exported hook functions; keep keep-alive loop
   pattern; storage key `bba2-sound` via settings store; default off.

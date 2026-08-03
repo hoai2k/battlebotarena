@@ -747,6 +747,270 @@ await test("roster: the catalog, the display order and the select cards agree", 
 });
 
 // ---------------------------------------------------------------------------
+// Gigabyte — the full-body shell
+// ---------------------------------------------------------------------------
+
+// Drive a spinner into a parked target with its rotor pinned at `ratio` until
+// the moment of contact, so the hit under test is at an exact speed. Returns
+// the first hit on the target and the rotor speed on the frame after it.
+async function spinnerRunIn(attackerId, ratio = 1, opts = {}) {
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const attacker = CATALOG[attackerId];
+  const target = opts.target ?? CATALOG.bronco;
+  return withSim([attacker, target], (sim, events) => {
+    sim._test.setPose(0, { x: 0, z: 0 }, 0);
+    sim._test.setPose(1, { x: 0, z: -5.4 }, Math.PI);
+    frames(sim, 30);
+    let rotorAfter = null;
+    let rotorEnd = 0;
+    const drive = { leftDrive: 0.6, rightDrive: 0.6, weapon: Boolean(opts.holdTrigger) };
+    frames(sim, 120, [drive, {}], () => {
+      const landed = events.some((e) => e.type === EV.WEAPON_HIT && e.payload.targetIndex === 1);
+      if (!landed) sim._test.setWeaponOmega(0, attacker.weapon.maxOmega * ratio);
+      else if (rotorAfter === null) rotorAfter = sim._test.weapons[0].getRatio();
+      rotorEnd = sim._test.weapons[0].getRatio();
+    });
+    const hits = events.filter((e) => e.type === EV.WEAPON_HIT && e.payload.targetIndex === 1);
+    check(hits.length >= 1, `${attackerId} landed a hit at ratio ${ratio}`);
+    return { hit: hits[0].payload, rotorAfter, rotorEnd };
+  });
+}
+
+await test("gigabyte: six seconds of wind-up, then it hits harder than the bar", async () => {
+  // The wind-up IS the machine. Six seconds is the published figure and it is
+  // the whole risk: until it is up, Gigabyte is a 250lb dome on two wheels.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  await withSim([CATALOG.gigabyte, CATALOG.bronco], (sim) => {
+    sim._test.setPose(0, { x: 0, z: 0 }, 0);
+    sim._test.setPose(1, { x: 0, z: 20 }, 0); // out of the way
+    frames(sim, 60);
+    frames(sim, 180, [{ weapon: true }, {}]);
+    const half = sim._test.weapons[0].getRatio();
+    check(Math.abs(half - 0.5) < 0.05, "half speed at three seconds", `ratio ${half.toFixed(2)}`);
+    frames(sim, 180, [{ weapon: true }, {}]);
+    check(sim._test.weapons[0].getRatio() > 0.99, "full speed at six seconds",
+      `ratio ${sim._test.weapons[0].getRatio().toFixed(2)}`);
+  });
+
+  // And what six seconds buys: the same KIND of hit as Tombstone's bar — a
+  // horizontal spinner that throws you sideways — only harder. Both are run
+  // into the same target at full spin, so the only difference is the weapon.
+  const shell = await spinnerRunIn("gigabyte");
+  const bar = await spinnerRunIn("tombstone");
+  check(shell.hit.appliedImpulse > bar.hit.appliedImpulse,
+    "the shell shoves harder than the bar",
+    `${shell.hit.appliedImpulse.toFixed(0)} vs ${bar.hit.appliedImpulse.toFixed(0)}`);
+  check(shell.hit.impulse > bar.hit.impulse, "and hurts more",
+    `${shell.hit.impulse.toFixed(0)} vs ${bar.hit.impulse.toFixed(0)}`);
+});
+
+await test("gigabyte: a hit costs the shell speed, the more so the harder it lands", async () => {
+  // v1 drained 72-97% of blade SPEED on every hit whatever it was worth. On a
+  // six-second rotor that means one graze ends the fight, so Gigabyte's drain is
+  // proportional to the hit instead (weapon.tuning.spinLossScale). A clean
+  // connection has to cost it seconds; a glance must not.
+  const light = await spinnerRunIn("gigabyte", 0.3);
+  const heavy = await spinnerRunIn("gigabyte", 1.0);
+  const lightRetained = light.rotorAfter / 0.3;
+  const heavyRetained = heavy.rotorAfter / 1.0;
+  check(heavyRetained < lightRetained, "the bigger hit takes more spin with it",
+    `kept ${(heavyRetained * 100).toFixed(0)}% at full spin vs ${(lightRetained * 100).toFixed(0)}% at 30%`);
+  check(heavyRetained > 0.3 && heavyRetained < 0.85,
+    "a hard hit staggers the shell without stopping it",
+    `kept ${(heavyRetained * 100).toFixed(0)}%`);
+
+  // ...and it winds back up, which is the other half of the mechanic.
+  const held = await spinnerRunIn("gigabyte", 1.0, { holdTrigger: true });
+  check(held.rotorEnd > held.rotorAfter + 0.1, "the shell recovers with the trigger held",
+    `${held.rotorAfter.toFixed(2)} -> ${held.rotorEnd.toFixed(2)}`);
+});
+
+await test("weapon on weapon: one clash, both machines hit, both rotors slowed", async () => {
+  // Weapon colliders used to pass through each other — two live rotors met and
+  // nothing happened until one of them reached the other's chassis. A clash is
+  // one exchange that lands on BOTH bots, resolved once for the pair however
+  // many contact pairs the step reports.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  await withSim([CATALOG.gigabyte, CATALOG.tombstone], (sim, events) => {
+    sim._test.setPose(0, { x: 0, z: 0 }, 0);
+    sim._test.setPose(1, { x: 0, z: -8 }, Math.PI);
+    frames(sim, 30);
+    const drive = { leftDrive: 0.5, rightDrive: 0.5, weapon: true };
+    frames(sim, 150, [drive, drive], () => {
+      // Pinned until first contact so both arrive at a known speed.
+      if (!events.some((e) => e.type === EV.WEAPON_HIT)) {
+        sim._test.setWeaponOmega(0, CATALOG.gigabyte.weapon.maxOmega);
+        sim._test.setWeaponOmega(1, CATALOG.tombstone.weapon.maxOmega);
+      }
+    });
+    const onShell = events.filter((e) => e.type === EV.WEAPON_HIT && e.payload.targetIndex === 0);
+    const onBar = events.filter((e) => e.type === EV.WEAPON_HIT && e.payload.targetIndex === 1);
+    check(onShell.length >= 1, "Gigabyte took damage from the clash");
+    check(onBar.length >= 1, "Tombstone took damage from the clash");
+    check(onShell[0].payload.attackerIndex === 1 && onBar[0].payload.attackerIndex === 0,
+      "each hit is credited to the other bot");
+    // One exchange, not one per contact pair: a full-body shell's weapon and
+    // chassis colliders are the same steel and both pairs report together.
+    check(onShell.length <= 2 && onBar.length <= 2, "the pair resolves once, not once per collider",
+      `${onBar.length} on the bar, ${onShell.length} on the shell`);
+    check(sim._test.weapons[0].getRatio() < 0.95 && sim._test.weapons[1].getRatio() < 0.95,
+      "both rotors came out of it slower",
+      `${sim._test.weapons[0].getRatio().toFixed(2)} / ${sim._test.weapons[1].getRatio().toFixed(2)}`);
+  });
+});
+
+await test("hammer on the shell: the rotor stops dead and has to start again", async () => {
+  // The one way into a spun-up full-body spinner that does not involve
+  // out-hitting it. The shell IS the roof, so a hammer that comes down square on
+  // it drives the rim into the chassis. Only a weapon that declares
+  // weapon.overheadStall can be stopped this way — every other rotor presents an
+  // edge up there and an overhead blow glances off.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  await withSim([CATALOG.rusty, CATALOG.gigabyte], (sim, events) => {
+    sim._test.setPose(0, { x: 0, z: 0 }, 0);
+    sim._test.setPose(1, { x: 0, z: -3.6 }, 0); // under the head, out of shell reach
+    frames(sim, 30);
+    frames(sim, 30, [{}, { weapon: true }], () => {
+      sim._test.setWeaponOmega(1, CATALOG.gigabyte.weapon.maxOmega);
+    });
+    check(sim._test.weapons[1].getRatio() > 0.99, "the shell is up to speed before the swing");
+
+    // Swing, and hold Gigabyte's trigger down the whole way: a jammed rotor
+    // stays jammed, so leaning on the button must not get it back.
+    frames(sim, 60, [{ weapon: true }, { weapon: true }]);
+    const hits = events.filter((e) => e.type === EV.WEAPON_HIT && e.payload.targetIndex === 1);
+    check(hits.length >= 1, "the hammer landed");
+    check(hits.some((h) => h.payload.stalledWeapon), "and it landed on the spinning face");
+    check(hits[0].payload.impulse > 0, "the hit still deals its damage",
+      `impulse ${hits[0].payload.impulse.toFixed(0)}`);
+    check(sim._test.weapons[1].getRatio() === 0, "the shell stopped",
+      `ratio ${sim._test.weapons[1].getRatio().toFixed(2)}`);
+
+    frames(sim, 30, [{}, { weapon: true }]);
+    check(sim._test.weapons[1].getRatio() === 0, "and stays stopped while it is jammed");
+    frames(sim, 150, [{}, { weapon: true }]);
+    check(sim._test.weapons[1].getRatio() > 0.05, "then winds up again from nothing",
+      `ratio ${sim._test.weapons[1].getRatio().toFixed(2)}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Driving
+// ---------------------------------------------------------------------------
+
+await test("turning pivots on the wheel centre, not the centre of mass", async () => {
+  // Throw one side forward and the other back and a tracked machine spins about
+  // the middle of its contact patches. It used to spin about its centre of mass,
+  // which the model deliberately puts low and slightly rear — and on a bot with
+  // skids up front and tyres at the back those are a third of a foot apart, so
+  // the nose swung wide of where the wheels say it should go.
+  //
+  // Measured as the INSTANTANEOUS CENTRE OF ROTATION, read straight off the
+  // body: the point whose velocity is zero, in the bot's own frame. That is
+  // where the machine is actually turning, whatever the servos were asked for.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const m = await import("../src/sim/math.js");
+  for (const id of ["tombstone", "beta", "huge"]) {
+    const spec = CATALOG[id];
+    const a = spec.wheelAnchors;
+    const wheelCentre = {
+      x: a.reduce((s, p) => s + p.x, 0) / a.length,
+      z: a.reduce((s, p) => s + p.z, 0) / a.length,
+    };
+    const com = { x: 0, z: 0.08 * spec.bodyDims.z }; // mirrors sim/vehicle.js
+    const apart = Math.abs(wheelCentre.z - com.z);
+    check(apart > 0.2, `${id}'s wheel centre and com are far enough apart to tell apart`,
+      `${apart.toFixed(2)}ft`);
+    await withSim([spec, CATALOG.bronco], (sim) => {
+      sim._test.setPose(1, { x: 0, z: 25 }, 0);
+      sim._test.setPose(0, { x: 0, z: 0 }, 0);
+      frames(sim, 60);
+      frames(sim, 90, [{ leftDrive: 1, rightDrive: -1 }, {}]); // settle to a steady yaw
+      const body = sim._test.body(0);
+      const w = body.angvel().y;
+      const v = body.linvel();
+      check(Math.abs(w) > 1, `${id} is turning`, `${w.toFixed(2)} rad/s`);
+      // v + w x r = 0 about the COM, so r = (v.z/w, 0, -v.x/w) in world.
+      const icr = m.add(
+        m.qRotateInv(body.rotation(), { x: v.z / w, y: 0, z: -v.x / w }),
+        { x: com.x, y: 0, z: com.z },
+      );
+      const toWheel = Math.hypot(icr.x - wheelCentre.x, icr.z - wheelCentre.z);
+      const toCom = Math.hypot(icr.x - com.x, icr.z - com.z);
+      check(toWheel < toCom, `${id} turns about its wheel centre, not its com`,
+        `pivot at z ${icr.z.toFixed(3)}: ${toWheel.toFixed(3)}ft from the wheel centre, ${toCom.toFixed(3)}ft from the com`);
+      check(toWheel < 0.15, `${id}'s pivot sits on its wheel centre`,
+        `${toWheel.toFixed(3)}ft away (wheel centre z ${wheelCentre.z.toFixed(3)}, pivot z ${icr.z.toFixed(3)})`);
+    });
+  }
+});
+
+await test("omni bots: left stick translates, right stick rotates", async () => {
+  // Glitch and Shatter are X-drives: the omniwheels resolve into movement along
+  // both chassis axes AND yaw, independently. A tank pair cannot express that,
+  // so their sticks are mapped differently — and the mapping lives with the
+  // other per-bot control semantics, not in the input layer.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const { createWeaponInputShaper, usesHolonomicSticks } = await import("../src/game/weaponControls.js");
+  const omni = Object.values(CATALOG).filter((s) => usesHolonomicSticks(s)).map((s) => s.id).sort();
+  check(omni.join(",") === "glitch,shatter", "the omni bots are the ones we think they are",
+    `got ${omni.join(",") || "none"}`);
+
+  const shaper = createWeaponInputShaper();
+  // Left stick hard over: forward on Y, right on X. Right stick: rotate left.
+  // The tank pair the pad also produces must NOT reach an omni bot's tracks.
+  const raw = { throttle: 1, leftDrive: 1, rightDrive: -1, strafe: 0.5, spin: -0.8 };
+  const omniShaped = shaper.shape({ ...raw }, CATALOG.glitch, 0);
+  check(omniShaped.leftDrive === 1 && omniShaped.rightDrive === 1,
+    "both sides take the left stick's throttle, undivided by any tank turn",
+    `${omniShaped.leftDrive} / ${omniShaped.rightDrive}`);
+  check(omniShaped.strafe === 0.5 && omniShaped.spin === -0.8, "strafe and rotate pass through");
+  const tankShaped = shaper.shape({ ...raw }, CATALOG.tombstone, 1);
+  check(tankShaped.leftDrive === 1 && tankShaped.rightDrive === -1,
+    "a tank bot's two sticks are still its two sides");
+
+  // And in the sim: each channel does its own thing and nothing else's.
+  const yawOf = (sim) => yawFromQuat(sim._test.body(0).rotation());
+  await withSim([CATALOG.glitch, CATALOG.bronco], async (sim) => {
+    sim._test.setPose(1, { x: 0, z: 25 }, 0);
+    for (const [label, input, expect] of [
+      ["forward", { leftDrive: 1, rightDrive: 1 }, "z"],
+      ["strafe", { leftDrive: 0, rightDrive: 0, strafe: 1 }, "x"],
+      ["rotate", { leftDrive: 0, rightDrive: 0, spin: 1 }, "yaw"],
+    ]) {
+      sim._test.setPose(0, { x: 0, z: 0 }, 0);
+      frames(sim, 60);
+      const from = { ...sim._test.body(0).translation() };
+      // Accumulated, not the wrapped difference: a bot that spins a full turn
+      // and a bot that does not move both read zero on the wrapped one.
+      let turned = 0;
+      let lastYaw = yawOf(sim);
+      frames(sim, 90, [input, {}], () => {
+        let d = yawOf(sim) - lastYaw;
+        if (d > Math.PI) d -= 2 * Math.PI;
+        if (d < -Math.PI) d += 2 * Math.PI;
+        turned += d;
+        lastYaw = yawOf(sim);
+      });
+      const to = sim._test.body(0).translation();
+      const dx = Math.abs(to.x - from.x);
+      const dz = Math.abs(to.z - from.z);
+      const dyaw = Math.abs(turned);
+      if (expect === "z") {
+        check(dz > 2 && dx < dz * 0.25, "the left stick's Y drives forward", `dz ${dz.toFixed(2)} dx ${dx.toFixed(2)}`);
+      } else if (expect === "x") {
+        check(dx > 2 && dz < dx * 0.25, "the left stick's X strafes sideways", `dx ${dx.toFixed(2)} dz ${dz.toFixed(2)}`);
+        check(dyaw < 0.4, "and does not turn the bot", `${((dyaw * 180) / Math.PI).toFixed(0)} deg`);
+      } else {
+        check(dyaw > 1.0, "the right stick's X spins it on the spot", `${((dyaw * 180) / Math.PI).toFixed(0)} deg`);
+        check(Math.hypot(dx, dz) < 1.5, "without driving it anywhere",
+          `moved ${Math.hypot(dx, dz).toFixed(2)}ft`);
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

@@ -1,5 +1,5 @@
-// Player weapon control semantics — the ONE definition of which button does
-// what to which mechanism.
+// Player control semantics — the ONE definition of which button does what to
+// which mechanism, and of which bots read their sticks as a tank pair.
 //
 // Shared by the match loop (main.js) and the bot-select practice viewer
 // (engine/botPreview.js), so a weapon you learn on the plinth is driven by
@@ -20,6 +20,32 @@
 //                           share a button with the other. LB is the brake on
 //                           every other bot, and it is folded back into the
 //                           brake here for them so the v1 mapping is untouched.
+
+/**
+ * Does this bot drive its sticks as a translation + a rotation rather than as
+ * a tank pair? An X-drive's omniwheels resolve into movement along both chassis
+ * axes AND yaw, all three independently, so a tank pair is the wrong shape for
+ * it: LEFT STICK moves the bot (forward/back, and left/right strafes), RIGHT
+ * STICK turns it on the spot. That is the entire reason a combat robot fits
+ * omniwheels — you can circle an opponent with the weapon still pointed at
+ * them — and a tank mapping throws it away.
+ */
+export function usesHolonomicSticks(spec) {
+  return spec?.drive?.type === "holonomic";
+}
+
+/**
+ * Raw stick channels -> the drive channels the sim reads. Tank bots pass
+ * through untouched: their two sticks ARE their two sides.
+ */
+function mapDrive(raw, spec) {
+  if (!usesHolonomicSticks(spec)) return raw;
+  // Both sides get the same throttle — an X-drive does not steer by slewing one
+  // side. `strafe` (left stick X) and `spin` (right stick X) go through as they
+  // came in; sim/vehicle.js reads them only on a bot whose drive.type says so.
+  const throttle = raw.throttle ?? (((raw.leftDrive ?? 0) + (raw.rightDrive ?? 0)) / 2);
+  return { ...raw, leftDrive: throttle, rightDrive: throttle };
+}
 
 /** Rotors: the primary button LATCHES them on and off. */
 export const SPINNER_TYPES = new Set(["bar", "drum", "shellSpinner"]);
@@ -112,7 +138,8 @@ export function createWeaponInputShaper() {
   const prevWeaponDown = [false, false];
   const prevAltDown = [false, false];
 
-  function shape(raw, spec, slot) {
+  function shape(rawIn, spec, slot) {
+    const raw = mapDrive(rawIn, spec);
     const type = spec?.weapon?.type;
     const weaponEdge = raw.weapon && !prevWeaponDown[slot];
     const altEdge = raw.weaponAlt && !prevAltDown[slot];

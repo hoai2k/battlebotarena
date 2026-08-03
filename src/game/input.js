@@ -9,6 +9,8 @@
 // - Gamepad: left stick Y = left side, right stick Y = right side (tank),
 //   RT (button 7) weapon, RB (5) secondary, LB (4) aux, LT (6) brake. Deadzone
 //   0.12. Stick input wins over keyboard when non-zero; weapon/brake are OR'd.
+//   Left stick X and right stick X carry strafe and rotation for the bots that
+//   drive that way (Glitch, Shatter); see game/weaponControls.js.
 //   LB reads as v1's brake for all but one bot — see game/weaponControls.js,
 //   which owns which button means what to which machine.
 //
@@ -185,6 +187,10 @@ export function createInput({ on, playerIndex = 0, gamepadIndex = 0 } = {}) {
     return {
       leftDrive: clamp(throttle + turn, -1, 1),
       rightDrive: clamp(throttle - turn, -1, 1),
+      // Throttle on its own, with no turn folded into it. A tank pair has
+      // nowhere to put this; a bot that steers on a separate channel needs it,
+      // and game/weaponControls.js is what knows which bots those are.
+      throttle: clamp(throttle, -1, 1),
       // Holonomic channels, read only by bots whose drive.type says so (Glitch,
       // Shatter). An omniwheel drives along its own axis and SLIDES sideways,
       // so an X-drive can translate any direction independently of where it is
@@ -214,16 +220,20 @@ export function createInput({ on, playerIndex = 0, gamepadIndex = 0 } = {}) {
       const leftStick = -dead(pad.axes[1] || 0);
       const rightStick = -dead(pad.axes[3] || 0);
       const stickDrive = leftStick !== 0 || rightStick !== 0;
-      // On a pad the left stick's X axis was going unused. For a holonomic bot
-      // it is the strafe, so the LEFT STICK ALONE gives translation in any
-      // direction — which is the whole point of an X-drive — and the right
-      // stick becomes rotation rather than half of a tank pair.
+      // The left stick's X axis and the right stick's X axis are unused by a
+      // tank pair. On a bot that steers independently of its tracks they are
+      // the other two thirds of the drive: LEFT STICK translates in any
+      // direction, RIGHT STICK rotates. The channels are derived here for
+      // everyone and it costs nothing — a tank bot's sim never reads them, and
+      // which mapping a bot gets is decided in game/weaponControls.js.
       const strafeAxis = dead(pad.axes[0] || 0);
+      const turnAxis = dead(pad.axes[2] || 0);
       return {
         leftDrive: stickDrive ? clamp(leftStick, -1, 1) : keyboard.leftDrive,
         rightDrive: stickDrive ? clamp(rightStick, -1, 1) : keyboard.rightDrive,
+        throttle: leftStick !== 0 ? clamp(leftStick, -1, 1) : keyboard.throttle,
         strafe: strafeAxis !== 0 ? clamp(strafeAxis, -1, 1) : keyboard.strafe,
-        spin: stickDrive ? clamp((leftStick - rightStick) / 2, -1, 1) : keyboard.spin,
+        spin: turnAxis !== 0 ? clamp(turnAxis, -1, 1) : keyboard.spin,
         weapon: (pad.buttons[7]?.value || 0) > TRIGGER_THRESHOLD || Boolean(pad.buttons[7]?.pressed) || keyboard.weapon,
         weaponAlt: Boolean(pad.buttons[5]?.pressed) || keyboard.weaponAlt,
         weaponAux: (pad.buttons[4]?.value || 0) > TRIGGER_THRESHOLD || Boolean(pad.buttons[4]?.pressed) || keyboard.weaponAux,

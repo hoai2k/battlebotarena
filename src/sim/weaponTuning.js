@@ -81,6 +81,15 @@ const SPINNER_DEFAULTS = Object.freeze({
   impactScale: 1,
   damageScale: 1,
   gyroScale: 0.75,
+  // v1 drained a flat share of blade SPEED per hit (see drainLoss below): 72-97%
+  // of it, whatever the hit was worth. That reads fine on a 3s bar but not on a
+  // rotor with a six-second wind-up, where it means one graze costs the whole
+  // fight. Set spinLossScale and the drain becomes proportional to how hard the
+  // hit actually landed instead — loss = spinLossBase + spinLossScale * strength,
+  // where strength is the hit's share of the weapon's own budget cap. Left null
+  // the chain is exactly v1's.
+  spinLossBase: 0.05,
+  spinLossScale: null,
   // v1's gyro reaction is all but inert here: v2's raycast suspension resists
   // roll and pitch far harder than v1's did, and the yaw servo eats the rest,
   // so the ported torque moves a grounded bot by a fraction of a degree even
@@ -216,7 +225,8 @@ export function createSpinnerModel(spec) {
      * @param {{ratio:number, targetSpec:object, approachSpeed?:number, plow?:object}} args
      * @returns {{push:number, lift:number, liftVelocityFloor:number, damageImpulse:number,
      *   kickback:number, kickbackLift:number, targetYawTorque:number, targetPitchTorque:number,
-     *   ownerYawTorque:number, ownerPitchTorque:number, spinRetained:number, bite:number, capped:boolean}}
+     *   ownerYawTorque:number, ownerPitchTorque:number, spinRetained:number, bite:number,
+     *   strength:number, capped:boolean}}
      */
     hit({ ratio, targetSpec, approachSpeed = 0, plow = null }) {
       const r = clamp(ratio, 0, 1.45);
@@ -228,6 +238,11 @@ export function createSpinnerModel(spec) {
       const momentum = clamp(Math.sqrt(weaponLbs / targetLbs), 0.42, 1.35);
       const raw = eti * bite * momentum * impactScale * speedPower(r);
       const j = clamp(raw, V1.minImpulse, Math.max(V1.minImpulse, cap));
+      // How hard this one landed, 0..1, as a share of what the weapon is allowed
+      // to deliver at all. Unlike `ratio` it folds in closing speed and how heavy
+      // the target is, so it is the number to hang "the bigger the hit, the
+      // bigger the consequence" off.
+      const strength = clamp(raw / Math.max(V1.minImpulse, cap), 0, 1);
 
       // v1 splits the capped impulse into push / lift / torque / damage shares
       // (all 1 without wedge plow defence, which v2 does not model yet).
@@ -256,7 +271,9 @@ export function createSpinnerModel(spec) {
       // no downside; opt-in per bot so nothing else changes.
       const ownerPitchV1 = torqueMag * bias.pitch * 0.32 * V1.extraTorqueScale * t.ownerPitchScale;
 
-      const drainLoss = clamp(0.72 + bite * 0.16 + r * 0.08, 0.72, 0.97);
+      const drainLoss = t.spinLossScale === null
+        ? clamp(0.72 + bite * 0.16 + r * 0.08, 0.72, 0.97)
+        : clamp(t.spinLossBase + t.spinLossScale * strength, 0, 0.97);
 
       return {
         push: pushMag * t.impulseScale * V1_IMPULSE_TO_V2,
@@ -270,8 +287,9 @@ export function createSpinnerModel(spec) {
         targetPitchTorque: toV2Torque(targetSpec || spec, "x", pitchV1),
         ownerYawTorque: toV2Torque(spec, "y", ownerYawV1),
         ownerPitchTorque: toV2Torque(spec, "x", ownerPitchV1),
-        spinRetained: clamp(1 - drainLoss, 0.03, 0.96), // multiply omega by this after a hit
+        spinRetained: clamp(1 - drainLoss, 0.03, 0.99), // multiply omega by this after a hit
         bite,
+        strength,
         capped: raw > cap,
       };
     },
