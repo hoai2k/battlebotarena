@@ -292,6 +292,36 @@ export function buildTrackParts(visual, spec) {
  * flat while the chassis rears up — and a wheel hoisted out of that group would
  * detach itself from the track it is supposed to be driving.
  */
+/**
+ * Centre of the triangles a mesh actually DRAWS, in its own local space.
+ *
+ * Box3.setFromObject cannot answer this. glb-carve extracts a part by giving it
+ * its own index buffer while SHARING the donor's vertex attributes, so the
+ * position attribute on a sprocket cut out of a track pod still holds all 70k of
+ * the pod's vertices — and three.js computes a bounding box from the attribute,
+ * not from the indices. Every sprocket therefore reported the whole pod's box,
+ * put its pivot at the pod's centre, and swung the wheel around the outside of
+ * the track instead of turning it in place.
+ */
+function indexedCentre(mesh) {
+  const pos = mesh.geometry?.getAttribute("position");
+  const index = mesh.geometry?.getIndex();
+  if (!pos) return null;
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  const count = index ? index.count : pos.count;
+  for (let i = 0; i < count; i++) {
+    const v = index ? index.getX(i) : i;
+    for (let k = 0; k < 3; k++) {
+      const c = pos.getComponent(v, k);
+      if (c < min[k]) min[k] = c;
+      if (c > max[k]) max[k] = c;
+    }
+  }
+  if (!Number.isFinite(min[0])) return null;
+  return new THREE.Vector3(...[0, 1, 2].map((k) => (min[k] + max[k]) / 2));
+}
+
 export function buildTrackSprockets(visual, spec) {
   const names = spec.tracks?.sprockets;
   if (!names?.length) return [];
@@ -303,10 +333,10 @@ export function buildTrackSprockets(visual, spec) {
     // Already wrapped by an earlier call (a re-attached preview visual): keep
     // the pivot that is there rather than nesting a second one inside it.
     if (parent.name === `sprocketPivot-${name}`) { pivots.push(parent); continue; }
-    const box = new THREE.Box3().setFromObject(mesh);
-    if (box.isEmpty()) continue;
-    const centre = new THREE.Vector3();
-    box.getCenter(centre);
+    const centre = indexedCentre(mesh);
+    if (!centre) continue;
+    mesh.updateWorldMatrix(true, false);
+    centre.applyMatrix4(mesh.matrixWorld);
     const pivot = new THREE.Group();
     pivot.name = `sprocketPivot-${name}`;
     parent.add(pivot);

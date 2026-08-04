@@ -1214,6 +1214,39 @@ await test("dragon king: the saws come down in FRONT, and each turns about its o
   }
 });
 
+// Bounding-box centre of the triangles a GLB primitive actually DRAWS, read
+// through its index buffer. Needed because a carved-out part shares its donor's
+// vertex attributes, so the accessor's own min/max describes the donor.
+function boundsOfDrawnTriangles(json, node) {
+  const prim = json.meshes[node.mesh].primitives[0];
+  const read = (accIndex, stride, reader) => {
+    const acc = json.accessors[accIndex];
+    const view = json.bufferViews[acc.bufferView];
+    return { acc, view, stride, reader };
+  };
+  const bin = boundsOfDrawnTriangles.bin;
+  const pos = json.accessors[prim.attributes.POSITION];
+  const posView = json.bufferViews[pos.bufferView];
+  const posOff = bin.start + (posView.byteOffset || 0) + (pos.byteOffset || 0);
+  const posStride = posView.byteStride || 12;
+  const idx = json.accessors[prim.indices];
+  const idxView = json.bufferViews[idx.bufferView];
+  const idxOff = bin.start + (idxView.byteOffset || 0) + (idx.byteOffset || 0);
+  const size = idx.componentType === 5125 ? 4 : idx.componentType === 5123 ? 2 : 1;
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < idx.count; i++) {
+    const o = idxOff + i * size;
+    const v = size === 4 ? bin.buf.readUInt32LE(o) : size === 2 ? bin.buf.readUInt16LE(o) : bin.buf.readUInt8(o);
+    for (let k = 0; k < 3; k++) {
+      const c = bin.buf.readFloatLE(posOff + v * posStride + k * 4);
+      if (c < min[k]) min[k] = c;
+      if (c > max[k]) max[k] = c;
+    }
+  }
+  return [0, 1, 2].map((k) => (min[k] + max[k]) / 2);
+}
+
 await test("tracked bots: the drive sprockets are real parts that can turn", async () => {
   // A scanned track pod is ONE mesh — frame, band and wheels on a single atlas —
   // so nothing inside it can move. Dragon King's band has been scrolling over
@@ -1226,7 +1259,9 @@ await test("tracked bots: the drive sprockets are real parts that can turn", asy
     const names = spec.tracks?.sprockets;
     if (!names?.length) continue;
     const glb = readFileSync(new URL(`../public${spec.modelPath.replace("./public", "")}`, import.meta.url));
-    const json = JSON.parse(glb.toString("utf8", 20, 20 + glb.readUInt32LE(12)).trim());
+    const jsonLen = glb.readUInt32LE(12);
+    const json = JSON.parse(glb.toString("utf8", 20, 20 + jsonLen).trim());
+    boundsOfDrawnTriangles.bin = { buf: glb, start: 20 + ((jsonLen + 3) & ~3) + 8 };
     const reachable = new Map();
     const walk = (i) => { reachable.set(json.nodes[i].name, json.nodes[i]); (json.nodes[i].children || []).forEach(walk); };
     json.scenes[0].nodes.forEach(walk);
@@ -1236,6 +1271,20 @@ await test("tracked bots: the drive sprockets are real parts that can turn", asy
         node ? "in the scene but has no mesh" : "not reachable from the scene");
       const tris = node ? json.accessors[json.meshes[node.mesh].primitives[0].indices].count / 3 : 0;
       check(tris > 1000, `${spec.id}: ${name} is a whole wheel, not a sliver`, `${tris} triangles`);
+      // The trap this part is FOR. glb-carve extracts a part by giving it its
+      // own index buffer while SHARING the donor's vertex attributes, so the
+      // POSITION accessor on a sprocket still describes the whole pod — and
+      // anything that measures the part from the attribute rather than from the
+      // indices (THREE.Box3.setFromObject, for one) puts the wheel's pivot at
+      // the pod's centre and swings it around the outside of its own track.
+      // This is the check that the two answers are far enough apart for that
+      // mistake to be the visible disaster it was, rather than a near miss.
+      const acc = json.accessors[json.meshes[node.mesh].primitives[0].attributes.POSITION];
+      const shared = [0, 1, 2].map((i) => (acc.min[i] + acc.max[i]) / 2);
+      const own = boundsOfDrawnTriangles(json, node);
+      const apart = Math.hypot(...[0, 1, 2].map((i) => own[i] - shared[i]));
+      check(apart > 0.05, `${spec.id}: ${name}'s own centre is nowhere near its donor's`,
+        `${apart.toFixed(3)} model units apart — measure this part from its indices, not its attributes`);
     }
     // The band advances the distance travelled whatever wheelRadius says, but the
     // sprocket turns by wheelSpin — which is that distance over wheelRadius. If
