@@ -180,15 +180,28 @@ export function createMatch({ sim, specs, emit, on }) {
     applyDamage(targetIndex, base * (heavy ? HEAVY_HIT_MULTIPLIER : 1), "weapon", point);
   }));
 
-  unsubscribes.push(on(EV.IMPACT, ({ botIndex, surface, point, relSpeed }) => {
+  unsubscribes.push(on(EV.IMPACT, ({ botIndex, otherIndex, surface, point, relSpeed, normalSpeed }) => {
     if (botIndex === null || botIndex === undefined) return;
-    const speed = relSpeed || 0;
+    // Speed INTO the surface, not speed across it. Driving fast along the floor
+    // is not a slam; falling onto it is, and the two are the same number until
+    // you take the component along the contact normal. Claw Viper found this:
+    // 250lbf of magnets keep its pan on the floor and its 17fps top speed runs
+    // right at the 14fps slam threshold, so anything that nudged it over — a
+    // ramp, a bump, a shove — billed it for driving. normalSpeed falls back to
+    // relSpeed for any emitter that does not report it.
+    const speed = normalSpeed ?? relSpeed ?? 0;
     if ((surface === "floor" || surface === "ceiling") && speed < FLOOR_SLAM_SPEED) return;
-    if (fightClock - lastImpactAt[botIndex] < IMPACT_COOLDOWN_SECONDS) return;
     const amount = clamp((speed - IMPACT_SPEED_THRESHOLD) * IMPACT_DAMAGE_PER_FPS, 0, IMPACT_MAX);
     if (amount < IMPACT_MIN) return;
-    lastImpactAt[botIndex] = fightClock;
-    applyDamage(botIndex, amount, "impact", point);
+    // BOTH machines were in the collision. The router reports a bot-on-bot
+    // impact once, under the LOWER of the two indices, and charging only that
+    // one meant every ram in the game was paid for by player one — including
+    // the rams they initiated, and never by player two.
+    for (const i of otherIndex === null || otherIndex === undefined ? [botIndex] : [botIndex, otherIndex]) {
+      if (fightClock - lastImpactAt[i] < IMPACT_COOLDOWN_SECONDS) continue;
+      lastImpactAt[i] = fightClock;
+      applyDamage(i, amount, "impact", point);
+    }
   }));
 
   unsubscribes.push(on(EV.HAZARD_CONTACT, ({ botIndex, kind, point, intensity }) => {

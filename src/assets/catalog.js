@@ -839,13 +839,24 @@ export const CATALOG = {
       lowerSeconds: 0.9,
       gripReach: 2.1053, // where a gripped bot rides: on the fork blades
       gripHeight: 0.5263,
-      gripStrength: 16,
+      // 16 -> 26, with the cap raised to match. At 16 a gripped 250lb bot lagged
+      // the fork tip by most of a foot through a turn and looked magnetised to
+      // the air in front of it; the arm is a clamp, so what it holds should ride
+      // where the forks are.
+      gripStrength: 26,
+      gripImpulseCap: 220,
+      gripAngularDamping: 11, // and it should not loll about while it is up there
       throwScale: 0.6, // share of the arm's tip speed handed over on release
       downforceLbs: 250, // magnets: very hard to shove or flip
       dims: { x: 0.2632, y: 0.2632, z: 0.6579 },
       // MEASURED: at -0.9 the jaw shuts onto the red fork tip it grips against.
       claw: { openAngle: 0, closedAngle: -0.9, clampSeconds: 0.25 },
-      tuning: { reach: 1.8421, holdDamagePerSecond: 3 },
+      // holdDamagePerSecond 0: the forks are blunt and holding is not an attack.
+      // Claw Viper's damage comes from what it does WITH a bot it has picked up
+      // — set it down on the screws, carry it into a wall, drop it from the top
+      // of the lift — all of which the arena hazards and the impact router
+      // charge for already.
+      tuning: { reach: 1.8421, holdDamagePerSecond: 0 },
     },
     colliders: [
       { shape: "box", halfExtents: { x: 1.3158, y: 0.3158, z: 1.7369 }, offset: { x: 0, y: 0.3553, z: 0.2895 } },
@@ -1635,7 +1646,9 @@ export const CATALOG = {
       lowerSeconds: 0.8,
       gripReach: 1.6888,
       gripHeight: 0.4222,
-      gripStrength: 15,
+      gripStrength: 24, // see Claw Viper: a clamped bot rides where the forks are
+      gripImpulseCap: 200,
+      gripAngularDamping: 10,
       throwScale: 0.55,
       dims: { x: 0.2111, y: 0.2111, z: 0.5278 },
       selfRight: true,
@@ -1644,7 +1657,7 @@ export const CATALOG = {
       // nor clamp. 0.5 stands it up and open — the horse-head pose it carries
       // into a fight — and -0.2 brings it down onto the forks.
       claw: { openAngle: 0.5, closedAngle: -0.2, clampSeconds: 0.3 },
-      tuning: { reach: 1.6888, holdDamagePerSecond: 3 },
+      tuning: { reach: 1.6888, holdDamagePerSecond: 0 }, // see Claw Viper: a grappler's hold is not an attack
     },
     colliders: [
       // MEASURED front skirt: z -1.58..-0.86 at y 0.20-0.44, authored down to
@@ -2051,7 +2064,7 @@ export const CATALOG = {
     // NOT rotate and it wants to lie back over the tail rather than stick out
     // sideways where it reads as a broken antenna.
     modelYaw: 1.6912,
-    modelScale: 4.2579,
+    modelScale: 4.1109,
     // The SHELL is what gets scaled to widthFt, not the overall bbox, and it is
     // also what the footprint centres on: modelBody here is the passive
     // self-righting pole, and that pole arcs out sideways far enough to shove
@@ -2065,19 +2078,27 @@ export const CATALOG = {
       team: "Robotic Death Company", from: "Oceanside, CA",
       weightLbs: 250,
       topSpeedMph: 12, topSpeedSource: "class-estimate",
-      size: { widthFt: 3.35, lengthFt: 3.35, heightFt: 1.1613, source: "class-estimate" },
+      // 3.47 drawn -> 3.35. The model was scaled 3.6% wider than this entry
+      // claimed, and every collider and pivot in it had been authored to the
+      // drawn 3.47, so the numbers agreed with each other and disagreed with
+      // widthFt. Everything moved together rather than widthFt alone.
+      //
+      // A round shell, so lengthFt IS the diameter and tracks widthFt; the
+      // model's drawn z-extent is 3.87 only because the self-righting pole arcs
+      // out behind the dome, and that pole is not the machine's footprint.
+      size: { widthFt: 3.35, lengthFt: 3.35, heightFt: 1.1212, source: "class-estimate" },
       weapon: { name: "Full-body shell", weightLbs: 120, tipSpeedMph: 188, rpm: null },
       drive: "2x TP5680 brushless", power: null,
     },
 
     weightLbs: 250,
     weaponWeightLbs: 120,
-    bodyDims: { x: 3.4762, y: 1.1613, z: 3.4594 }, // MEASURED shell, after gigabyte-round.json made it circular
+    bodyDims: { x: 3.3562, y: 1.1212, z: 3.34 }, // MEASURED shell, after gigabyte-round.json made it circular
     wheelAnchors: [
-      { x: -1.3958, y: 0.21, z: -0.6142 },
-      { x: 1.3958, y: 0.21, z: -0.6142 },
-      { x: -1.3958, y: 0.21, z: 0.6142 },
-      { x: 1.3958, y: 0.21, z: 0.6142 },
+      { x: -1.3476, y: 0.21, z: -0.593 },
+      { x: 1.3476, y: 0.21, z: -0.593 },
+      { x: -1.3476, y: 0.21, z: 0.593 },
+      { x: 1.3476, y: 0.21, z: 0.593 },
     ],
     maxSpeedFps: mph(6.96), // 10.21 fps
     accel: 5.5,
@@ -2086,7 +2107,7 @@ export const CATALOG = {
     accentDark: "#121214",
     weapon: {
       type: "shellSpinner",
-      pivot: { x: -0.0134, y: 0.7247, z: -0.0849 }, // MEASURED shell centre, game space
+      pivot: { x: -0.0129, y: 0.6997, z: -0.082 }, // MEASURED shell centre, game space
       axis: { x: 0, y: 1, z: 0 }, // VERTICAL — the only weapon in the game that is
       // Six seconds is the published spin-up and it is the whole risk of the
       // machine: before it is up it is a 250lb dome with two wheels.
@@ -2099,8 +2120,8 @@ export const CATALOG = {
       // unsteerable once up to speed is the price of the six-second wind-up.
       recoilScale: 1.8,
       gyroPenalty: 0.55,
-      radius: 1.7308, // MEASURED shell radius x the 3.35ft resize (teeth reach 1.81)
-      dims: { x: 1.7353, y: 0.5807, z: 1.7353 },
+      radius: 1.671, // MEASURED shell radius x the 3.35ft resize (teeth reach 1.81)
+      dims: { x: 1.6754, y: 0.5607, z: 1.6754 },
       // The shell is the roof, which is the one way in to a spun-up full-body
       // spinner: a hammer that comes down square on the rim drives it into the
       // chassis and the rotor stops dead. No other weapon in the catalog sets
@@ -2108,7 +2129,7 @@ export const CATALOG = {
       // overhead blow glances off it. `radius` is how far out from the bot's
       // centre the head still lands on the spinning face; it is the shell, not
       // the teeth, because a hit on the rim itself is a graze.
-      overheadStall: { radius: 1.5633, minPower: 0.45, seconds: 2.0 },
+      overheadStall: { radius: 1.5093, minPower: 0.45, seconds: 2.0 },
       // Tombstone's chain, sized for a rotor half again as heavy. Gigabyte hits
       // harder than the bar does — that is the whole bot — but the hit is the
       // same KIND of hit: a horizontal spinner throws you sideways and doesn't
@@ -2129,7 +2150,7 @@ export const CATALOG = {
     // The pole is the only part that does not rotate and it never reaches the
     // floor, so it gets no collider of its own.
     colliders: [
-      { shape: "cylinder", axis: "y", radius: 1.7308, halfHeight: 0.5583, offset: { x: 0, y: 0.5583, z: 0 } },
+      { shape: "cylinder", axis: "y", radius: 1.671, halfHeight: 0.539, offset: { x: 0, y: 0.539, z: 0 } },
     ],
   },
 
@@ -2299,7 +2320,7 @@ export const CATALOG = {
     // Was Math.PI, which had it driving tail-first. The grabber arm and the
     // dragon's head lead; the saw arms rake back over the body behind them.
     modelYaw: 0,
-    modelScale: 3.949,
+    modelScale: 4.7867,
     hideWheels: true, // tracked pods, rigged as modelAux-pods
     // --- the real machine ---------------------------------------------
     // Built by Jerome Miles (Team Duct Tape) as the successor to Red Devil, for
@@ -2310,7 +2331,15 @@ export const CATALOG = {
       team: "Bot Bash Party Crew", from: "Birmingham, AL",
       weightLbs: 250,
       topSpeedMph: 8, topSpeedSource: "class-estimate",
-      size: { widthFt: 3.3, lengthFt: 4.19, heightFt: 1.95, source: "class-estimate" },
+      // 3.3 -> 4.0 wide. lengthFt is the CHECK (see SIZING) and this entry was
+      // failing it badly: 4.19 claimed against 2.86 drawn. The model is not
+      // wrong — a long black arm the scan invented was carved off the back — so
+      // the robot really is that much shorter than the old estimate, and
+      // scaling on width brings the whole machine up to a size that matches a
+      // 250lb tracked bot with two pods and a head. Length and height are
+      // re-quoted from the drawn model rather than carried through from the
+      // estimate they falsified.
+      size: { widthFt: 4, lengthFt: 3.4607, heightFt: 2.3592, source: "class-estimate" },
       weapon: { name: "Twin saws", weightLbs: null, tipSpeedMph: null, rpm: null },
       drive: "2x rotating tracked pods", power: null,
     },
@@ -2320,12 +2349,18 @@ export const CATALOG = {
     // MEASURED with the pods in their rest position. The real bounding box
     // CHANGES with pod angle — the pods rotate to reconfigure the stance, lift
     // the body and self-right — so this is the rest stance, not a fixed truth.
-    bodyDims: { x: 3.300, y: 1.946, z: 4.186 },
+    // z re-measured off the drawn model (3.46) rather than carried through from
+    // the old 4.19 estimate, which the model contradicts by a third — see the
+    // note on realWorld.size. It is not cosmetic: bodyDims sets the pitch and
+    // yaw inertia, puts the centre of mass at 0.08 * z, and sizes the weapon's
+    // front zone, so a bot declared a foot and a half longer than it is drawn
+    // turns like a longer machine and reaches further than it looks.
+    bodyDims: { x: 4, y: 2.3588, z: 3.4607 },
     wheelAnchors: [
-      { x: -1.30, y: 0.21, z: -1.10 },
-      { x: 1.30, y: 0.21, z: -1.10 },
-      { x: -1.30, y: 0.21, z: 0.35 },
-      { x: 1.30, y: 0.21, z: 0.35 },
+      { x: -1.5758, y: 0.21, z: -1.3333 },
+      { x: 1.5758, y: 0.21, z: -1.3333 },
+      { x: -1.5758, y: 0.21, z: 0.4242 },
+      { x: 1.5758, y: 0.21, z: 0.4242 },
     ],
     maxSpeedFps: mph(4.64), // 6.81 fps
     accel: 4.5,
@@ -2353,10 +2388,10 @@ export const CATALOG = {
     // or the wheels and the track disagree: the band advances the distance
     // travelled whatever this says, but the sprocket turns by wheelSpin, which
     // is that distance divided by this.
-    wheelRadius: 0.293,
+    wheelRadius: 0.3552,
     weapon: {
       type: "sawArms",
-      pivot: { x: 0.007, y: 0.659, z: 0.107 }, // MEASURED arm base, game space
+      pivot: { x: 0.0085, y: 0.7988, z: 0.1297 }, // MEASURED arm base, game space
       axis: { x: 1, y: 0, z: 0 },
       restAngle: 0, // baked arms RAISED — the stroke DROPS them, like a hammer
       // NEGATIVE, because the saws come down in FRONT of him. A positive angle
@@ -2367,13 +2402,13 @@ export const CATALOG = {
       fireAngle: -1.4, // ~80 degrees down onto a held opponent
       spinUpSeconds: 1.0,
       budgetCap: 180,
-      radius: 1.291, // MEASURED swept radius of the arms about their base
-      dims: { x: 0.716, y: 0.658, z: 0.568 },
+      radius: 1.5648, // MEASURED swept radius of the arms about their base
+      dims: { x: 0.8679, y: 0.7976, z: 0.6885 },
       // The blades keep spinning whatever the arms are doing, so they are their
       // own nested group. They do nothing without a grip — that IS the bot.
       sub: {
         node: "modelWeaponSub-sawLeft + modelWeaponSub-sawRight",
-        pivot: { x: 0.007, y: 1.409, z: 0.186 }, // MEASURED, both blades share this line
+        pivot: { x: 0.0085, y: 1.7079, z: 0.2255 }, // MEASURED, both blades share this line
         axis: { x: 1, y: 0, z: 0 },
         // They do NOT share an axle. The blades lean 6.9 degrees off horizontal
         // in OPPOSITE directions — a shallow V, and symmetric to 0.002, which is
@@ -2387,9 +2422,19 @@ export const CATALOG = {
           sawLeft: { x: 0.9927, y: 0.1204, z: 0.0034 },
           sawRight: { x: 0.9929, y: -0.1187, z: -0.0028 },
         },
-        spinUpSeconds: 1.0, damagePerSecond: 14, requiresGrip: true,
+        // MEASURED swept radius of one blade about its own axle: 0.1477 model
+        // units against modelScale 4.7867. The sim tests the hub against the
+        // victim's chassis box at this radius, which is what makes the blades
+        // cut what they actually reach — including behind the robot when LT
+        // rears it up and swings them over the top.
+        radius: 0.707,
+        // A bot the jaw is holding takes the full rate: it cannot drive away
+        // from a running saw. Anything else the blades merely touch takes this
+        // share of it.
+        looseCutScale: 0.6,
+        spinUpSeconds: 1.0, damagePerSecond: 14,
       },
-      tuning: { strokeSeconds: 0.4, returnSeconds: 0.7, gripReach: 2.2 },
+      tuning: { strokeSeconds: 0.4, returnSeconds: 0.7, gripReach: 2.6667 },
     },
     // MEASURED aux pivots, game space. The jaw is the enabling weapon; the pods
     // rotate as whole units and drive the self-right.
@@ -2415,7 +2460,7 @@ export const CATALOG = {
     // the same point, which is what makes the render's counter-rotation cancel
     // exactly instead of leaving the pods skating forward under a rising body.
     lift: {
-      pivot: { x: 0.003, y: 0.128, z: 1.155 },
+      pivot: { x: 0.0036, y: 0.1552, z: 1.4 },
       maxAngleDeg: 90, seconds: 0.9, gain: 70, damping: 8.0, maxAccel: 150,
     },
     aux: {
@@ -2425,8 +2470,8 @@ export const CATALOG = {
       // The mechanism's angle is how far OPEN it is — rest is shut — so the
       // snout swings UP off the scoop, which is +x about the hinge.
       jaw: { node: "modelAux-jaw", axis: { x: 1, y: 0, z: 0 },
-             pivot: { x: 0, y: 0.138, z: -0.956 }, openAngle: 0.62, seconds: 0.4,
-             reach: 1.9, clampForce: 260, holdStrength: 9, breakDistance: 3.2 },
+             pivot: { x: 0, y: 0.1673, z: -1.1588 }, openAngle: 0.62, seconds: 0.4,
+             reach: 2.303, clampForce: 260, holdStrength: 9, breakDistance: 3.2 },
       // Holds the pods AND the cross bar they are joined by (parts 2, 3 and 4,
       // moved here out of modelBody). The bar is the axle: it cannot be part of
       // what swings, or rearing up carries it down through the floor and stands
@@ -2434,17 +2479,17 @@ export const CATALOG = {
       // lift.pivot, which is what makes the counter-rotation cancel exactly
       // instead of leaving the pods skating forward as the body comes up.
       pods: { node: "modelAux-pods", axis: { x: 1, y: 0, z: 0 },
-              pivot: { x: 0.003, y: 0.128, z: 1.155 }, range: 2.2, seconds: 0.8,
+              pivot: { x: 0.0036, y: 0.1552, z: 1.4 }, range: 2.2, seconds: 0.8,
               drivesSelfRight: true },
     },
     // Re-authored for the flip: what used to be the tail leads now, so the
     // wedge moved to the OTHER end. A wedge's slope is baked front-to-back, so
     // mirroring its offset alone would have left it facing backwards.
     colliders: [
-      { shape: "wedge", halfExtents: { x: 1.05, y: 0.20, z: 0.45 }, offset: { x: 0, y: 0.20, z: -1.10 }, tipY: 0.02 },
-      { shape: "box", halfExtents: { x: 1.05, y: 0.28, z: 1.20 }, offset: { x: 0, y: 0.28, z: 0.20 } },
-      { shape: "box", halfExtents: { x: 0.68, y: 0.52, z: 0.68 }, offset: { x: 0, y: 0.52, z: 0.17 } },
-      { shape: "box", halfExtents: { x: 1.65, y: 0.27, z: 1.01 }, offset: { x: 0, y: 0.27, z: 0.45 } },
+      { shape: "wedge", halfExtents: { x: 1.2727, y: 0.2424, z: 0.5455 }, offset: { x: 0, y: 0.2424, z: -1.3333 }, tipY: 0.0242 },
+      { shape: "box", halfExtents: { x: 1.2727, y: 0.3394, z: 1.4545 }, offset: { x: 0, y: 0.3394, z: 0.2424 } },
+      { shape: "box", halfExtents: { x: 0.8242, y: 0.6303, z: 0.8242 }, offset: { x: 0, y: 0.6303, z: 0.2061 } },
+      { shape: "box", halfExtents: { x: 2, y: 0.3273, z: 1.2242 }, offset: { x: 0, y: 0.3273, z: 0.5455 } },
     ],
   },
 };

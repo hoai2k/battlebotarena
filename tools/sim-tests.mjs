@@ -1313,12 +1313,11 @@ await test("sizing: every bot is drawn at the width its catalog entry claims", a
   // from bodyDims, so this also catches a bodyDims.x edited without a resize.
   const { CATALOG, BOT_IDS } = await import("../src/assets/catalog.js");
   const { readFileSync } = await import("node:fs");
-  // Known and NOT yet decided. Gigabyte is drawn 3.6% wider than it claims; its
-  // colliders were authored to the drawn 3.47 (halfExtents.x 1.7308 doubled),
-  // so the solid and the picture agree with each other and only widthFt is the
-  // odd one out. Fixing it is a choice between correcting the claim and
-  // shrinking the bot, which is a sizing decision, not a bug fix.
-  const KNOWN = { gigabyte: 1.036 };
+  // No exceptions. Gigabyte used to be one — drawn 3.6% wider than it claimed,
+  // with its colliders authored to the drawn 3.47 so the solid and the picture
+  // agreed and only widthFt was the odd one out — and it was resized to the
+  // 3.35 it always said it was.
+  const KNOWN = {};
   for (const id of BOT_IDS) {
     const spec = CATALOG[id];
     const glb = readFileSync(new URL(`../public${spec.modelPath.replace("./public", "")}`, import.meta.url));
@@ -1334,7 +1333,7 @@ await test("sizing: every bot is drawn at the width its catalog entry claims", a
     const ratio = (sx * scale) / want;
     const allowed = KNOWN[id] ?? 1;
     check(Math.abs(ratio / allowed - 1) < 0.01,
-      `${id} is drawn at its stated width${KNOWN[id] ? " (known exception)" : ""}`,
+      `${id} is drawn at its stated width`,
       `${(sx * scale).toFixed(3)}ft drawn vs widthFt ${want} — ratio ${ratio.toFixed(3)}, expected ${allowed}`);
   }
 });
@@ -1386,7 +1385,7 @@ await test("tracked bots: the drive sprockets are real parts that can turn", asy
   }
 });
 
-await test("dragon king: the jaw grips, tows, and the saws only cut what it holds", async () => {
+await test("dragon king: the jaw grips and tows, and the saws cut what they touch", async () => {
   const { CATALOG } = await import("../src/assets/catalog.js");
   const spec = CATALOG.dragonking;
   await withSim([spec, CATALOG.bronco], (sim, events) => {
@@ -1407,15 +1406,41 @@ await test("dragon king: the jaw grips, tows, and the saws only cut what it hold
     const towed = sim._test.body(1).translation().z - before.z;
     check(towed > 1.5, "a bitten bot gets hauled, not just pinned", `moved ${towed.toFixed(2)}ft`);
 
-    // Saws only bite with the arms down on it.
+    // Arms raked back over the deck: the blades are nowhere near a bot held out
+    // in front of the mouth, so nothing should be cut.
     events.length = 0;
     frames(sim, 180, [{ sawActive: true, auxActive: false }, {}]);
     const armsUp = events.filter((e) => e.type === EV.WEAPON_HIT).length;
+    // Arms down on it.
     events.length = 0;
     frames(sim, 180, [{ sawActive: true, auxActive: true }, {}]);
     const armsDown = events.filter((e) => e.type === EV.WEAPON_HIT).length;
     check(armsDown > armsUp * 3, "the saws cut when the arms are down on the held bot",
       `${armsDown} hits with the arms down vs ${armsUp} with them up`);
+  });
+
+  // And they cut what they merely TOUCH. They used to cut only what the jaw was
+  // holding, so a blade could pass clean through an opponent and do nothing —
+  // the bite is hard to land, and the two mechanisms are not the same machine.
+  await withSim([spec, CATALOG.bronco], (sim, events) => {
+    sim._test.setPose(0, { x: 0, z: 0 }, 0);
+    sim._test.setPose(1, { x: 0, z: -3.0 }, Math.PI);
+    frames(sim, 60);
+    check(!sim._test.weapons[0].isGripping(), "nothing is held");
+    events.length = 0;
+    // Drive into it with the blades running and the arms down on it. The saws
+    // reach barely past the head, so this is a shove-and-cut, not a stand-off.
+    frames(sim, 300, [{ sawActive: true, auxActive: true, leftDrive: 1, rightDrive: 1 }, {}]);
+    const hits = events.filter((e) => e.type === EV.WEAPON_HIT && e.payload.targetIndex === 1);
+    check(hits.length > 0, "a bot the blades reach takes damage without being bitten",
+      `${hits.length} hits`);
+    // Blades stopped: touching is not enough on its own. Let the spin bleed off
+    // first — it coasts down over 1.6s and still cuts on the way.
+    frames(sim, 150, [{ sawActive: false, auxActive: true }, {}]);
+    events.length = 0;
+    frames(sim, 300, [{ sawActive: false, auxActive: true, leftDrive: 1, rightDrive: 1 }, {}]);
+    const idle = events.filter((e) => e.type === EV.WEAPON_HIT && e.payload.targetIndex === 1).length;
+    check(idle === 0, "and stationary blades cut nothing", `${idle} hits with the saws off`);
   });
 });
 
@@ -1540,6 +1565,140 @@ await test("a weapon channel survives the whole way from the pad to the renderer
     check(out.brake !== true, "and does not also brake this bot");
     out = press({ weapon: true }); // RT: the jaw latch
     check(out.weapon === true, "RT reaches it as the jaw latch");
+  });
+});
+
+await test("claw viper: driving does not hurt it, holding does not hurt them", async () => {
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const { createMatch } = await import("../src/game/match.js");
+  const spec = CATALOG.clawviper;
+
+  // A real bus, so the match actually hears what the sim emits. Passing a stub
+  // `on` builds a match that receives no events and therefore reports no damage
+  // whatever happens, which is a green test that checks nothing.
+  const wired = async (specs, fn) => {
+    const events = [];
+    const handlers = new Map();
+    const on = (type, handler) => {
+      if (!handlers.has(type)) handlers.set(type, []);
+      handlers.get(type).push(handler);
+      return () => {};
+    };
+    const emit = (type, payload) => {
+      events.push({ type, payload });
+      (handlers.get(type) || []).forEach((handler) => handler(payload));
+    };
+    const sim = await createSim({ bots: specs, emit });
+    const match = createMatch({ sim, specs, emit, on });
+    match.start();
+    const tick = (inputs = [{}, {}]) => {
+      sim.stepFrame(1 / 60, match.filterInputs(inputs));
+      match.update(1 / 60);
+    };
+    try { return await fn({ sim, match, tick, events, busEmit: emit }); } finally { sim.dispose(); }
+  };
+
+  // 1. Sliding along a surface is not hitting it. 250lbf of magnets keep Claw
+  //    Viper's floor pan in contact the whole time it moves and its 17ft/s top
+  //    speed runs right at the 14ft/s floor-slam threshold, so with the slam
+  //    judged on the pair's total relative speed rather than on the speed INTO
+  //    the floor, anything that nudged it over billed it for driving.
+  await wired([spec, CATALOG.bronco], ({ sim, match, tick, events, busEmit }) => {
+    sim._test.setPose(1, { x: 0, z: 40 }, 0); // far away: nothing to run into
+    for (let i = 0; i < 300; i++) tick(); // out of the countdown
+    check(match.getState().phase === "fight", "the match reached fight");
+    const clean = match.getState().bots[0].total;
+    events.length = 0;
+    for (let lap = 0; lap < 4; lap++) {
+      for (let i = 0; i < 90; i++) tick([{ leftDrive: 1, rightDrive: 1 }, {}]);
+      for (let i = 0; i < 30; i++) tick([{ leftDrive: 1, rightDrive: -1 }, {}]);
+    }
+    const took = match.getState().bots[0].total - clean;
+    check(took < 1, "driving around costs Claw Viper nothing", `took ${took.toFixed(1)}% over 8s of driving`);
+    // And the sim reported the distinction rather than the match hiding it: the
+    // floor contacts are fast ACROSS the floor and slow into it.
+    const floor = events.filter((e) => e.type === EV.IMPACT && e.payload.surface === "floor");
+    check(floor.length > 0, "it really was scraping the floor", `${floor.length} floor contacts`);
+    const fastest = Math.max(...floor.map((e) => e.payload.relSpeed));
+    const hardest = Math.max(...floor.map((e) => e.payload.normalSpeed));
+    check(hardest < fastest / 2, "a fast slide reads as a slide, not as a slam",
+      `${fastest.toFixed(1)}ft/s across the floor, ${hardest.toFixed(1)}ft/s into it`);
+    // And the match's rule, stated directly: same pair of speeds, opposite
+    // meanings. Driving flat out across the floor is free; landing on it hurts.
+    const emitImpact = (payload) => busEmit(EV.IMPACT, payload);
+    check(match.getState().phase === "fight", "still fighting", match.getState().phase);
+    for (let i = 0; i < 30; i++) tick(); // clear any impact cooldown from the drive
+    const slideBase = match.getState().bots[0].total;
+    emitImpact({ botIndex: 0, otherIndex: null, surface: "floor", point: null, relSpeed: 30, normalSpeed: 1 });
+    check(match.getState().bots[0].total === slideBase, "a 30ft/s slide across the floor does no damage",
+      `took ${(match.getState().bots[0].total - slideBase).toFixed(1)}%`);
+    emitImpact({ botIndex: 0, otherIndex: null, surface: "floor", point: null, relSpeed: 1, normalSpeed: 30 });
+    check(match.getState().bots[0].total > slideBase, "a 30ft/s drop onto it does",
+      `took ${(match.getState().bots[0].total - slideBase).toFixed(1)}%`);
+  });
+
+  // 2. Both machines pay for a ram. The router reports a bot-on-bot impact once,
+  //    under the LOWER of the two indices, so charging only that one meant every
+  //    ram was paid for by player one — including the ones they initiated — and
+  //    never by player two. Driven synthetically because a real ram barely
+  //    registers: the router reads the pair's velocities after the solver has
+  //    already resolved the contact, so a 17ft/s head-on reports about 2.7ft/s
+  //    of closing speed and lands under the damage threshold either way.
+  await wired([spec, CATALOG.bronco], ({ match, tick, busEmit }) => {
+    for (let i = 0; i < 300; i++) tick();
+    const before = match.getState().bots.map((b) => b.total);
+    busEmit(EV.IMPACT, { botIndex: 0, otherIndex: 1, surface: "bot", point: null, relSpeed: 24, normalSpeed: 24 });
+    const took = match.getState().bots.map((b, i) => b.total - before[i]);
+    check(took[0] > 0 && took[1] > 0, "a bot-on-bot impact is charged to both of them",
+      `${took[0].toFixed(1)}% and ${took[1].toFixed(1)}%`);
+  });
+
+  // 2. Holding a bot is not an attack. The forks are blunt; the damage comes
+  //    from what you do WITH what you have picked up.
+  check((spec.weapon.tuning?.holdDamagePerSecond ?? 0) === 0,
+    "a grappler's hold does no damage of its own",
+    `holdDamagePerSecond ${spec.weapon.tuning?.holdDamagePerSecond}`);
+  const grapplers = Object.values(CATALOG).filter((b) => b.weapon?.type === "grappler");
+  for (const bot of grapplers) {
+    check((bot.weapon.tuning?.holdDamagePerSecond ?? 0) === 0, `${bot.id}: same`,
+      `holdDamagePerSecond ${bot.weapon.tuning?.holdDamagePerSecond}`);
+  }
+
+  // 3. What it clamps rides ON the forks. A soft servo leaves a 250lb machine
+  //    lagging the fork tip through a turn and keeping whatever spin it arrived
+  //    with, which reads as floating in front of the arm rather than held by it.
+  await withSim([spec, CATALOG.bronco], (sim) => {
+    const m = sim._test;
+    m.setPose(0, { x: 0, z: 0 }, 0);
+    m.setPose(1, { x: 0, z: -3.0 }, Math.PI);
+    frames(sim, 60);
+    const weapon = m.weapons[0];
+    // Drive on with the jaw closing, then lift.
+    frames(sim, 90, [{ sawActive: true, leftDrive: 1, rightDrive: 1 }, {}]);
+    check(weapon.isGripping(), "it gets a grip");
+    frames(sim, 120, [{ sawActive: true, weapon: true }, {}]); // hold the clamp, raise the arm
+    // Now turn hard and see whether the victim comes with it.
+    let worstGap = 0;
+    let worstSpinGap = 0;
+    for (let i = 0; i < 120; i++) {
+      sim.stepFrame(1 / 60, [{ sawActive: true, weapon: true, leftDrive: 1, rightDrive: -1 }, {}]);
+      if (!weapon.isGripping()) break;
+      const carrier = m.body(0);
+      const victim = m.body(1);
+      const gap = Math.hypot(
+        victim.translation().x - carrier.translation().x,
+        victim.translation().z - carrier.translation().z,
+      );
+      worstGap = Math.max(worstGap, gap);
+      const a = carrier.angvel();
+      const b = victim.angvel();
+      worstSpinGap = Math.max(worstSpinGap, Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z));
+    }
+    check(weapon.isGripping(), "and keeps it through a hard turn");
+    check(worstGap < spec.weapon.gripReach + 1.6, "the victim stays on the forks, not trailing behind them",
+      `worst gap ${worstGap.toFixed(2)}ft against a ${spec.weapon.gripReach.toFixed(2)}ft reach`);
+    check(worstSpinGap < 3.5, "and turns with the carrier instead of lolling",
+      `worst angular gap ${worstSpinGap.toFixed(2)} rad/s`);
   });
 });
 

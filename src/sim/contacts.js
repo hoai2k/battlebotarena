@@ -64,6 +64,14 @@ export function createContactRouter({ world, meta, emit }) {
     const normal = contact ? contact.normal : { x: 0, y: 1, z: 0 };
     const relVel = m.sub(bodyVelocityAt(bot.collider), bodyVelocityAt(other.collider));
     emit(EV.IMPACT, {
+      // How fast the two things are closing ALONG THE CONTACT NORMAL. This is
+      // the number that says whether something was hit; relSpeed below says how
+      // fast the pair were moving relative to each other, which for anything
+      // sliding is almost all tangential. Claw Viper is the case that made the
+      // difference matter: 250lbf of magnets holding a 17fps chassis down means
+      // its floor pan is in contact the whole time it drives, and judged on
+      // relSpeed alone every one of those scrapes read as a 17fps floor slam.
+      normalSpeed: Math.abs(m.dot(relVel, normal)),
       botIndex: other.kind === "bot" ? Math.min(bot.botIndex, other.botIndex) : bot.botIndex,
       otherIndex: other.kind === "bot" ? Math.max(bot.botIndex, other.botIndex) : null,
       surface: other.kind === "bot" ? "bot" : other.surface,

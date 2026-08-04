@@ -1023,14 +1023,59 @@ function createSawArms({ vehicle, index, emit }) {
     foe.body.applyImpulseAtPoint(m.scale(UP, -(jawCfg.clampForce ?? 260) * dt), jawPoint, true);
   }
 
-  /** The saws only cut what is held, and only with the arms down on it. */
+  /**
+   * Where the blades ARE, in world space, following the arms.
+   *
+   * The arms swing about weapon.pivot through weapon.axis by restAngle ->
+   * fireAngle, exactly as the renderer poses them, so the blade hub goes wherever
+   * the picture puts it — down in front when LB is held, back over the deck at
+   * rest, and out behind the robot when LT rears the chassis up, because the
+   * whole thing is then carried by the body's own rotation.
+   */
+  function sawHubWorld() {
+    const axis = m.norm(w.axis ?? { x: 1, y: 0, z: 0 }, { x: 1, y: 0, z: 0 });
+    const angle = (w.restAngle ?? 0) + armStroke * ((w.fireAngle ?? 0) - (w.restAngle ?? 0));
+    const arm = m.sub(sub.pivot ?? w.pivot, w.pivot);
+    const local = m.add(w.pivot, m.qRotate(m.qFromAxisAngle(axis, angle), arm));
+    return m.add(vehicle.body.translation(), m.qRotate(vehicle.body.rotation(), local));
+  }
+
+  /**
+   * Distance from a world point to a bot's chassis box, measured in that bot's
+   * own frame. A blade touching the corner of a machine is touching it; a sphere
+   * around the victim's centre is not the same question and gets both the near
+   * misses and the buried-inside cases wrong.
+   */
+  function distanceToChassis(foe, worldPoint) {
+    const p = toLocal(foe, worldPoint);
+    const d = foe.spec.bodyDims;
+    const near = {
+      x: m.clamp(p.x, -d.x / 2, d.x / 2),
+      y: m.clamp(p.y, 0, d.y),
+      z: m.clamp(p.z, -d.z / 2, d.z / 2),
+    };
+    return m.length(m.sub(p, near));
+  }
+
+  /**
+   * The saws cut what they TOUCH. They used to cut only what the jaw was
+   * holding, which meant blades could pass clean through an opponent — the bite
+   * is hard to land, and the two mechanisms are not the same machine. Holding is
+   * still the payoff (a pinned bot cannot drive away from a running saw, and the
+   * rate goes up), but it is no longer the price of admission.
+   */
   function grind(foe, simTime) {
-    if (!gripped || sawSpin < 0.5 || armStroke < 0.5) return;
+    if (sawSpin < 0.35) return;
     if (simTime - lastGrindAt < TU.hammerGrindTickSeconds) return;
-    const local = toLocal(vehicle, foe.body.translation());
-    if (!localZoneContains(zone, local)) return;
+    const contact = distanceToChassis(foe, sawHubWorld()) <= (sub.radius ?? 0.7);
+    // The held-bot path keeps the old loose zone test: a bot clamped in the jaw
+    // is by definition in front of the mouth, and it should not stop taking the
+    // saw because the blade hub is an inch outside its hull.
+    const held = gripped && armStroke >= 0.5
+      && localZoneContains(zone, toLocal(vehicle, foe.body.translation()));
+    if (!contact && !held) return;
     lastGrindAt = simTime;
-    const rate = (sub.damagePerSecond ?? 14) * sawSpin * armStroke;
+    const rate = (sub.damagePerSecond ?? 14) * sawSpin * (held ? 1 : (sub.looseCutScale ?? 0.6));
     emit(EV.WEAPON_HIT, {
       attackerIndex: index,
       targetIndex: foe.index,
@@ -1519,15 +1564,33 @@ function createGrappler({ vehicle, index, emit }) {
       foe.body.applyImpulse(pull, true);
       // Hoisting 250lb has to be felt at the hinge, or the lift is free.
       vehicle.body.applyImpulseAtPoint(m.scale(pull, -1), armWorld(w.pivot), true);
+      // A clamped bot is CLAMPED. The linear servo alone leaves it free to
+      // rotate, and a 250lb machine that keeps whatever spin it arrived with
+      // wanders and lolls on the forks — it reads as floating in front of the
+      // arm rather than held by it. Bleed its angular velocity toward the
+      // carrier's so the pair turns as one piece, paid for at the hinge like
+      // everything else the arm does.
+      const gripDamping = w.gripAngularDamping ?? 9;
+      const spinGap = m.sub(vehicle.body.angvel(), foe.body.angvel());
+      const foeInertia = (foe.inertia?.y ?? foe.mass) * Math.min(1, dt * gripDamping);
+      const twist = m.scale(spinGap, foeInertia);
+      foe.body.applyTorqueImpulse(twist, true);
+      vehicle.body.applyTorqueImpulse(m.scale(twist, -0.35), true);
 
-      if (simTime - lastTickAt >= TU.crusherTickSeconds) {
+      // Holding does NOT hurt. A grappler's forks are blunt — a lifter that
+      // ground its victim down just by keeping hold of it made the arm a
+      // damage weapon you never had to aim, and made the interesting move (put
+      // them on the screws, drop them from height, throw them into a wall)
+      // pointless. Damage comes from where you PUT them, which the arena's own
+      // hazards and the impact router already charge for.
+      if (tune.holdDamagePerSecond > 0 && simTime - lastTickAt >= TU.crusherTickSeconds) {
         lastTickAt = simTime;
         emit(EV.WEAPON_HIT, {
           attackerIndex: index,
           targetIndex: foe.index,
           point: target,
           normal: m.v3(0, -1, 0),
-          impulse: damageImpulseForRate(tune.holdDamagePerSecond || 3, TU.crusherTickSeconds),
+          impulse: damageImpulseForRate(tune.holdDamagePerSecond, TU.crusherTickSeconds),
           appliedImpulse: 0,
           energyBefore: 0,
           heavy: false,
