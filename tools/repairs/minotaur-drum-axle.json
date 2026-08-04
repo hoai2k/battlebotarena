@@ -1,0 +1,5 @@
+[
+  { "_comment": "The drum's pivot was the bounding-box centre of the weapon parts, which includes the teeth standing proud of the barrel and is therefore not the axle. Fitted instead — least-squares circle on the (x,y) cross-section, re-fitted while rejecting points more than 18% of the radius off, which is what the teeth are: centre (0.3020, 0.0128) radius 0.0936 from 13438 of 15747 vertices, an 85% agreement. The old y was 0.0229, i.e. 0.0101ft off once scaled, or 11% of the drum's own radius — small, and exactly the size that reads as a rotor running out of true rather than as an obvious mistake.",
+    "mode": "pivot", "node": "modelWeapon",
+    "pivotLocal": [0.302, 0.0128, 0.04400334492675029] }
+]

@@ -1251,6 +1251,141 @@ await test("every animated weapon type is wired to something that moves it", asy
     missingSub.join(", "));
 });
 
+await test("a weapon channel survives the whole way from the pad to the renderer", async () => {
+  // Three layers sit between a trigger and a moving part, and each one can eat
+  // a channel silently: game/weaponControls shapes the press, game/match's
+  // filterInputs gates it on the match phase and on damage, and main.js hands
+  // the result to the renderer. Dragon King's saws were dead at the LAST of
+  // those, and every check that stopped short of it said the feature worked.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const { createWeaponInputShaper } = await import("../src/game/weaponControls.js");
+  const { createMatch } = await import("../src/game/match.js");
+  const spec = CATALOG.dragonking;
+  await withSim([spec, CATALOG.bronco], (sim, events) => {
+    const shaper = createWeaponInputShaper();
+    const match = createMatch({ sim, specs: [spec, CATALOG.bronco], emit: () => {}, on: () => () => {} });
+    match.start();
+    // Out of the countdown, which zeroes every channel — the reason a probe that
+    // never reaches "fight" reports every mechanism as broken.
+    for (let i = 0; i < 300; i++) match.update(1 / 60);
+    check(match.getState().phase === "fight", "the match reached fight",
+      `phase ${match.getState().phase}`);
+
+    // A pad press, through the real shaper and the real filter.
+    const press = (raw) => match.filterInputs([shaper.shape(raw, spec, 0), {}])[0];
+    let out = press({ weaponAlt: true }); // RB down: rising edge latches the saws
+    check(out.sawActive === true, "RB reaches the sim as sawActive", JSON.stringify(out.sawActive));
+    out = press({}); // and stays latched after release
+    check(out.sawActive === true, "and stays latched when the button comes up");
+    out = press({ weaponAux: true });
+    check(out.auxActive === true, "LB reaches it as auxActive");
+    out = press({ weaponLift: true });
+    check(out.liftActive === true, "LT reaches it as liftActive, not as the brake");
+    check(out.brake !== true, "and does not also brake this bot");
+    out = press({ weapon: true }); // RT: the jaw latch
+    check(out.weapon === true, "RT reaches it as the jaw latch");
+  });
+});
+
+await test("a drum turns about its own axle, not its bounding box", async () => {
+  // A rotor part is never just the rotor: Tantrum's drum comes with the attack
+  // lip standing proud of the barrel, and the lip drags the bounding box off
+  // the axis. The partitioner has nothing better to offer — it uses the box
+  // centre — so a drum whose pivot was never corrected turns about a line it is
+  // not mounted on and wobbles. Fitting the barrel's own cross-section finds the
+  // real axle, and the fit is decisive rather than a judgement call: the points
+  // that disagree with it ARE the lip.
+  const fs = await import("node:fs");
+  const { CATALOG, BOT_IDS } = await import("../src/assets/catalog.js");
+
+  const readGlb = (file) => {
+    const buf = fs.readFileSync(new URL(`../public/models/${file}`, import.meta.url));
+    const jsonLen = buf.readUInt32LE(12);
+    const json = JSON.parse(buf.toString("utf8", 20, 20 + jsonLen).trim());
+    const binStart = 20 + ((jsonLen + 3) & ~3) + 8;
+    const COMP = { 5121: [Uint8Array, 1], 5123: [Uint16Array, 2], 5125: [Uint32Array, 4], 5126: [Float32Array, 4] };
+    const NUM = { SCALAR: 1, VEC2: 2, VEC3: 3 };
+    const positions = (node) => {
+      const acc = json.accessors[json.meshes[node.mesh].primitives[0].attributes.POSITION];
+      const view = json.bufferViews[acc.bufferView];
+      const [Ctor, bytes] = COMP[acc.componentType];
+      const n = NUM[acc.type];
+      const start = binStart + (view.byteOffset || 0) + (acc.byteOffset || 0);
+      const stride = view.byteStride || bytes * n;
+      const t = node.translation || [0, 0, 0];
+      const out = [];
+      for (let i = 0; i < acc.count; i++) {
+        const at = start + i * stride;
+        out.push([0, 1, 2].map((c) => new Ctor(buf.buffer, buf.byteOffset + at + c * bytes, 1)[0] + t[c]));
+      }
+      return out;
+    };
+    return { json, positions };
+  };
+
+  // Kasa circle fit, re-fitted while rejecting points off the circle. What it
+  // rejects is the lip; what it keeps is the barrel.
+  const fitCircle = (points) => {
+    let sel = points;
+    let c = [0, 0];
+    let r = 0;
+    for (let pass = 0; pass < 6; pass++) {
+      let Sx = 0, Sy = 0, Sxx = 0, Syy = 0, Sxy = 0, Sxxx = 0, Syyy = 0, Sxyy = 0, Sxxy = 0;
+      for (const [x, y] of sel) {
+        Sx += x; Sy += y; Sxx += x * x; Syy += y * y; Sxy += x * y;
+        Sxxx += x * x * x; Syyy += y * y * y; Sxyy += x * y * y; Sxxy += x * x * y;
+      }
+      const n = sel.length;
+      const A = n * Sxx - Sx * Sx, B = n * Sxy - Sx * Sy, C = n * Syy - Sy * Sy;
+      const D = 0.5 * (n * Sxyy - Sx * Syy + n * Sxxx - Sx * Sxx);
+      const E = 0.5 * (n * Sxxy - Sy * Sxx + n * Syyy - Sy * Syy);
+      const det = A * C - B * B;
+      if (!det) break;
+      c = [(D * C - B * E) / det, (A * E - B * D) / det];
+      r = sel.reduce((sum, [x, y]) => sum + Math.hypot(x - c[0], y - c[1]), 0) / n;
+      const keep = points.filter(([x, y]) => Math.abs(Math.hypot(x - c[0], y - c[1]) - r) < r * 0.18);
+      if (keep.length < 40) break;
+      sel = keep;
+    }
+    return { c, r, inliers: sel.length };
+  };
+
+  const checked = [];
+  const offenders = [];
+  for (const id of BOT_IDS) {
+    const spec = CATALOG[id];
+    if (spec.weapon?.type !== "drum") continue;
+    const { json, positions } = readGlb(`${id}.glb`);
+    const weapon = json.nodes.find((n) => n.name === "modelWeapon");
+    const pivot = weapon?.extras?.pivotLocal;
+    if (!pivot || !weapon.children?.length) continue;
+    // The biggest child is the barrel; the rest are pulleys and brackets.
+    const parts = weapon.children.map((i) => json.nodes[i]).filter((n) => n.mesh !== undefined);
+    if (!parts.length) continue;
+    const barrel = parts.reduce((best, n) => {
+      const count = json.accessors[json.meshes[n.mesh].primitives[0].attributes.POSITION].count;
+      return count > best.count ? { node: n, count } : best;
+    }, { node: null, count: 0 }).node;
+    const axis = weapon.extras.weaponAxis || [1, 0, 0];
+    // The two axes the rotor turns IN are the ones the axle is not along.
+    const along = axis.map((v) => Math.abs(v)).indexOf(Math.max(...axis.map((v) => Math.abs(v))));
+    const plane = [0, 1, 2].filter((a) => a !== along);
+    const flat = positions(barrel).map((p) => [p[plane[0]], p[plane[1]]]);
+    const fit = fitCircle(flat);
+    if (fit.inliers < flat.length * 0.5) continue; // not a solid of revolution
+    const off = Math.hypot(pivot[plane[0]] - fit.c[0], pivot[plane[1]] - fit.c[1]);
+    const scale = spec.modelScale ?? 1;
+    checked.push(`${id} ${(off * scale).toFixed(4)}ft (${((off / fit.r) * 100).toFixed(0)}% of r)`);
+    if (off >= fit.r * 0.06) {
+      offenders.push(`${id}: ${(off * scale).toFixed(4)}ft off a ${(fit.r * scale).toFixed(3)}ft axle`
+        + ` — ${((off / fit.r) * 100).toFixed(0)}% of the drum radius. Fitted axle`
+        + ` [${plane[0]}]=${fit.c[0].toFixed(4)} [${plane[1]}]=${fit.c[1].toFixed(4)}`);
+    }
+  }
+  check(checked.length > 0, "at least one drum was measurable", "no drum had a fittable barrel");
+  check(offenders.length === 0, "every drum turns about its own axle", offenders.join(" | "));
+});
+
 // ---------------------------------------------------------------------------
 
 const failed = results.filter((r) => !r.ok);
