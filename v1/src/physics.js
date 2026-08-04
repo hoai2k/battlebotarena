@@ -2043,14 +2043,57 @@ export function createPhysics({ THREE, RAPIER, now = null }) {
 
     // Dragon King rears its whole chassis up about the axle at the back of its
     // pods — the only way this machine reaches a bot BEHIND it.
-    if (weapon.aux?.lift && (weapon.liftAmount || 0) > 0.01) {
-      const { right } = yawBasis(fighter, THREE);
-      const targetPitch = (weapon.aux.lift.maxAngleDeg * Math.PI / 180) * weapon.liftAmount;
-      const pitch = Math.asin(clamp(-up.z * Math.sign(1), -1, 1));
-      const error = targetPitch - Math.abs(pitch);
-      if (error > 0.02 && grounded) {
-        const torque = clamp(error * mass * 1.6, 0, mass * 3.2);
-        fighter.rb.applyTorqueImpulse({ x: right.x * torque * dt * 60 * 0.02, y: 0, z: right.z * torque * dt * 60 * 0.02 }, true);
+    //
+    // A pitch servo, ported from v2's vehicle.js, and it has to be a servo
+    // rather than a shove for two reasons. A torque about the body's own
+    // lateral axis turns a free rigid body about its CENTRE OF MASS: the nose
+    // goes up and the tail goes DOWN, so the pods are driven through the floor
+    // and the whole robot jacks itself off it. And the gesture has to HOLD at
+    // an angle against gravity's restoring torque, which a fixed impulse
+    // cannot do. So: servo on angle, damped on rate, expressed as an angular
+    // ACCELERATION and scaled by the body's own pitch inertia, plus a second
+    // impulse that cancels the velocity the axle would otherwise pick up —
+    // which is what moves the instantaneous centre of rotation off the centre
+    // of mass and onto the axle.
+    const liftConfig = weapon.aux?.lift;
+    if (liftConfig) {
+      const stroke = clamp(weapon.liftAmount || 0, 0, 1);
+      const rotation = rigidRotation(fighter, THREE);
+      // Pitch off the body's own forward vector, signed so nose-up is positive
+      // whichever way the bot is facing. Positive rotation about the body's +X
+      // raises the nose, and both the angle and the rate are measured in that
+      // same sense — getting it backwards drives the nose into the floor.
+      const bodyForward = new THREE.Vector3(0, 0, -1).applyQuaternion(rotation);
+      const liftAngle = Math.asin(clamp(bodyForward.y, -1, 1));
+      const wanted = stroke * ((liftConfig.maxAngleDeg ?? 90) * Math.PI) / 180;
+      if (stroke > 0 || liftAngle > 0.02) {
+        const lateral = new THREE.Vector3(1, 0, 0).applyQuaternion(rotation);
+        const angvel = fighter.rb.angvel();
+        const pitchRate = lateral.x * angvel.x + lateral.y * angvel.y + lateral.z * angvel.z;
+        const accel = clamp(
+          (wanted - liftAngle) * (liftConfig.gain ?? 26) - pitchRate * (liftConfig.damping ?? 5.5),
+          -(liftConfig.maxAccel ?? 40),
+          liftConfig.maxAccel ?? 40,
+        );
+        // v1 leaves inertia to the collider stack, so the pitch inertia per
+        // unit mass travels with the bot's own body dimensions.
+        const inertiaX = mass * (liftConfig.inertiaScale ?? 0.9);
+        fighter.rb.applyTorqueImpulse({
+          x: lateral.x * inertiaX * accel * dt,
+          y: lateral.y * inertiaX * accel * dt,
+          z: lateral.z * inertiaX * accel * dt,
+        }, true);
+        if (liftConfig.pivot) {
+          const com = fighter.rb.localCom();
+          const offset = new THREE.Vector3(
+            (liftConfig.pivot.x ?? 0) - com.x,
+            (liftConfig.pivot.y ?? 0) - com.y,
+            (liftConfig.pivot.z ?? 0) - com.z,
+          ).applyQuaternion(rotation);
+          const dw = lateral.clone().multiplyScalar(accel * dt);
+          const correction = dw.cross(offset).multiplyScalar(-mass);
+          fighter.rb.applyImpulse({ x: correction.x, y: correction.y, z: correction.z }, true);
+        }
       }
     }
   }

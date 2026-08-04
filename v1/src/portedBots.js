@@ -604,10 +604,23 @@ function auxMechanismsBlock(spec) {
     };
   }
   if (spec.lift) {
+    // A pitch servo, not an animation: the point of the gesture is that what
+    // comes over the top collides with things. `pivot` is the axle it swings
+    // about — without it the torque turns the body about its CENTRE OF MASS,
+    // which is a free rigid body and not a machine hinged at the back: the tail
+    // swings down as the nose goes up and drives the pods through the floor.
+    // `inertiaScale` carries the body's own pitch inertia per unit mass, so v1
+    // can express the gain as an angular acceleration the way v2 does rather
+    // than as a torque that means something different on every bot.
+    const dims = spec.bodyDims || {};
     block.lift = {
       pivot: { ...spec.lift.pivot },
       maxAngleDeg: round(spec.lift.maxAngleDeg ?? 90, 2),
       seconds: round(spec.lift.seconds ?? 0.9, 3),
+      gain: round(spec.lift.gain ?? 26, 3),
+      damping: round(spec.lift.damping ?? 5.5, 3),
+      maxAccel: round(spec.lift.maxAccel ?? 40, 3),
+      inertiaScale: round((((dims.y || 1) ** 2) + ((dims.z || 2.6) ** 2)) / 12, 4),
     };
   }
   return Object.keys(block).length ? block : null;
