@@ -486,7 +486,6 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       // A lit flamethrower is drawn here, from the same helper and the same
       // catalog nozzles the match uses. The billboard is this bay's own camera
       // (one frame stale, which is invisible on a facing quad).
-      bay.fx.faceCamera(bay.camera);
       spawnBotFlame(bay.fx, bay.spec, bay.state, bay.state.weaponSubAngle ?? 0);
       bay.fx.update(dt);
     }

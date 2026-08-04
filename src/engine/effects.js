@@ -17,12 +17,14 @@ export function createEffects(scene) {
   const flameGroup = new THREE.Group();
   scene.add(sparkGroup, debrisGroup, flameGroup);
   const sparkGeometry = new THREE.PlaneGeometry(0.09, 0.028);
-  // Round, not square: a billboarded quad with a hard edge reads as a card,
-  // and there is no texture in this project to soften it with.
-  const flameGeometry = new THREE.CircleGeometry(0.5, 10);
   const scratchColor = new THREE.Color();
-  // Puffs face the camera; main.js hands the current one in each frame.
-  const billboard = new THREE.Quaternion();
+  // Flame puffs are SPRITES, not billboarded quads. A quad has to be turned to
+  // face the camera, which means being told which camera — and there is not one
+  // camera. The arena draws split-screen from two, the bot-select screen draws
+  // two bays from two more, and the frame loop can only hand over one, so every
+  // other view got the jet edge-on and saw nothing. A sprite is oriented by the
+  // renderer at draw time, per camera, so it is correct in all of them without
+  // anyone having to know how many there are.
   const debrisGeometry = new THREE.BoxGeometry(0.16, 0.07, 0.12);
   const debrisMaterial = new THREE.MeshStandardMaterial({ color: 0x777c82, metalness: 0.85, roughness: 0.42 });
 
@@ -72,14 +74,14 @@ export function createEffects(scene) {
   function spawnFlame(origin, forward, { count = 3, speed = 11, spread = 0.2, scale = 1 } = {}) {
     const budget = Math.min(count, MAX_FLAME - flameGroup.children.length);
     for (let i = 0; i < budget; i += 1) {
-      const material = new THREE.MeshBasicMaterial({
+      const material = new THREE.SpriteMaterial({
         color: FLAME_RAMP[0],
         transparent: true,
         opacity: 0.34,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       });
-      const puff = new THREE.Mesh(flameGeometry, material);
+      const puff = new THREE.Sprite(material);
       puff.position.copy(origin);
       const velocity = forward.clone().multiplyScalar(speed * (0.7 + Math.random() * 0.6));
       velocity.x += (Math.random() - 0.5) * speed * spread;
@@ -110,7 +112,6 @@ export function createEffects(scene) {
       // or a handful of them stack into a white slab.
       puff.material.opacity = Math.max(0, (1 - t) * 0.34);
       puff.scale.setScalar((0.16 + t * 0.5) * data.scale);
-      puff.quaternion.copy(billboard);
       if (data.life <= 0) {
         puff.material.dispose();
         flameGroup.remove(puff);
@@ -145,10 +146,6 @@ export function createEffects(scene) {
     }
   }
 
-  function faceCamera(camera) {
-    if (camera) billboard.copy(camera.quaternion);
-  }
-
   /** Drop everything currently alive. The bot-select viewer owns one of these
    *  per bay and has to empty it when the bay's bot changes, or the last jet a
    *  player lit hangs in the air over the next bot they pick. */
@@ -162,7 +159,7 @@ export function createEffects(scene) {
     debrisGroup.clear(); // shared geometry + material, nothing per-chunk to free
   }
 
-  return { spawnSparks, spawnDebris, spawnFlame, faceCamera, update, clear };
+  return { spawnSparks, spawnDebris, spawnFlame, update, clear };
 }
 
 // --- flamethrower jet --------------------------------------------------------
