@@ -1,4 +1,7 @@
 import * as THREE from "three";
+// Shared with v2 rather than reimplemented: the blade is the same shape in both
+// games, and it is drawn from the same radius the sim measures its reach with.
+import { buildSawBlade } from "../../src/assets/sawBlade.js";
 
 const DEFAULT_SPINNER_FULL_SPEED = 120;
 const DEFAULT_SPINNER_SPIN_DOWN_SECONDS = 1.1;
@@ -327,6 +330,31 @@ export function normalizeSegmentedModel(scene, model = {}) {
   return wrapper;
 }
 
+// Swap a scanned rotor for a drawn saw blade, where the catalog asks for one.
+// The teeth are the part of a saw that reads as a saw, and a scan that never
+// resolved the gullets gives you a disc with a ring of nubs. The scan's version
+// is detached rather than hidden so it stays out of every bounding box measured
+// downstream — and nothing is disposed, because a Tripo scan shares ONE material
+// across the whole robot.
+function replaceScannedBlade(subPivot, subNode, name, weaponConfig) {
+  const blade = weaponConfig?.sub?.blade;
+  if (!blade) return;
+  const axis = weaponConfig.sub.axes?.[name] || { x: weaponConfig.axisSign || 1, y: 0, z: 0 };
+  subPivot.add(buildSawBlade({
+    radius: blade.radius ?? weaponConfig.sub.radius ?? 0.7,
+    thickness: blade.thickness ?? 0.09,
+    teeth: blade.teeth,
+    axis,
+    material: new THREE.MeshStandardMaterial({
+      color: blade.color ?? "#b0752f",
+      metalness: blade.metalness ?? 1,
+      roughness: blade.roughness ?? 0.28,
+      envMapIntensity: blade.envMapIntensity ?? 1.3,
+    }),
+  }));
+  subNode.removeFromParent();
+}
+
 function detachNode(node) {
   node.updateWorldMatrix(true, false);
   const world = node.matrixWorld.clone();
@@ -443,7 +471,10 @@ export function splitSegmentedModelParts(model, config, spec) {
       subPivot.attach(subNode);
       const isJaw = weaponConfig.claw && /jaw|claw/i.test(name);
       if (isJaw && !claw) claw = { name, object: subPivot, ...weaponConfig.claw };
-      else subs.push({ name, object: subPivot, currentSpeed: 0, ...(weaponConfig.sub || {}) });
+      else {
+        replaceScannedBlade(subPivot, subNode, name, weaponConfig);
+        subs.push({ name, object: subPivot, currentSpeed: 0, ...(weaponConfig.sub || {}) });
+      }
     }
     // Sawblaze's disc IS the weapon part: the whole arm tip spins.
     if (!subs.length && weaponConfig.sub?.onWeaponPart) {

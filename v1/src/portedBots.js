@@ -474,6 +474,10 @@ function armWeaponBlock(spec) {
       // directions; spinning both about one horizontal axle is the wobble you
       // would get from bending the axle instead of the arms.
       axes: disc.axes ? { ...disc.axes } : undefined,
+      // Photogrammetry is bad at thin repeating edges: these came back as discs
+      // with a ring of nubs. v2 draws them instead, and v1 uses the same module
+      // and the same numbers rather than a second copy of the shape.
+      blade: disc.blade ? { ...disc.blade } : undefined,
     };
   } else if (weapon.type === "hammerSaw") {
     // Sawblaze's saw is the weapon part itself, spun about the arm's own axle.
