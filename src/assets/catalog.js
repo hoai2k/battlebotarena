@@ -48,6 +48,15 @@
 // against the fixed 0.45ft ray travel in sim/vehicle.js, and scaling it sinks
 // the chassis to the floor and takes the wheels off the ground.
 //
+// MEASURE A MODEL THROUGH ITS INDICES, never through its position accessors.
+// Carving a bot (tools/glb-carve.mjs) re-points a primitive at the triangles
+// that survived and leaves the orphaned vertices in the buffer, so a bot
+// measured off its accessors reads bigger than the robot on screen — Tantrum
+// measures 3.29ft that way and is drawn at 3.00 — and chasing that phantom is
+// how you shrink a bot that was the right size all along. models.js already
+// does it right (drawnLocalBox); tools/sim-tests.mjs checks every bot's drawn
+// width against its widthFt so a modelScale cannot quietly drift off it again.
+//
 // So a bot cannot be resized by editing widthFt alone — that leaves a machine
 // whose colliders no longer match its model. Use tools/rescale-bot.mjs, which
 // applies the one multiply to every length in the entry and then verifies it
@@ -1732,7 +1741,7 @@ export const CATALOG = {
     // REFLECTION as geometry; it is carved out in
     // tools/repairs/tantrum-reflection.json. The slant on the side panels is
     // the real robot's wedge skirt, not a tilt, and is left alone.
-    modelScale: 3.6377,
+    modelScale: 3.4558,
     hideWheels: true, // drive enclosed by the side pods
     // --- the real machine ---------------------------------------------
     // 18lb S7 tool steel drum at up to 8,500rpm, on a carriage, with two
@@ -1742,19 +1751,26 @@ export const CATALOG = {
       weightLbs: 250,
       topSpeedMph: 16, topSpeedSource: "class-estimate",
       // feet. widthFt is what the GLB is scaled to; see SIZING at the top.
-      size: { widthFt: 3, lengthFt: 3.43, heightFt: 1.61, source: "class-estimate" },
+      //
+      // 3.00 -> 2.85. Nothing was broken — the model was drawn at exactly the
+      // 3.00 it claimed — it was just estimated too generously: at 3.00 Tantrum
+      // was level with Minotaur and Hydra and wider than Blip and Witch Doctor,
+      // and it is a smaller, denser machine than any of them. 2.85 puts it
+      // between Sawblaze and Blip at 18 lb/cu ft, in with the compact box bots
+      // where it belongs.
+      size: { widthFt: 2.85, lengthFt: 3.2585, heightFt: 1.5295, source: "class-estimate" },
       weapon: { name: "Punching vertical spinner", weightLbs: 18, tipSpeedMph: null, rpm: 8500 },
       drive: "2x TP5680 brushless", power: "4x 5.4Ah 6S LiPo",
     },
 
     weightLbs: 250,
     weaponWeightLbs: 40,
-    bodyDims: { x: 2.9957, y: 1.0806, z: 3.4237 }, // MEASURED shell, then scaled to realWorld.size.widthFt
+    bodyDims: { x: 2.8459, y: 1.0266, z: 3.2525 }, // MEASURED shell, then scaled to realWorld.size.widthFt
     wheelAnchors: [
-      { x: -1.1769, y: 0.21, z: -0.9629 },
-      { x: 1.1769, y: 0.21, z: -0.9629 },
-      { x: -1.1769, y: 0.21, z: 0.9629 },
-      { x: 1.1769, y: 0.21, z: 0.9629 },
+      { x: -1.1181, y: 0.21, z: -0.9148 },
+      { x: 1.1181, y: 0.21, z: -0.9148 },
+      { x: -1.1181, y: 0.21, z: 0.9148 },
+      { x: 1.1181, y: 0.21, z: 0.9148 },
     ],
     maxSpeedFps: mph(9.28), // 13.61 fps
     accel: 8.5,
@@ -1774,14 +1790,14 @@ export const CATALOG = {
       // See repairs/tantrum-drum-axle.json for the circle fit; the same
       // correction is applied there to the RENDER pivot, so the collider and
       // the mesh turn about the same line.
-      pivot: { x: 0.0041, y: 0.7594, z: -0.5635 },
+      pivot: { x: 0.0039, y: 0.7214, z: -0.5353 },
       axis: { x: 1, y: 0, z: 0 },
       spinUpSeconds: 1.3, // second-quickest, just inside v1's band (see Endgame)
       inertia: 1.0,
       maxOmega: 600,
       budgetCap: 300,
-      radius: 0.375, // MEASURED swept radius of the drum alone
-      dims: { x: 0.2287, y: 0.375, z: 0.375 }, // half the MEASURED 0.457ft barrel
+      radius: 0.3563, // MEASURED swept radius of the drum alone
+      dims: { x: 0.2173, y: 0.3563, z: 0.3563 }, // half the MEASURED 0.457ft barrel
       // The drum rides a carriage on the rails down the bot's centre, and the
       // rails climb: the centreline's top runs 0.696 at z=-0.2 to 0.932 at
       // z=+0.6, a slope of about 0.3. `offset` is where the carriage parks
@@ -1801,7 +1817,7 @@ export const CATALOG = {
         // just inside the 1.71 tail; 2.0 of travel hangs it over the back.
         // The climb is gentler than the travel because a proportional one would
         // lift the axle to 1.3ft on a bot 1.08ft tall.
-        offset: { x: 0, y: 0.35, z: 1.79 },
+        offset: { x: 0, y: 0.3325, z: 1.7005 },
         retractSeconds: 0.55,
         flingSeconds: 0.16,
         hitBoost: 1.5,
@@ -1813,7 +1829,7 @@ export const CATALOG = {
       // rest, and punchAngle is a clean quarter turn up from there.
       fists: {
         openAngle: -0.255, punchAngle: 1.3158, punchSeconds: 0.18,
-        impulse: 90, damagePerHit: 2.5, reach: 1.1769,
+        impulse: 90, damagePerHit: 2.5, reach: 1.1181,
         axis: { x: 1, y: 0, z: 0 },
       },
       tuning: { efficiency: 0.55, impulseScale: 10.0, liftScale: 28.0, liftVelocity: 4.5, gyroScale: 1.0 },
@@ -1826,8 +1842,8 @@ export const CATALOG = {
     // Copperhead and Deep Six. The tail box is the arms' axle and the deck it
     // is bolted through, MEASURED y 0.544 to 0.990 over z 1.284 to 1.714.
     colliders: [
-      { shape: "box", halfExtents: { x: 1.4979, y: 0.535, z: 1.0485 }, offset: { x: 0, y: 0.535, z: 0.2354 } },
-      { shape: "box", halfExtents: { x: 1.0980, y: 0.2230, z: 0.2150 }, offset: { x: 0, y: 0.7670, z: 1.4990 } },
+      { shape: "box", halfExtents: { x: 1.423, y: 0.5083, z: 0.9961 }, offset: { x: 0, y: 0.5083, z: 0.2236 } },
+      { shape: "box", halfExtents: { x: 1.0431, y: 0.2119, z: 0.2043 }, offset: { x: 0, y: 0.7287, z: 1.4241 } },
     ],
   },
 
@@ -1921,7 +1937,7 @@ export const CATALOG = {
     // — so the mirror changed Glitch's shape without changing how much arena he
     // takes up, and realWorld.size below now quotes the scan rather than the
     // class guess.
-    modelScale: 2.5615,
+    modelScale: 2.8636,
     hideWheels: true, // four omniwheels in an X-drive, tucked under the wedge
     // --- the real machine ---------------------------------------------
     // battlebots.com files the weapon as a vertical bar spinner; the team and
@@ -1932,28 +1948,36 @@ export const CATALOG = {
       team: "Combat Robotics at Berkeley", from: "Berkeley, CA",
       weightLbs: 250,
       topSpeedMph: 12, topSpeedSource: "class-estimate",
-      // Was a 2.9 x 3.15 class guess, i.e. longer than wide. The scan says the
-      // opposite and the reference photo agrees: Glitch is a wide, flat
-      // arrowhead. Taken from the mirrored model rather than from the guess,
-      // because a photogrammetric scan of the actual robot is better evidence
-      // of its footprint than a class average is.
-      size: { widthFt: 3.086, lengthFt: 2.72, heightFt: 0.762, source: "scan" },
+      // PROPORTIONS from the scan, SCALE from the class band. Was a 2.9 x 3.15
+      // class guess, i.e. longer than wide; the scan says the opposite and the
+      // reference photo agrees, so Glitch is a wide, flat arrowhead and the
+      // shape here is the mirrored model's rather than the guess's.
+      //
+      // The absolute size was still the old guess, though, and it made Glitch
+      // the densest machine on the roster by a distance: 8.39 sq ft of plan at
+      // 9 inches tall is 6.4 cu ft for 250lb, or 39 lb/cu ft, against 33 for
+      // Duck and 30 for Copperhead. Duck is the fair comparison — the only
+      // other bot this flat — and Glitch has to fit everything Duck does PLUS a
+      // 58lb drum and its motor into LESS box. 3.45ft puts it at 28 lb/cu ft,
+      // level with HyperShock, and makes it the widest bot outside the four
+      // giants while staying one of the shortest, which is the machine.
+      size: { widthFt: 3.45, lengthFt: 3.0408, heightFt: 0.8519, source: "scan" },
       weapon: { name: "Eggbeater drum", weightLbs: 58, tipSpeedMph: 180, rpm: null },
       drive: "4x Scorpion SII-4035-450KV (X-drive omni)", power: null,
     },
 
     weightLbs: 250,
     weaponWeightLbs: 58,
-    bodyDims: { x: 3.086, y: 0.671, z: 2.720 }, // MEASURED after glitch-mirror.json: flat delta, and the plate is only 8in thick
+    bodyDims: { x: 3.45, y: 0.7501, z: 3.0408 }, // MEASURED after glitch-mirror.json: flat delta, and the plate is only 8in thick
     // Moved with the body: x out by the same 6.4% the mirror widened it, z in
     // by the 5.7% it shortened. y is NOT a length on the bot — it is the
     // suspension probe origin against sim/vehicle.js's fixed 0.45ft travel —
     // so it does not scale with the model.
     wheelAnchors: [
-      { x: -1.224, y: 0.21, z: -0.990 },
-      { x: 1.224, y: 0.21, z: -0.990 },
-      { x: -1.224, y: 0.21, z: 0.990 },
-      { x: 1.224, y: 0.21, z: 0.990 },
+      { x: -1.3684, y: 0.21, z: -1.1068 },
+      { x: 1.3684, y: 0.21, z: -1.1068 },
+      { x: -1.3684, y: 0.21, z: 1.1068 },
+      { x: 1.3684, y: 0.21, z: 1.1068 },
     ],
     maxSpeedFps: mph(6.96), // 10.21 fps
     accel: 6,
@@ -1967,7 +1991,7 @@ export const CATALOG = {
     drive: { type: "holonomic", strafeRatio: 0.9, pushForceScale: 0.4 },
     weapon: {
       type: "drum",
-      pivot: { x: 0.000, y: 0.440, z: -0.240 }, // MEASURED best-fit drum axle, game space
+      pivot: { x: 0, y: 0.4919, z: -0.2683 }, // MEASURED best-fit drum axle, game space
       // MEASURED, and now exactly transverse with no residual tilt: after
       // glitch-mirror.json the drum is symmetric about the centreline, and a
       // shape symmetric about a plane perpendicular to X cannot carry an axle
@@ -1995,8 +2019,8 @@ export const CATALOG = {
       // swept radius, which is not a change to the machine: the old figure came
       // off a single ragged spike in the sector the scan never resolved, and
       // that sector is now a copy of the lobe the scan DID resolve.
-      radius: 0.398, // MEASURED swept radius about the axle
-      dims: { x: 0.352, y: 0.322, z: 0.354 }, // MEASURED half-extents; only .x is read (half the drum's length along its axle)
+      radius: 0.4449, // MEASURED swept radius about the axle
+      dims: { x: 0.3935, y: 0.36, z: 0.3958 }, // MEASURED half-extents; only .x is read (half the drum's length along its axle)
     },
     // The nose is a WEDGE: it is the whole point of the machine, and test 16
     // requires nothing but a wedge ahead of the drum's leading edge, now
@@ -2009,9 +2033,9 @@ export const CATALOG = {
     // right of the centreline, and the bot no longer has a right and a left.
     // The third box is the drum bay, which is why it had the largest one.
     colliders: [
-      { shape: "wedge", halfExtents: { x: 1.383, y: 0.115, z: 0.377 }, offset: { x: 0, y: 0.115, z: -1.150 }, tipY: 0.019 },
-      { shape: "box", halfExtents: { x: 1.543, y: 0.192, z: 0.754 }, offset: { x: 0, y: 0.192, z: 0.151 } },
-      { shape: "box", halfExtents: { x: 0.479, y: 0.192, z: 0.189 }, offset: { x: 0, y: 0.529, z: -0.330 } },
+      { shape: "wedge", halfExtents: { x: 1.5461, y: 0.1286, z: 0.4215 }, offset: { x: 0, y: 0.1286, z: -1.2856 }, tipY: 0.0212 },
+      { shape: "box", halfExtents: { x: 1.725, y: 0.2146, z: 0.8429 }, offset: { x: 0, y: 0.2146, z: 0.1688 } },
+      { shape: "box", halfExtents: { x: 0.5355, y: 0.2146, z: 0.2113 }, offset: { x: 0, y: 0.5914, z: -0.3689 } },
     ],
   },
 

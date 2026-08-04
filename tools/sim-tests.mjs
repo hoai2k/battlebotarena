@@ -1219,11 +1219,6 @@ await test("dragon king: the saws come down in FRONT, and each turns about its o
 // vertex attributes, so the accessor's own min/max describes the donor.
 function boundsOfDrawnTriangles(json, node) {
   const prim = json.meshes[node.mesh].primitives[0];
-  const read = (accIndex, stride, reader) => {
-    const acc = json.accessors[accIndex];
-    const view = json.bufferViews[acc.bufferView];
-    return { acc, view, stride, reader };
-  };
   const bin = boundsOfDrawnTriangles.bin;
   const pos = json.accessors[prim.attributes.POSITION];
   const posView = json.bufferViews[pos.bufferView];
@@ -1246,6 +1241,103 @@ function boundsOfDrawnTriangles(json, node) {
   }
   return [0, 1, 2].map((k) => (min[k] + max[k]) / 2);
 }
+
+/**
+ * Size of the geometry a whole GLB actually DRAWS, in raw model units, walking
+ * the scene graph so node translations count. Deliberately reads the INDICES:
+ * carving leaves orphaned vertices behind in the position attribute, so a bot
+ * measured from its accessors reads bigger than the robot on screen — Tantrum
+ * measured 3.29ft that way against 3.00 drawn, and chasing that phantom is how
+ * you shrink a bot that was the right size all along. models.js measures the
+ * same way (drawnLocalBox), which is why this can check its answer.
+ */
+function drawnModelSize(glb) {
+  const jsonLen = glb.readUInt32LE(12);
+  const json = JSON.parse(glb.toString("utf8", 20, 20 + jsonLen).trim());
+  const start = 20 + ((jsonLen + 3) & ~3) + 8;
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  const walk = (i, t) => {
+    const n = json.nodes[i];
+    const at = [0, 1, 2].map((k) => t[k] + (n.translation ? n.translation[k] : 0));
+    if (n.mesh !== undefined) {
+      boundsOfDrawnTriangles.bin = { buf: glb, start };
+      for (let pi = 0; pi < json.meshes[n.mesh].primitives.length; pi++) {
+        const box = drawnPrimitiveBox(json, json.meshes[n.mesh].primitives[pi], { buf: glb, start });
+        if (!box) continue;
+        for (let k = 0; k < 3; k++) {
+          if (box.min[k] + at[k] < min[k]) min[k] = box.min[k] + at[k];
+          if (box.max[k] + at[k] > max[k]) max[k] = box.max[k] + at[k];
+        }
+      }
+    }
+    (n.children || []).forEach((c) => walk(c, at));
+  };
+  json.scenes[0].nodes.forEach((r) => walk(r, [0, 0, 0]));
+  return Number.isFinite(min[0]) ? [0, 1, 2].map((k) => max[k] - min[k]) : null;
+}
+
+function drawnPrimitiveBox(json, prim, bin) {
+  if (prim.indices === undefined) return null;
+  const pos = json.accessors[prim.attributes.POSITION];
+  const posView = json.bufferViews[pos.bufferView];
+  const posOff = bin.start + (posView.byteOffset || 0) + (pos.byteOffset || 0);
+  const posStride = posView.byteStride || 12;
+  const idx = json.accessors[prim.indices];
+  const idxView = json.bufferViews[idx.bufferView];
+  const idxOff = bin.start + (idxView.byteOffset || 0) + (idx.byteOffset || 0);
+  const size = idx.componentType === 5125 ? 4 : idx.componentType === 5123 ? 2 : 1;
+  const min = [Infinity, Infinity, Infinity];
+  const max = [-Infinity, -Infinity, -Infinity];
+  for (let i = 0; i < idx.count; i++) {
+    const o = idxOff + i * size;
+    const v = size === 4 ? bin.buf.readUInt32LE(o) : size === 2 ? bin.buf.readUInt16LE(o) : bin.buf.readUInt8(o);
+    for (let k = 0; k < 3; k++) {
+      const c = bin.buf.readFloatLE(posOff + v * posStride + k * 4);
+      if (c < min[k]) min[k] = c;
+      if (c > max[k]) max[k] = c;
+    }
+  }
+  return Number.isFinite(min[0]) ? { min, max } : null;
+}
+
+await test("sizing: every bot is drawn at the width its catalog entry claims", async () => {
+  // The SIZING contract at the top of the catalog: a bot's GLB is scaled so its
+  // MEASURED WIDTH in game space equals realWorld.size.widthFt, and every other
+  // length in the entry — colliders, pivots, anchors, reaches — was measured
+  // after that scale. So a modelScale that does not land on widthFt is not a
+  // cosmetic mismatch: it means the solid does not match the picture, and every
+  // number in the entry describes a different robot from the one on screen.
+  //
+  // Only bots with an explicit modelScale can drift. The rest derive their scale
+  // from bodyDims, so this also catches a bodyDims.x edited without a resize.
+  const { CATALOG, BOT_IDS } = await import("../src/assets/catalog.js");
+  const { readFileSync } = await import("node:fs");
+  // Known and NOT yet decided. Gigabyte is drawn 3.6% wider than it claims; its
+  // colliders were authored to the drawn 3.47 (halfExtents.x 1.7308 doubled),
+  // so the solid and the picture agree with each other and only widthFt is the
+  // odd one out. Fixing it is a choice between correcting the claim and
+  // shrinking the bot, which is a sizing decision, not a bug fix.
+  const KNOWN = { gigabyte: 1.036 };
+  for (const id of BOT_IDS) {
+    const spec = CATALOG[id];
+    const glb = readFileSync(new URL(`../public${spec.modelPath.replace("./public", "")}`, import.meta.url));
+    const size = drawnModelSize(glb);
+    if (!size) continue;
+    // The wrapper takes yaw then roll, and every bot in the catalog uses a
+    // quarter-turn multiple, so this is an axis swap rather than a rotation.
+    let [sx, sy, sz] = size;
+    if (Math.abs(Math.cos(spec.modelYaw ?? 0)) < 0.5) { const t = sx; sx = sz; sz = t; }
+    if (Math.abs(Math.cos(spec.modelRoll ?? 0)) < 0.5) { const t = sx; sx = sy; sy = t; }
+    const scale = spec.modelScale ?? ((spec.bodyDims.x / sx) + (spec.bodyDims.z / sz)) / 2;
+    const want = spec.realWorld.size.widthFt;
+    const ratio = (sx * scale) / want;
+    const allowed = KNOWN[id] ?? 1;
+    check(Math.abs(ratio / allowed - 1) < 0.01,
+      `${id} is drawn at its stated width${KNOWN[id] ? " (known exception)" : ""}`,
+      `${(sx * scale).toFixed(3)}ft drawn vs widthFt ${want} — ratio ${ratio.toFixed(3)}, expected ${allowed}`);
+  }
+});
 
 await test("tracked bots: the drive sprockets are real parts that can turn", async () => {
   // A scanned track pod is ONE mesh — frame, band and wheels on a single atlas —
