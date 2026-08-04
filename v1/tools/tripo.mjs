@@ -11,7 +11,7 @@
 //   node tools/tripo.mjs segment <task_id>
 //   node tools/tripo.mjs download <task_id> [outfile.glb]
 //
-// `generate` uploads public/reference/<bot>.png and starts an image_to_model
+// `generate` uploads ../public/reference/<bot>.png and starts an image_to_model
 // task. Nothing is uploaded by any other subcommand.
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
@@ -120,9 +120,9 @@ async function cmdBalance() {
 async function cmdGenerate(args) {
   const bot = args[0];
   if (!bot) throw new Error("Usage: node tools/tripo.mjs generate <bot>");
-  const imagePath = join(ROOT, "public/reference", `${bot}.png`);
-  if (!existsSync(imagePath)) throw new Error(`No reference image at public/reference/${bot}.png`);
-  console.log(`Uploading public/reference/${bot}.png ...`);
+  const imagePath = join(ROOT, "../public/reference", `${bot}.png`);
+  if (!existsSync(imagePath)) throw new Error(`No reference image at ../public/reference/${bot}.png`);
+  console.log(`Uploading ../public/reference/${bot}.png ...`);
   const token = await uploadImage(imagePath);
   console.log("Upload complete. Creating image_to_model task ...");
   const body = {
@@ -198,7 +198,7 @@ async function downloadTaskModel(taskId, outPath) {
 async function cmdPipeline(args) {
   const bot = args[0];
   if (!bot) throw new Error("Usage: node tools/tripo.mjs pipeline <bot>");
-  const imagePath = join(ROOT, "public/reference", `${bot}.png`);
+  const imagePath = join(ROOT, "../public/reference", `${bot}.png`);
   if (!existsSync(imagePath)) throw new Error(`No reference image for ${bot}`);
   console.log(`[${bot}] uploading reference ...`);
   const token = await uploadImage(imagePath);

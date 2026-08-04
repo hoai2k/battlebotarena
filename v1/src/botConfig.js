@@ -33,7 +33,7 @@ export const BOT_CONFIG = {
   biteforce: {
     name: "Bite Force",
     short: "BF",
-    ref: "./public/reference/biteforce.png",
+    ref: "../public/reference/biteforce.png",
     notes: "White and blue wedge-shaped vertical spinner with front forks, compact drive pods, and a central front weapon.",
     maxSpeed: 8.182,
     maxBoostSpeed: 12.682,
@@ -62,7 +62,7 @@ export const BOT_CONFIG = {
   bronco: {
     name: "Bronco",
     short: "BR",
-    ref: "./public/reference/bronco.png",
+    ref: "../public/reference/bronco.png",
     notes: "Scratched aluminum flipper with red top panel, VEX logos, rear hinged wedge, visible pneumatic ram.",
     maxSpeed: 7.5,
     maxBoostSpeed: 10.568,
@@ -85,7 +85,7 @@ export const BOT_CONFIG = {
   huge: {
     name: "HUGE",
     short: "HG",
-    ref: "./public/reference/huge.png",
+    ref: "../public/reference/huge.png",
     notes: "Oversized white wheels with open spokes, narrow body bridge, black eye graphics, central blue bar spinner.",
     maxSpeed: 3.682,
     maxBoostSpeed: 5.727,
@@ -117,7 +117,7 @@ export const BOT_CONFIG = {
   quantum: {
     name: "Quantum",
     short: "QT",
-    ref: "./public/reference/quantum.png",
+    ref: "../public/reference/quantum.png",
     notes: "Blue and black low wedge body with polished hydraulic crusher jaw, cutouts, teeth, and blue drive pods.",
     maxSpeed: 7.5,
     maxBoostSpeed: 10.227,
@@ -136,7 +136,7 @@ export const BOT_CONFIG = {
   hypershock: {
     name: "Hypershock",
     short: "HS",
-    ref: "./public/reference/hypershock.png",
+    ref: "../public/reference/hypershock.png",
     notes: "Lime-green four-wheel vert with front weapon module, black wedge armor, exposed treaded tires, and top stabilizer fins.",
     maxSpeed: 13.636,
     maxBoostSpeed: 21.136,
@@ -166,7 +166,7 @@ export const BOT_CONFIG = {
   minotaur: {
     name: "Minotaur",
     short: "MN",
-    ref: "./public/reference/minotaur.png",
+    ref: "../public/reference/minotaur.png",
     notes: "Compact black drum spinner with copper front drum, side wheel pockets, bull graphic, and low front forks.",
     maxSpeed: 10.909,
     maxBoostSpeed: 16.909,
@@ -197,7 +197,7 @@ export const BOT_CONFIG = {
   sawblaze: {
     name: "Sawblaze",
     short: "SB",
-    ref: "./public/reference/sawblaze.png",
+    ref: "../public/reference/sawblaze.png",
     notes: "Black and green dustpan/lifter with rear drive wheels, green overhead arm, and vertical saw blade.",
     maxSpeed: 7.773,
     maxBoostSpeed: 12.068,
@@ -221,7 +221,7 @@ export const BOT_CONFIG = {
   tombstone: {
     name: "Tombstone",
     short: "TS",
-    ref: "./public/reference/tombstone.png",
+    ref: "../public/reference/tombstone.png",
     notes: "Low black two-wheel bar spinner with sloped top armor, exposed rear tires, and a long horizontal front blade.",
     maxSpeed: 6.545,
     maxBoostSpeed: 8.182,

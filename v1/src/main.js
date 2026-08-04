@@ -575,7 +575,7 @@ scene.fog = new THREE.Fog(0x101314, 24, 58);
 const camera = new THREE.PerspectiveCamera(48, (canvas.clientWidth || window.innerWidth) / (canvas.clientHeight || window.innerHeight), 0.05, 120);
 setListenerProvider(() => camera);
 initGameAudioUnlock();
-const music = createMusicPlayer({ basePath: "./music/", isEnabled: isSoundEnabled });
+const music = createMusicPlayer({ basePath: "../public/music/", isEnabled: isSoundEnabled });
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(canvas.clientWidth || window.innerWidth, canvas.clientHeight || window.innerHeight, false);
@@ -1326,7 +1326,7 @@ function stopBrokenWeapon(fighter) {
 
 function botWinnerImageSrc(fighter) {
   const id = fighter?.spec?.id;
-  return id ? `./public/reference/${id}.png` : "";
+  return id ? `../public/reference/${id}.png` : "";
 }
 
 function fighterDisplayName(fighter, fallback = "Bot") {
