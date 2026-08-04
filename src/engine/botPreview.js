@@ -38,7 +38,7 @@ import {
   PREVIEW_FOV, PLINTH_HEIGHT, RING_EMISSIVE, START_YAW, START_PITCH,
   addPreviewLights, buildPlinth, frameRadius, fitDistance, placeCamera,
 } from "./previewStage.js";
-import { SETTLE_MS, loadPosterIndex, posterMeta, posterUrl } from "./posters.js";
+import { SETTLE_MS, MODEL_CACHE, loadPosterIndex, posterMeta, posterUrl } from "./posters.js";
 import { createPreviewWeapon } from "./previewWeapon.js";
 import { createWeaponInputShaper, describeWeaponControls } from "../game/weaponControls.js";
 
@@ -156,6 +156,12 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       posterEl: pods[slot]?.poster || null,
       /** Timer for the deferred model build; see posters.js SETTLE_MS. */
       settle: 0,
+      /** Models this bay has already parsed, newest first (posters.js). */
+      cache: /** @type {{id: string, visual: object}[]} */ ([]),
+      /** A bot is in this bay, model or not. The plinth follows THIS rather
+       *  than `visual`, because it is up as soon as a bot is staged and has to
+       *  stay up under the poster while the model arrives. */
+      staged: false,
       // Orbit state: both bays open on the same front three-quarter (START_YAW).
       orbit: { yaw: START_YAW, pitch: START_PITCH, zoom: 1, dist: 9, targetY: 1.1, lean: 0, idleFor: 99 },
       /** Claim flourish: seconds into the spin-and-flash, or -1 when idle. */
@@ -338,6 +344,23 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   // --------------------------------------------------------------- camera
   function updateCamera(bay, dt, rect) {
     const orbit = bay.orbit;
+    // NOTHING TURNS WHILE THE POSTER IS UP. The picture is a still, so a plinth
+    // drifting or spinning under it is a turntable with a photograph glued to
+    // it. Both wait for the model — the claim flourish included, which is why
+    // claimBot forces the build rather than starting the spin itself.
+    if (!bay.visual) {
+      orbit.idleFor = 0;
+      placeCamera(bay.camera, {
+        x: bay.x, yaw: orbit.yaw, pitch: orbit.pitch, targetY: orbit.targetY,
+        dist: clamp(fitDistance(orbit.fitRadius || 2.5, rect.width / Math.max(rect.height, 1), bay.camera.fov), 3.5, 40),
+      });
+      const aspectNow = rect.width / Math.max(rect.height, 1);
+      if (Math.abs(bay.camera.aspect - aspectNow) > 0.001) {
+        bay.camera.aspect = aspectNow;
+        bay.camera.updateProjectionMatrix();
+      }
+      return;
+    }
     orbit.idleFor += dt;
     if (orbit.idleFor > AUTO_SPIN_AFTER) orbit.yaw += AUTO_SPIN_SPEED * dt; // showcase drift
     if (bay.claim >= 0) {
@@ -400,7 +423,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   function showOnly(active) {
     for (const bay of bays) {
       const mine = bay === active;
-      bay.deco.visible = mine && Boolean(bay.visual);
+      bay.deco.visible = mine && bay.staged;
       bay.fxRoot.visible = mine;
       if (bay.visual) bay.visual.group.visible = mine;
     }
@@ -409,7 +432,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   /** Put the scene back the way the rest of the module expects to find it. */
   function restoreBays() {
     for (const bay of bays) {
-      bay.deco.visible = Boolean(bay.visual);
+      bay.deco.visible = bay.staged;
       bay.fxRoot.visible = true;
       if (bay.visual) bay.visual.group.visible = true;
     }
@@ -435,7 +458,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       }
       return;
     }
-    const hasBot = bays.some((bay) => bay.visual);
+    const hasBot = bays.some((bay) => bay.staged);
     if (!hasBot) {
       if (!canvasClean) {
         renderer.setScissorTest(false);
@@ -479,7 +502,9 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     const canvasRect = canvas.getBoundingClientRect();
 
     for (const bay of bays) {
-      if (!bay.visual || !bay.viewEl) continue;
+      // A staged bay with no model yet is showing its poster over a LIVE
+      // plinth, so this pass still has work to do.
+      if (!bay.staged || !bay.viewEl) continue;
       const rect = bay.viewEl.getBoundingClientRect();
       // Clip to the canvas: a pod scrolled half off-screen must not hand GL a
       // rect that runs past the framebuffer.
@@ -513,13 +538,15 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     bay.viewEl?.classList.toggle("is-preview-loading", loading);
   }
 
+  /** Take the current model out of the scene. It is NOT disposed here: a model
+   *  this bay has parsed lives in bay.cache until it falls off the end of it,
+   *  and disposing a cached one leaves the cache holding freed GPU handles. */
   function removeVisual(bay) {
     bay.fx.clear(); // a jet the player left burning must not outlive its bot
     if (!bay.visual) return;
     scene.remove(bay.visual.group);
-    disposeObject(bay.visual.group);
+    if (!bay.cache.some((entry) => entry.visual === bay.visual)) disposeObject(bay.visual.group);
     bay.visual = null;
-    bay.deco.visible = false;
   }
 
   function resetBayState(bay) {
@@ -597,19 +624,51 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     if (bay.spec?.id === spec.id && (bay.visual || bay.settle)) return;
     const token = ++bay.token;
     clearTimeout(bay.settle);
+    bay.settle = 0;
     removeVisual(bay);
     bay.spec = spec;
     bay.weapon = null;
     // The control legend comes off the SPEC, so it is right from the first
     // frame — reading it does not need the geometry to have arrived.
     applyControls(bay, spec);
+    // The plinth comes up NOW, in 3D, whether or not there is a model yet. It
+    // is a cylinder and a torus, it needs nothing downloaded, and drawing it
+    // live is what keeps it whole: a plinth baked into a square poster runs off
+    // the edges for a small bot (see previewStage.buildPlinth).
+    bay.staged = true;
+    bay.deco.visible = true;
+    bay.ringMaterial.color.set(spec.accent || "#888c94");
+    bay.ringMaterial.emissive.set(spec.accent || "#888c94");
+    // Aim that plinth at the camera the POSTER was taken with. The bay has no
+    // model to measure yet, so the framing comes out of the index — otherwise
+    // the plinth sits at some default distance and the shadow baked into the
+    // picture lands nowhere near the plinth under it.
+    const meta = posterMeta(spec.id);
+    if (meta) {
+      bay.orbit.fitRadius = meta.radius;
+      bay.orbit.targetY = meta.targetY;
+      bay.orbit.yaw = START_YAW;
+      bay.orbit.pitch = START_PITCH;
+      bay.orbit.zoom = 1;
+    }
+
+    // Already parsed once — put it straight back and never show its picture.
+    // You have the real thing; a photograph of it would be a downgrade.
+    const cached = bay.cache.find((entry) => entry.id === spec.id);
+    if (cached) {
+      hidePoster(bay);
+      setLoading(bay, false);
+      attachVisual(bay, spec, cached.visual);
+      return;
+    }
+
     // The spinner is only for a bot with no poster. With one, the pod is
     // already showing the bot, and a spinner on top of it says "nothing here".
     const posted = showPoster(bay, spec);
     setLoading(bay, !posted);
     // Deferred so that running the cursor along a row of cards costs nothing:
-    // each new bot cancels the last one's timer, and only the one you stop on
-    // is ever downloaded.
+    // each new bot cancels the last one's timer, so a bot you are only passing
+    // is never fetched and — the expensive half — never parsed.
     bay.settle = setTimeout(() => {
       bay.settle = 0;
       buildBot(bay, spec, token);
@@ -632,18 +691,27 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     }
     setLoading(bay, false);
     if (!visual) return;
+    remember(bay, spec.id, visual);
+    attachVisual(bay, spec, visual);
+  }
+
+  /** Put a parsed model into its bay and hand the pod over to it. */
+  function attachVisual(bay, spec, visual) {
     bay.visual = visual;
     visual.group.position.set(bay.x, PLINTH_HEIGHT, 0);
     scene.add(visual.group);
-    bay.deco.visible = true;
-    bay.ringMaterial.color.set(spec.accent || "#888c94");
-    bay.ringMaterial.emissive.set(spec.accent || "#888c94");
     bay.weapon = createPreviewWeapon(spec);
     resetBayState(bay);
     frameModel(bay);
     // Last, so the picture is never taken down before the model that replaces
     // it has been framed — otherwise the pod blinks empty for a frame.
     hidePoster(bay);
+  }
+
+  /** Keep the newest few parsed models per bay; drop the GPU copy of the rest. */
+  function remember(bay, id, visual) {
+    bay.cache = [{ id, visual }, ...bay.cache.filter((entry) => entry.id !== id)];
+    bay.cache.splice(MODEL_CACHE).forEach((entry) => disposeObject(entry.visual.group));
   }
 
   function clearBot(slot) {
@@ -653,6 +721,8 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     clearTimeout(bay.settle);
     bay.settle = 0;
     hidePoster(bay);
+    bay.staged = false;
+    bay.deco.visible = false;
     bay.spec = null;
     bay.weapon = null;
     bay.claim = -1; // a bay being emptied is not a bay being claimed
@@ -666,7 +736,15 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
    *  ui.js re-emits the selection whenever the screen is re-entered, so the
    *  bays repopulate from cache on the way back. */
   function unload() {
-    bays.forEach((bay) => clearBot(bay.slot));
+    bays.forEach((bay) => {
+      clearBot(bay.slot);
+      // The whole point of unload is to hand the GPU back to the arena, and a
+      // cache of parsed models is exactly what must not survive that. It costs
+      // nothing to rebuild: THREE.Cache still holds the bytes, so coming back
+      // to the roster is a re-parse and not a re-download.
+      bay.cache.forEach((entry) => disposeObject(entry.visual.group));
+      bay.cache = [];
+    });
   }
 
   /** This bay's bot has just been CLAIMED, as opposed to merely browsed to.

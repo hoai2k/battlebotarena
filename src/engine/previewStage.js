@@ -59,33 +59,48 @@ export function addPreviewLights(scene, renderer, { span = 8 } = {}) {
   return { key, rim };
 }
 
-/** One plinth: the drum, its accent ring and the shadow pool under it. The
- *  ring's material is returned because it is recoloured per bot and flashed on
- *  a claim. */
-export function buildPlinth() {
+/**
+ * One plinth: the drum, its accent ring and the shadow pool under it. The
+ * ring's material is returned because it is recoloured per bot and flashed on
+ * a claim.
+ *
+ * `shadowOnly` builds the same shapes out of ShadowMaterial, so they are
+ * invisible except where the bot darkens them. That is what the poster baker
+ * wants: the picture has to be the BOT and its shadow and nothing else.
+ *
+ * The plinth cannot be baked into a poster. The camera frames the BOT — that is
+ * what has to be the same size in the picture and in the pod — and the plinth
+ * is wider than a small bot's frame, so it ran off the edge of the square and
+ * the poster showed a circle with two slices missing. Widening the shot to fit
+ * it would shrink the bot, which is the one thing that must not change across
+ * the handover. So the plinth stays live: it is a cylinder and a torus, it
+ * needs no download, and it is drawn by the pod at the pod's own aspect where
+ * there is always room for it.
+ */
+export function buildPlinth({ shadowOnly = false } = {}) {
   const group = new THREE.Group();
+  const catcher = () => new THREE.ShadowMaterial({ opacity: 0.42 });
   const plinth = new THREE.Mesh(
     new THREE.CylinderGeometry(PLINTH_RADIUS, PLINTH_RADIUS + 0.25, PLINTH_HEIGHT, 48),
-    new THREE.MeshStandardMaterial({ color: 0x14171c, metalness: 0.55, roughness: 0.5 }),
+    shadowOnly ? catcher() : new THREE.MeshStandardMaterial({ color: 0x14171c, metalness: 0.55, roughness: 0.5 }),
   );
   plinth.position.y = PLINTH_HEIGHT / 2;
   plinth.receiveShadow = true;
   group.add(plinth);
-  const ringMaterial = new THREE.MeshStandardMaterial({
-    color: 0x888c94,
-    emissive: 0x888c94,
-    emissiveIntensity: RING_EMISSIVE,
-    metalness: 0.3,
-    roughness: 0.4,
-  });
+  const ringMaterial = shadowOnly
+    ? catcher()
+    : new THREE.MeshStandardMaterial({
+      color: 0x888c94,
+      emissive: 0x888c94,
+      emissiveIntensity: RING_EMISSIVE,
+      metalness: 0.3,
+      roughness: 0.4,
+    });
   const ring = new THREE.Mesh(new THREE.TorusGeometry(PLINTH_RADIUS + 0.06, 0.045, 10, 64), ringMaterial);
   ring.rotation.x = Math.PI / 2;
   ring.position.y = PLINTH_HEIGHT - 0.02;
   group.add(ring);
-  const floor = new THREE.Mesh(
-    new THREE.CircleGeometry(PLINTH_RADIUS + 4.5, 48),
-    new THREE.ShadowMaterial({ opacity: 0.42 }),
-  );
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(PLINTH_RADIUS + 4.5, 48), catcher());
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = 0.001;
   floor.receiveShadow = true;

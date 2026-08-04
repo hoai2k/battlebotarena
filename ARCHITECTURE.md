@@ -600,6 +600,26 @@ would be a visible jump. The placement rule needs no per-bot data because the
 fit is on a bounding SPHERE: a sphere has no orientation to get wrong, so one
 square render is correctly framed in the largest square that fits any pod.
 
+**A poster is the bot and its shadow, nothing else.** The plinth cannot be in
+it: the camera frames the BOT, so for a small bot the plinth runs off the edge
+of the square and the picture shows a circle with slices missing — and widening
+the shot to fit the plinth would shrink the bot, which is the one thing that
+must not change across the handover. So the plinth is drawn LIVE under the
+poster from the moment a bot is staged (it is a cylinder and a torus, it needs
+nothing downloaded), aimed with the radius and targetY the index carries. The
+baker builds it out of ShadowMaterial instead, which contributes the bot's
+shadow and nothing else.
+
+**A poster shows the bot at REST.** A GLB is saved in whatever pose it was
+authored in — Hydra's flipper is baked wide open — and the pod never shows that,
+because its first frame runs `syncBotVisual` over a zeroed state. The baker runs
+the same call, or the poster is a different SHAPE of robot from the one that
+replaces it.
+
+**Nothing turns while a poster is up.** The picture is a still, so the turntable
+drift and the claim flourish both wait for the model; otherwise the plinth spins
+under a photograph glued to it.
+
 `tools/posters.mjs` refuses to write a poster that came out procedural (a GLB
 that 404s comes back as blocks, with no error anywhere), empty, opaque, or
 with nothing in shot. **Re-run it after anything that changes how a bot looks on

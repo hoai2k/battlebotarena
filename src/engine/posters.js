@@ -33,10 +33,17 @@
 //     node server.mjs & node tools/posters.mjs
 
 /** How long a browsed choice must sit still before its real model is built.
- *  Long enough that running the cursor along a row costs nothing, short enough
- *  that stopping on a bot feels like it responded to you rather than to a
- *  timer. */
-export const SETTLE_MS = 260;
+ *  Parsing a 10-17MB GLB is synchronous and janks the main thread, so the dwell
+ *  is what buys "run the cursor across the roster with no lag at all": nothing
+ *  is fetched and nothing is parsed for a bot you are only passing. */
+export const SETTLE_MS = 700;
+
+/** Loaded models kept per bay, most-recently-used first. Going back to a bot
+ *  you have already looked at must be instant AND must not show its picture
+ *  again — you have the real thing, showing a photograph of it is a downgrade.
+ *  Capped because each entry is a parsed GLB sitting in GPU memory; four is
+ *  enough to cover any back-and-forth a person actually does. */
+export const MODEL_CACHE = 4;
 
 const POSTER_DIR = "./public/posters";
 const POSTER_INDEX = `${POSTER_DIR}/posters.json`;
