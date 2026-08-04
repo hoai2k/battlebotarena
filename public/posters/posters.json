@@ -152,8 +152,8 @@
    "px": 768,
    "yaw": 2.2708,
    "pitch": 0.4,
-   "radius": 2.6598,
-   "targetY": 1.0129
+   "radius": 2.5268,
+   "targetY": 0.9782
   },
   "witchdoctor": {
    "px": 768,
@@ -166,15 +166,15 @@
    "px": 768,
    "yaw": 2.2708,
    "pitch": 0.4,
-   "radius": 2.1158,
-   "targetY": 0.7468
+   "radius": 2.3653,
+   "targetY": 0.7972
   },
   "gigabyte": {
    "px": 768,
    "yaw": 2.2708,
    "pitch": 0.4,
-   "radius": 3.2307,
-   "targetY": 2.0852
+   "radius": 3.1191,
+   "targetY": 2.0243
   },
   "kraken": {
    "px": 768,
@@ -194,8 +194,8 @@
    "px": 768,
    "yaw": 2.2708,
    "pitch": 0.4,
-   "radius": 2.6391,
-   "targetY": 0.9597
+   "radius": 3.244,
+   "targetY": 1.1836
   }
  }
 }

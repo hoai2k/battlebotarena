@@ -40,8 +40,30 @@ export const START_PITCH = 0.4;
  *  camera has to cover — one plinth off-screen, both of them in the pod. */
 export function addPreviewLights(scene, renderer, { span = 8 } = {}) {
   scene.environment = arenaEnvironment(renderer);
-  scene.environmentIntensity = 0.8;
-  scene.add(new THREE.HemisphereLight(0xdbe8ff, 0x15130f, 1.65));
+  // 0.8 -> 1.12. Half this roster is painted black, and on a black machine the
+  // albedo is nearly zero: adding diffuse light multiplies almost nothing by
+  // more and gets you almost nothing. What describes the form is the specular
+  // and the reflection, so the environment is the lever that actually works on
+  // the bots that were hardest to see.
+  scene.environmentIntensity = 1.12;
+  // The GROUND term used to be 0x15130f — near black — so every face pointing
+  // away from the key got nothing at all: the underside of a wedge, the inboard
+  // face of a wheel pod, the back of a drum. A dim neutral grey from below is
+  // what separates black bodywork from a black background.
+  scene.add(new THREE.HemisphereLight(0xdbe8ff, 0x2f3134, 1.9));
+  // A flat lift on everything, deliberately small. Ambient has no specular term,
+  // so past about 1.0 it stops adding readability and starts flattening the one
+  // thing a dark bot has going for it — its highlights.
+  scene.add(new THREE.AmbientLight(0xcfd8e6, 0.5));
+  // FILL, from the camera's side of the plinth. The key is at (-8, 15, 10) and
+  // the pod looks from (+x, +y, -z), so before this the only thing lighting the
+  // faces you can actually see was the dim blue rim — which is why Sawblaze read
+  // as a green outline with a hole in the middle. No shadow: a second shadow map
+  // per pod pass costs more than it shows, and this light exists to describe
+  // surfaces, not to cast anything.
+  const fill = new THREE.DirectionalLight(0xf2f5ff, 2.2);
+  fill.position.set(7, 8, -11);
+  scene.add(fill);
   const key = new THREE.DirectionalLight(0xffffff, 3.1);
   key.position.set(-8, 15, 10);
   key.castShadow = true;
@@ -56,7 +78,7 @@ export function addPreviewLights(scene, renderer, { span = 8 } = {}) {
   const rim = new THREE.DirectionalLight(0x88b4ff, 0.85);
   rim.position.set(9, 7, -12);
   scene.add(rim);
-  return { key, rim };
+  return { key, fill, rim };
 }
 
 /**

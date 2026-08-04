@@ -55,7 +55,7 @@ async function bake() {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.22; // must match botPreview.js, or a poster is brighter than the bot it stands in for
   document.body.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();

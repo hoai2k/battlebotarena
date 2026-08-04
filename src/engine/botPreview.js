@@ -109,7 +109,13 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  // 1.05 -> 1.22. The pod sits in a dark UI panel and nothing but the bot and
+  // its plinth is rendered into it, so exposure here lifts the subject without
+  // washing a background out — see engine/previewStage.js for the rest of the
+  // pass at making the black machines legible. tools/poster-shot.html sets the
+  // same value; a poster exposed differently from the model it stands in for is
+  // a bot that changes brightness the moment it finishes loading.
+  renderer.toneMappingExposure = 1.22;
 
   const scene = new THREE.Scene(); // transparent background: the screen's carbon backdrop shows through
   // Lights, plinth and camera fit all come from engine/previewStage.js, which
