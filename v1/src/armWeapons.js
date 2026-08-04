@@ -60,6 +60,9 @@ export function isNewArmWeapon(weapon) {
 
 export function isHeldArmWeapon(weapon) {
   if (weapon?.type === "sawArms") return true;
+  // A hammer that holds its stroke, or an arm driven both ways, is worked
+  // rather than fired.
+  if (weapon?.arm?.holdStroke || weapon?.arm?.twoWayArm) return true;
   return HELD_ARM_TYPES.has(weapon?.type);
 }
 
@@ -155,17 +158,38 @@ export function updateArmWeaponState(weapon, dt, { active = false, secondary = f
   if (!isArmWeapon(weapon)) return;
   const live = broken ? false : active;
   const held = isHeldArmWeapon(weapon);
-  const target = held ? (live ? 1 : 0) : (strokeActive ? 1 : 0);
-  const rate = target > (weapon.stroke || 0) ? 1 / armStrokeSeconds(weapon) : 1 / armReturnSeconds(weapon);
+  const config = weapon.arm || {};
   const previous = clamp(weapon.stroke || 0, 0, 1);
-  const next = clamp(previous + Math.sign(target - previous) * rate * dt, Math.min(previous, target), Math.max(previous, target));
+  let next;
+  if (config.twoWayArm) {
+    // Duck's plow has enough travel that "held = up, released = falls" stops
+    // being a control scheme: it swings a half turn, so one channel drives it
+    // up, the other down, and it HOLDS wherever it is let go. Without that the
+    // plow goes up on the first approach and stays parked over its own back.
+    const direction = (live ? 1 : 0) - (!broken && secondary ? 1 : 0);
+    const rate = direction > 0 ? 1 / armStrokeSeconds(weapon) : 1 / armReturnSeconds(weapon);
+    next = clamp(previous + direction * rate * dt, 0, 1);
+  } else if (config.holdStroke) {
+    // Rusty's axe is a pneumatic gantry, and re-cocking it is a separate action
+    // that failed often enough on the real machine to leave the head dragging.
+    // So the stroke stays DOWN while the trigger is down and only re-cocks when
+    // you let go, on the one button.
+    const rate = live ? 1 / armStrokeSeconds(weapon) : 1 / armReturnSeconds(weapon);
+    next = clamp(previous + (live ? 1 : -1) * rate * dt, 0, 1);
+  } else {
+    const target = held ? (live ? 1 : 0) : (strokeActive ? 1 : 0);
+    const rate = target > previous ? 1 / armStrokeSeconds(weapon) : 1 / armReturnSeconds(weapon);
+    next = clamp(previous + Math.sign(target - previous) * rate * dt, Math.min(previous, target), Math.max(previous, target));
+  }
   weapon.strokeDelta = next - previous;
   weapon.stroke = next;
 
   // Nested rotors. A disc rides its own channel (v2's `sawActive`), because a
   // lifter that only spins its disc while lifting can never cut anything it is
   // holding. Sawblaze's saw and Dragon King's blades run the same way.
-  const subActive = broken ? false : (secondary || (weapon.arm?.subFollowsWeapon && live));
+  // A two-way arm spends its second channel on driving the arm DOWN, so it has
+  // nothing left for a rotor — and it has none to spin.
+  const subActive = broken ? false : (!weapon.arm?.twoWayArm && secondary);
   weapon.subActive = Boolean(subActive);
   (weapon.subs || []).forEach((sub) => {
     const full = sub.visualSpeed || 120;
@@ -203,6 +227,9 @@ export function armWeaponAngle(weapon) {
  */
 export function isArmWeaponEngaged(weapon, { strokeActive = false } = {}) {
   if (!isArmWeapon(weapon)) return false;
+  // A held hammer bites on the way DOWN, which is its own stroke rather than
+  // v1's fired window.
+  if (weapon.arm?.holdStroke) return (weapon.stroke || 0) > 0.35;
   if (IMPULSE_ARM_TYPES.has(weapon.type)) return strokeActive;
   if (weapon.type === "hammerSaw" || weapon.type === "sawArms") {
     // The saw only cuts what the arm is down on, and only while it is turning.
@@ -215,4 +242,143 @@ export function isArmWeaponEngaged(weapon, { strokeActive = false } = {}) {
 /** Reach in feet, measured from the weapon pivot's world position. */
 export function armWeaponReach(weapon, spec) {
   return Math.max(0.6, weapon?.arm?.reach ?? spec?.armReach ?? 1.8);
+}
+
+// --- Control channels -------------------------------------------------------
+//
+// v1 has four buttons: weapon (RT), the secondary mechanism (RB), brake (LB)
+// and boost (LT). v2's roster wants up to four HELD weapon channels, so two of
+// v1's driving buttons are taken over — but only by the machines that have
+// something to put on them, which is the same rule v2 uses:
+//
+//   RB  second mechanism   saw motors, discs, jaws, Tantrum's carriage, flame
+//   LB  third mechanism    Tantrum's punch arms, Dragon King's arm tilt
+//                          (that bot loses its brake — it is tracked and does
+//                          not coast, so it never needed one)
+//   LT  fourth mechanism   Dragon King's body lift (loses boost, same reason)
+//
+// One place decides, so nothing else has to know which bot is which.
+export function resolveWeaponControls(weapon, input = {}) {
+  const arm = weapon?.arm || weapon || {};
+  const wantsAux = Boolean(arm.fists || weapon?.aux?.pods);
+  const wantsLift = Boolean(weapon?.aux?.lift);
+  return {
+    weapon: Boolean(input.weapon),
+    secondary: Boolean(input.weaponSecondary),
+    aux: wantsAux ? Boolean(input.brakeActive || input.weaponAux) : false,
+    lift: wantsLift ? Boolean(input.boostActive || input.weaponLift) : false,
+    brakeActive: wantsAux ? false : Boolean(input.brakeActive),
+    boostActive: wantsLift ? false : Boolean(input.boostActive),
+  };
+}
+
+/** Does this bot spend one of the driving buttons on a mechanism? */
+export function usesAuxChannel(weapon) {
+  return Boolean(weapon?.arm?.fists || weapon?.fists || weapon?.aux?.pods);
+}
+
+export function usesLiftChannel(weapon) {
+  return Boolean(weapon?.aux?.lift);
+}
+
+// --- Mechanisms that ride a weapon of any type ------------------------------
+//
+// A carriage, a pair of punch arms, a flamethrower, a jaw, a body lift: none of
+// these is a weapon TYPE, they are things bolted to one. Tantrum's drum is a
+// spinner AND a carriage AND a pair of fists; Kraken is a crusher with fire in
+// its throat. So they update here, off whatever weapon carries them, rather
+// than inside any one weapon's code path.
+export function updateWeaponMechanisms(weapon, dt, channels = {}) {
+  if (!weapon) return;
+  const config = weapon.arm || weapon;
+  const { secondary = false, aux = false, lift = false, broken = false } = channels;
+
+  // Tantrum's carriage: hold the second channel to winch the drum back and up
+  // to the far stop, release and it fires forward. The whole point is that the
+  // rotor is TRAVELLING when it arrives, so the fling scale is reported for the
+  // hit to use — and while it is parked at the back it is a foot behind where
+  // it can reach anything, which is what the wind-up costs.
+  if (config.track) {
+    const previous = weapon.carriage || 0;
+    const rate = (!broken && secondary)
+      ? 1 / Math.max(0.05, config.track.retractSeconds)
+      : -1 / Math.max(0.05, config.track.flingSeconds);
+    const next = clamp(previous + rate * dt, 0, 1);
+    weapon.carriageRate = dt > 0 ? (next - previous) / dt : 0;
+    weapon.carriage = next;
+    const moving = clamp(-weapon.carriageRate * config.track.flingSeconds, 0, 1);
+    weapon.flingScale = 1 + ((config.track.hitBoost ?? 1.5) - 1) * moving;
+  }
+
+  // The punch arms, on the third channel. Momentary, not latched: a toggle
+  // would leave them standing in the air.
+  if (config.fists) {
+    const seconds = Math.max(0.05, config.fists.punchSeconds);
+    const punching = !broken && aux;
+    const previous = weapon.fistStroke || 0;
+    weapon.fistStroke = clamp(previous + (punching ? dt / seconds : -dt / (seconds * 2.2)), 0, 1);
+    // One hit per punch, re-armed once the arms have come most of the way back.
+    if (weapon.fistStroke >= 0.85 && !weapon.fistOut) weapon.fistFired = true;
+    else weapon.fistFired = false;
+    if (weapon.fistStroke >= 0.85) weapon.fistOut = true;
+    else if (weapon.fistStroke < 0.4) weapon.fistOut = false;
+  }
+
+  // Fire takes a moment to light and a moment to die back. It is always on the
+  // second channel — BattleBots requires flame systems to be independently
+  // armed, which is exactly why it is never folded into the trigger.
+  if (config.flame) {
+    const lit = !broken && secondary;
+    weapon.burning = clamp((weapon.burning || 0) + (lit ? dt / 0.12 : -dt / 0.25), 0, 1);
+    weapon.flameLit = lit;
+  }
+
+  // Dragon King's jaw is a LATCH, not a hold: both hands are busy driving, so
+  // you press to open, press again to bite and keep hold of what you caught.
+  if (weapon.aux?.jaw) {
+    const pressed = Boolean(channels.weapon);
+    if (pressed && !weapon.jawWasPressed) weapon.jawOpen = !weapon.jawOpen;
+    weapon.jawWasPressed = pressed;
+    const seconds = Math.max(0.05, weapon.aux.jaw.seconds);
+    const goal = weapon.jawOpen ? 1 : 0;
+    const step = dt / seconds;
+    const current = clamp(weapon.jawAmount ?? 0, 0, 1);
+    weapon.jawAmount = Math.abs(goal - current) <= step ? goal : current + Math.sign(goal - current) * step;
+    weapon.gripping = weapon.jawAmount < 0.25;
+  }
+
+  // The body rears up about the axle at the back of the track pods. It is a
+  // real pitch rather than an animation, because the point of the gesture is
+  // that what comes over the top collides with things — it is the only way this
+  // machine reaches a bot BEHIND it.
+  if (weapon.aux?.lift) {
+    const seconds = Math.max(0.05, weapon.aux.lift.seconds);
+    const goal = !broken && lift ? 1 : 0;
+    const step = dt / seconds;
+    const current = clamp(weapon.liftAmount || 0, 0, 1);
+    weapon.liftAmount = Math.abs(goal - current) <= step ? goal : current + Math.sign(goal - current) * step;
+  }
+
+  // A rotor that has been stopped dead from above cannot pull against the jam.
+  if (weapon.stallUntil && channels.now !== undefined && channels.now < weapon.stallUntil) weapon.stalled = true;
+  else weapon.stalled = false;
+}
+
+/** Where the carriage has put the rotor, relative to its rest pivot. */
+export function trackOffset(weapon) {
+  const track = (weapon?.arm || weapon || {}).track;
+  if (!track) return null;
+  const carriage = clamp(weapon.carriage || 0, 0, 1);
+  return {
+    x: (track.offset.x ?? 0) * carriage,
+    y: (track.offset.y ?? 0) * carriage,
+    z: (track.offset.z ?? 0) * carriage,
+  };
+}
+
+/** Jam a rotor that took a blow square on the roof (Gigabyte). */
+export function stallWeapon(weapon, now, seconds) {
+  if (!weapon) return;
+  weapon.stallUntil = Math.max(weapon.stallUntil || 0, now + seconds);
+  weapon.currentSpeed = 0;
 }

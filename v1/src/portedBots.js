@@ -361,6 +361,14 @@ export function portedBotSpec(id) {
     realWorld: spec.realWorld || null,
   };
   if (spec.canDriveInverted) entry.canDriveInverted = true;
+  if (spec.drive?.type && spec.drive.type !== "tank") {
+    entry.driveType = spec.drive.type;
+    entry.driveStrafeRatio = round(spec.drive.strafeRatio ?? 0.9, 3);
+    entry.drivePushForceScale = round(spec.drive.pushForceScale ?? 0.5, 3);
+    // A holonomic bot's sticks are not a tank pair, and a tracked one does not
+    // coast; the control scheme follows the drivetrain.
+    entry.controlScheme = spec.drive.type === "holonomic" ? "holonomic" : "tank";
+  }
   if (spinner) {
     entry.weaponMaxAngularSpeed = round(weapon.maxOmega ?? 300, 2);
     entry.spinnerEnergyTransferEfficiency = round(tuning.efficiency ?? 0.5, 3);
@@ -487,14 +495,118 @@ function armWeaponBlock(spec) {
       clampSeconds: round(weapon.claw.clampSeconds ?? 0.25, 3),
     };
   }
+  return { ...block, ...weaponMechanismsBlock(spec) };
+}
+
+// Mechanisms that are not the weapon itself but ride with it. Every one of
+// these is a v2 block ported verbatim — the numbers are measured, so they come
+// across as numbers and the behaviour is implemented against them (see
+// armWeapons.js for the state machine and physics.js for what each one does).
+function weaponMechanismsBlock(spec) {
+  const weapon = spec.weapon || {};
+  const block = {};
+  if (weapon.track) {
+    // Tantrum's drum rides a carriage down the middle of the bot: hold the
+    // second channel to winch it back and up, release to fire it forward. The
+    // hit is scaled AFTER the budget cap, because the cap is the rotor's stored
+    // energy and the carriage's momentum is not part of it.
+    block.track = {
+      offset: { ...weapon.track.offset },
+      retractSeconds: round(weapon.track.retractSeconds ?? 0.55, 3),
+      flingSeconds: round(weapon.track.flingSeconds ?? 0.16, 3),
+      hitBoost: round(weapon.track.hitBoost ?? 1.5, 3),
+    };
+  }
+  if (weapon.fists) {
+    // A third mechanism on its own button: the arms hinge on the axle across
+    // the back and punch up through a quarter turn, which is what helps when
+    // the drum has stalled against someone.
+    block.fists = {
+      openAngle: round(weapon.fists.openAngle ?? 0, 4),
+      punchAngle: round(weapon.fists.punchAngle ?? 1.3, 4),
+      punchSeconds: round(weapon.fists.punchSeconds ?? 0.18, 3),
+      impulse: round(weapon.fists.impulse ?? 90, 2),
+      damagePerHit: round(weapon.fists.damagePerHit ?? 2.5, 3),
+      reach: round(weapon.fists.reach ?? 1.1, 3),
+    };
+  }
   if (weapon.flame) {
     block.flame = {
       damagePerSecond: round(weapon.flame.damagePerSecond ?? 8, 3),
       reach: round(weapon.flame.reach ?? 3, 3),
+      scale: round(weapon.flame.scale ?? 1, 3),
+      dir: { ...(weapon.flame.dir || { x: 0, y: 0, z: -1 }) },
+      nozzles: (weapon.flame.nozzles || []).map((nozzle) => ({ ...nozzle })),
+      ridesWeapon: Boolean(weapon.flame.ridesWeapon),
       requiresGrip: Boolean(weapon.flame.requiresGrip),
     };
   }
+  if (weapon.overheadStall) {
+    // Gigabyte's rotor IS its roof: a hammer that comes down square on it stops
+    // the shell dead and jams it for a beat.
+    block.overheadStall = { ...weapon.overheadStall };
+  }
+  if (weapon.selfRight) block.selfRight = true;
+  if (weapon.downforce) block.downforce = round(weapon.downforce, 2);
+  if (weapon.holdStroke) block.holdStroke = true;
+  if (weapon.twoWayArm) block.twoWayArm = true;
+  if (weapon.gripStrength) {
+    block.grip = {
+      reach: round(weapon.gripReach ?? 2, 3),
+      height: round(weapon.gripHeight ?? 0.5, 3),
+      strength: round(weapon.gripStrength ?? 24, 3),
+      impulseCap: round(weapon.gripImpulseCap ?? 200, 2),
+      angularDamping: round(weapon.gripAngularDamping ?? 10, 3),
+      throwScale: round(weapon.throwScale ?? 0.55, 3),
+      downforceLbs: round(weapon.downforceLbs ?? 0, 2),
+    };
+  }
+  if (Number.isFinite(weapon.tuning?.ownerPitchScale)) {
+    // The reason the biggest weapon in the game is not simply the best: its own
+    // hits tumble it.
+    block.ownerPitchScale = round(weapon.tuning.ownerPitchScale, 3);
+  }
+  // Structure the scan could not see — Duck's plow hangs off two thin carrier
+  // bars, Quantum's jaw off a ram — stated as numbers so the moving part is not
+  // left floating unattached to the hinge it turns about.
+  if (weapon.arms?.length) block.arms = weapon.arms.map((arm) => JSON.parse(JSON.stringify(arm)));
   return block;
+}
+
+// Dragon King is four mechanisms on four buttons, none of which means anything
+// alone: the jaw is the enabling weapon (the saws only cut what it is gripping),
+// the arms tilt onto what the jaw holds, and the body rears up about the axle at
+// the back of its track pods to reach a bot BEHIND it.
+function auxMechanismsBlock(spec) {
+  const block = {};
+  if (spec.aux?.jaw) {
+    block.jaw = {
+      node: spec.aux.jaw.node,
+      pivot: { ...spec.aux.jaw.pivot },
+      openAngle: round(spec.aux.jaw.openAngle ?? 0.6, 4),
+      seconds: round(spec.aux.jaw.seconds ?? 0.4, 3),
+      reach: round(spec.aux.jaw.reach ?? 2.3, 3),
+      clampForce: round(spec.aux.jaw.clampForce ?? 260, 2),
+      holdStrength: round(spec.aux.jaw.holdStrength ?? 9, 3),
+      breakDistance: round(spec.aux.jaw.breakDistance ?? 3.2, 3),
+    };
+  }
+  if (spec.aux?.pods) {
+    block.pods = {
+      node: spec.aux.pods.node,
+      pivot: { ...spec.aux.pods.pivot },
+      range: round(spec.aux.pods.range ?? 2.2, 3),
+      seconds: round(spec.aux.pods.seconds ?? 0.8, 3),
+    };
+  }
+  if (spec.lift) {
+    block.lift = {
+      pivot: { ...spec.lift.pivot },
+      maxAngleDeg: round(spec.lift.maxAngleDeg ?? 90, 2),
+      seconds: round(spec.lift.seconds ?? 0.9, 3),
+    };
+  }
+  return Object.keys(block).length ? block : null;
 }
 
 function spinnerWeaponBlock(spec) {
@@ -510,7 +622,7 @@ function spinnerWeaponBlock(spec) {
     spinDownSeconds: round(weapon.spinDownSeconds ?? 1.1, 3),
     radius: round(weapon.radius ?? 0.5, 4),
     pivot: { x: round(weapon.pivot?.x ?? 0), y: round(weapon.pivot?.y ?? 0.5), z: round(weapon.pivot?.z ?? 0) },
-    overheadStall: weapon.overheadStall ? { ...weapon.overheadStall } : undefined,
+    ...weaponMechanismsBlock(spec),
   };
 }
 
@@ -555,6 +667,11 @@ export function portedModelConfig(id) {
     },
     collider: { parts: normalized },
     weapon: arm ? armWeaponBlock(spec) : spinnerWeaponBlock(spec),
+    aux: auxMechanismsBlock(spec),
+    // Two machines here are not tank-steered at all (Glitch and Shatter run
+    // omniwheels) and two run on tracks, which changes how they STOP rather
+    // than how they accelerate.
+    drive: spec.drive ? { ...spec.drive } : { type: "tank" },
     drivetrain: { spinAxis: "x" },
   };
 }

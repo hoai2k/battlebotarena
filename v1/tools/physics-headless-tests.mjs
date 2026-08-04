@@ -1,9 +1,20 @@
 import assert from "node:assert/strict";
-import { botGroundSpeedFeetPerSecond } from "../src/botConfig.js";
+import { BOT_CONFIG, botGroundSpeedFeetPerSecond } from "../src/botConfig.js";
 import { HEADLESS_CEILING_HEIGHT, HEADLESS_FLOOR_Y, createHeadlessPhysicsSim, headlessTestUtils, setPhysicsCornerTeeterPose } from "../src/headlessPhysicsRig.js";
 import { PORTED_BOT_IDS } from "../src/portedBots.js";
 import { driveSmoothness } from "./drive-smoothness-probe.mjs";
 import { weaponMechanism } from "./weapon-mechanism-probe.mjs";
+import {
+  botsWithMechanism,
+  fistsReport,
+  flameReport,
+  gripReport,
+  holonomicReport,
+  srimechReport,
+  trackReport,
+  trackedStopReport,
+  twoWayArmReport,
+} from "./mechanism-probe.mjs";
 
 const { THREE, bots, correctFighterAboveFloor, fighterColliderWorldMinY, fighterUpVector } = headlessTestUtils;
 
@@ -1361,10 +1372,82 @@ async function portedWeaponMechanismProbe() {
   return { allArmed: failed.length === 0, failed, results };
 }
 
+
+// The mechanisms that are not the weapon. Each of these is a v2 feature with
+// its own way of failing silently — a carriage that never travels, fire that
+// burns nothing, an arm that will not hold, a grip that only shoves, omniwheels
+// that cannot go sideways, tracks that coast, a machine that cannot get off its
+// back. One check per mechanism, per bot that has it, measured rather than
+// assumed (v1/tools/mechanism-probe.mjs prints the same numbers).
+async function portedMechanismProbe() {
+  const results = {};
+  const record = (label, id, checks, measured) => {
+    results[`${label}/${id}`] = { ...checks, measured };
+  };
+
+  for (const id of botsWithMechanism("track")) {
+    const measured = await trackReport(id);
+    record("carriage", id, {
+      windsBack: measured.wound > 0.9,
+      firesForward: measured.released < 0.1,
+      // The fling is worth what the catalog says it is worth, and only while
+      // the carriage is actually travelling.
+      boostsTheHit: Math.abs(measured.fling - measured.hitBoost) < 0.01,
+    }, measured);
+  }
+  for (const id of botsWithMechanism("fists")) {
+    const measured = await fistsReport(id);
+    record("fists", id, { swingsUp: measured.stroke > 0.9, lands: measured.punches > 0, hurts: measured.damage > 0 }, measured);
+  }
+  for (const id of botsWithMechanism("flame")) {
+    const measured = await flameReport(id);
+    record("flame", id, { lights: measured.burning > 0.9, burns: measured.ticks > 0, hurts: measured.damage > 0 }, measured);
+  }
+  for (const id of botsWithMechanism("twoWayArm")) {
+    const measured = await twoWayArmReport(id);
+    record("two-way arm", id, {
+      raises: measured.raised > 0.3,
+      holdsWhereLeft: measured.held < 0.02,
+      comesBackDown: measured.lowered < 0.05,
+    }, measured);
+  }
+  for (const id of botsWithMechanism("grip")) {
+    const measured = await gripReport(id);
+    record("grip", id, { takesHold: measured.grippedFrames > 30, throwsOnRelease: measured.releaseKick > 0.1 }, measured);
+  }
+  for (const id of botsWithMechanism("drive")) {
+    if (BOT_CONFIG[id].driveType === "holonomic") {
+      const measured = await holonomicReport(id);
+      record("holonomic", id, {
+        goesSideways: measured.sideways > 2,
+        withoutTurning: measured.yawDrift < 0.2,
+        withoutDriftingForward: measured.forward < 0.5,
+      }, measured);
+    } else {
+      const measured = await trackedStopReport(id);
+      record("tracked stop", id, { rolls: measured.before > 3, stopsDead: measured.stopped < 0.1 }, measured);
+    }
+  }
+  for (const id of botsWithMechanism("selfRight")) {
+    const measured = await srimechReport(id);
+    record("srimech", id, { startsInverted: measured.beforeUpY < -0.5, getsBackUp: measured.recovered }, measured);
+  }
+
+  const failed = Object.entries(results)
+    .filter(([, checks]) => Object.entries(checks).some(([key, value]) => key !== "measured" && !value))
+    .map(([name]) => name);
+  return { allWorking: failed.length === 0, failed, results };
+}
+
 const checks = [
   ["ported roster drives smoothly", async () => {
     const result = await portedDriveSmoothnessProbe();
     assert.equal(result.allSmooth, true, JSON.stringify(result, null, 2));
+    return result;
+  }],
+  ["ported mechanisms work", async () => {
+    const result = await portedMechanismProbe();
+    assert.equal(result.allWorking, true, JSON.stringify(result, null, 2));
     return result;
   }],
   ["ported roster weapons work", async () => {

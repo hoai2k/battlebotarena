@@ -11,7 +11,12 @@ import {
   isArmWeaponEngaged,
   isHeldArmWeapon,
   isNewArmWeapon,
+  resolveWeaponControls,
+  trackOffset,
   updateArmWeaponState,
+  updateWeaponMechanisms,
+  usesAuxChannel,
+  usesLiftChannel,
 } from "./armWeapons.js";
 import { PORTED_BOT_IDS } from "./portedBots.js";
 import { createPhysics } from "./physics.js?v=bot-speed-mph-1";
@@ -1308,6 +1313,24 @@ function damageStatusLines(fighter) {
   sideLine("Center", centerSide);
   sideLine("Right side", rightSide);
   return lines;
+}
+
+// Two machines spend a driving button on a mechanism: Tantrum's punch arms take
+// the brake, Dragon King's body lift takes the boost. Both are tracked or
+// stopped-by-drivetrain anyway, so neither loses anything it was using — but the
+// swap has to happen in ONE place, or a bot ends up braking and punching at
+// once, or doing neither.
+function applyMechanismChannels(fighter, input) {
+  const weapon = fighter?.weapon;
+  if (!usesAuxChannel(weapon) && !usesLiftChannel(weapon)) return input;
+  const channels = resolveWeaponControls(weapon, input);
+  return {
+    ...input,
+    weaponAux: channels.aux,
+    weaponLift: channels.lift,
+    brakeActive: channels.brakeActive,
+    boostActive: channels.boostActive,
+  };
 }
 
 function applyDamageToInput(fighter, input = {}) {
@@ -7086,6 +7109,103 @@ function breakChairProp(prop, impulse = new THREE.Vector3()) {
   });
 }
 
+// A jet of fire, drawn with the same throwaway particles the sparks use. It is
+// not a spark shower: the particles are bigger, they live longer, they travel
+// along the nozzle rather than flying off it, and they fade from white through
+// orange, which is what reads as flame at arena distance.
+function spawnFlame(point, direction, scale = 1, count = 5) {
+  if (!arena?.sparks) return;
+  for (let i = 0; i < count; i += 1) {
+    const size = (0.05 + Math.random() * 0.07) * scale;
+    const hot = Math.random();
+    const flame = new THREE.Mesh(
+      new THREE.SphereGeometry(size, 6, 6),
+      new THREE.MeshBasicMaterial({
+        color: hot > 0.72 ? 0xfff1c4 : hot > 0.3 ? 0xffa32a : 0xd8481a,
+        transparent: true,
+        opacity: 0.9,
+      }),
+    );
+    flame.position.copy(point);
+    const spread = 0.55;
+    flame.userData.velocity = new THREE.Vector3(
+      direction.x * (7 + Math.random() * 5) * scale + (Math.random() - 0.5) * spread,
+      direction.y * (7 + Math.random() * 5) * scale + Math.random() * 1.4,
+      direction.z * (7 + Math.random() * 5) * scale + (Math.random() - 0.5) * spread,
+    );
+    flame.userData.life = 0.22 + Math.random() * 0.2;
+    arena.sparks.add(flame);
+  }
+}
+
+// The moving parts that are not the weapon: a rotor's carriage, punch arms, a
+// latched jaw, the track pods a body rears up off, and the jet itself. Driven
+// from the state armWeapons.js keeps, so the picture and the physics cannot
+// disagree about where anything is.
+const mechanismScratch = new THREE.Vector3();
+function syncWeaponMechanismVisuals(fighter, dt) {
+  const weapon = fighter?.weapon;
+  if (!weapon) return;
+  const config = weapon.arm || weapon;
+
+  // Tantrum's drum rides its carriage. The weapon collider is bound to this
+  // group, so moving it moves the solid too — which is the point: a wound-back
+  // drum is a foot behind where it can reach anything.
+  const offset = trackOffset(weapon);
+  if (offset && weapon.object && weapon.offset) {
+    weapon.object.position.set(
+      weapon.offset.x + offset.x,
+      weapon.offset.y + offset.y,
+      weapon.offset.z + offset.z,
+    );
+  }
+
+  const fistsNode = weapon.auxNodes?.fists;
+  if (config.fists && fistsNode) {
+    const open = config.fists.openAngle || 0;
+    const punch = config.fists.punchAngle || 0;
+    fistsNode.rotation.x = open + (weapon.fistStroke || 0) * (punch - open);
+  }
+
+  const jawNode = weapon.aux?.nodes?.jaw;
+  if (weapon.aux?.jaw && jawNode) {
+    jawNode.rotation.x = (weapon.jawAmount || 0) * (weapon.aux.jaw.openAngle || 0);
+  }
+
+  // The pods counter-rotate by exactly the body's own pitch, so they stay flat
+  // on the floor while the machine swings over them.
+  const podsNode = weapon.aux?.nodes?.pods;
+  if (weapon.aux?.lift && podsNode) {
+    const pitch = (weapon.aux.lift.maxAngleDeg * Math.PI / 180) * (weapon.liftAmount || 0);
+    podsNode.rotation.x = -pitch;
+  }
+
+  if (config.flame && (weapon.burning || 0) > 0.25 && fighter.group) {
+    weapon.flameEmitCharge = (weapon.flameEmitCharge || 0) + dt * 60 * weapon.burning;
+    if (weapon.flameEmitCharge >= 1) {
+      weapon.flameEmitCharge = 0;
+      fighter.group.updateMatrixWorld(true);
+      // Nozzles and jet direction are authored in BODY space. `ridesWeapon`
+      // (Kraken, whose nozzle points into its own bite) swings both about the
+      // weapon's hinge by however far the jaw has moved, so the jet aims where
+      // the jaw points rather than where the bot points.
+      const swing = config.flame.ridesWeapon && weapon.object ? weapon.object.quaternion : null;
+      const pivot = weapon.offset || { x: 0, y: 0, z: 0 };
+      const direction = mechanismScratch
+        .set(config.flame.dir.x, config.flame.dir.y, config.flame.dir.z)
+        .normalize();
+      if (swing) direction.applyQuaternion(swing);
+      const worldDirection = direction.clone().transformDirection(fighter.group.matrixWorld);
+      for (const nozzle of config.flame.nozzles) {
+        const point = new THREE.Vector3(nozzle.x, nozzle.y, nozzle.z);
+        if (swing) point.sub(pivot).applyQuaternion(swing).add(pivot);
+        fighter.group.localToWorld(point);
+        spawnFlame(point, worldDirection, config.flame.scale || 1, 3);
+      }
+    }
+  }
+}
+
 function spawnSparks(position, count = 16) {
   if (!arena) return;
   const frame = Number.isFinite(online?.lastFrame) ? online.lastFrame : Math.floor(performance.now() / 16);
@@ -7154,10 +7274,23 @@ function updateWeapon(fighter, dt, active, input = {}) {
   // Mechanisms new to v1 (hammer, saw arm, lifter, grappler) run their stroke
   // and their nested rotors through the shared arm-weapon runtime, so the game
   // and the headless rig drive them identically.
+  const channels = resolveWeaponControls(weapon, input);
+  // Carriages, punch arms, flamethrowers, latched jaws and body lifts ride
+  // whatever weapon carries them — a spinner as readily as an arm — so they
+  // update for every bot before the weapon's own code path runs.
+  updateWeaponMechanisms(weapon, dt, {
+    weapon: channels.weapon && !isWeaponBroken(fighter),
+    secondary: channels.secondary,
+    aux: channels.aux,
+    lift: channels.lift,
+    broken: isWeaponBroken(fighter),
+    now,
+  });
+  syncWeaponMechanismVisuals(fighter, dt);
   if (isNewArmWeapon(weapon)) {
     updateArmWeaponState(weapon, dt, {
       active: weaponActive,
-      secondary: Boolean(input.weaponSecondary),
+      secondary: channels.secondary,
       strokeActive: isWeaponImpulseStrokeActive(fighter),
       broken: isWeaponBroken(fighter),
     });
@@ -7186,7 +7319,8 @@ function updateWeapon(fighter, dt, active, input = {}) {
   if (weapon.type === "bar" || weapon.type === "drum") {
     if (weapon.toggle && weaponActive && !weapon.wasInputActive) weapon.toggledOn = !weapon.toggledOn;
     weapon.wasInputActive = weaponActive;
-    const spinning = weapon.toggle ? weapon.toggledOn : weaponActive;
+    // A rotor jammed by a blow from directly above cannot pull against it.
+    const spinning = (weapon.toggle ? weapon.toggledOn : weaponActive) && !weapon.stalled;
     const visualSpeed = spinnerEffectiveVisualSpeed(fighter);
     const idleSpeed = Number.isFinite(weapon.idleSpeed) ? weapon.idleSpeed : 0;
     const targetSpeed = spinning ? visualSpeed : idleSpeed;
@@ -7258,7 +7392,9 @@ function isWeaponImpactActive(fighter, inputActive) {
 
 function isImpulseWeapon(weapon) {
   // A hammer is fired and committed like a flipper: it takes v1's stroke window
-  // and return gate, so it cannot be parked half way up.
+  // and return gate, so it cannot be parked half way up. Rusty is the exception
+  // — its axe is a gantry that HOLDS down and re-cocks on release.
+  if (weapon?.arm?.holdStroke) return false;
   return weapon?.type === "flipper" || weapon?.type === "meshFlipper" || weapon?.type === "hammer";
 }
 
@@ -7305,7 +7441,9 @@ function makeTankDriveInput(throttle = 0, turn = 0, extraTurn = 0) {
 }
 
 function completeDriveInput(input = {}) {
-  const tank = input.leftDrive !== undefined || input.rightDrive !== undefined ? input : makeTankDriveInput(input.throttle || 0, input.turn || 0);
+  const tank = input.leftDrive !== undefined || input.rightDrive !== undefined
+    ? input
+    : { ...makeTankDriveInput(input.throttle || 0, input.turn || 0), strafe: input.strafe };
   const leftDrive = clampDrive(tank.leftDrive);
   const rightDrive = clampDrive(tank.rightDrive);
   return {
@@ -7314,6 +7452,7 @@ function completeDriveInput(input = {}) {
     rightDrive,
     throttle: (leftDrive + rightDrive) * 0.5,
     turn: (leftDrive - rightDrive) * 0.5,
+    strafe: clampDrive(input.strafe ?? tank.strafe ?? 0),
     brakeActive: Boolean(input.brakeActive),
   };
 }
@@ -7327,6 +7466,10 @@ function gamepadDriveForScheme(pad, scheme) {
   const leftY = -dead(pad.axes[1] || 0);
   const leftX = dead(pad.axes[0] || 0);
   const rightY = -dead(pad.axes[3] || 0);
+  const rightX = dead(pad.axes[2] || 0);
+  // Omniwheels: LEFT STICK translates (Y forward/back, X sideways), RIGHT STICK
+  // rotates. Not a tank pair, because this machine's wheels are not a pair.
+  if (scheme === "holonomic") return { throttle: leftY, turn: rightX, strafe: leftX, controlScheme: scheme };
   if (scheme === "arcade") return { throttle: leftY, turn: leftX, controlScheme: scheme };
   if (scheme === "car") return { throttle: leftY, turn: leftX * 0.62, controlScheme: scheme };
   return { leftDrive: leftY, rightDrive: rightY, controlScheme: "tank" };
@@ -8167,16 +8310,25 @@ function controlledBotIdForGamepad(gamepadIndex = 0) {
 function readControls(gamepadIndex = 0) {
   const pads = getConnectedGamepads();
   const pad = pads[gamepadIndex] || null;
-  const keyboardTank = gamepadIndex === 1
-    ? makeTankDriveInput(
-      (keys.has("ArrowUp") ? 1 : 0) - (keys.has("ArrowDown") ? 1 : 0),
-      (keys.has("ArrowRight") ? 1 : 0) - (keys.has("ArrowLeft") ? 1 : 0),
-    )
-    : makeTankDriveInput(
-      (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0),
-      (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0),
-      (keys.has("KeyE") ? 0.7 : 0) - (keys.has("KeyQ") ? 0.7 : 0),
-    );
+  // A bot on omniwheels does not steer with its sides: its stick TRANSLATES
+  // (forward/back and sideways) and a second axis rotates, independently. On
+  // the keyboard that is W/S forward, A/D sideways, Q/E turn — the same three
+  // keys, doing three different jobs.
+  const holonomic = controlSchemeForBot(controlledBotIdForGamepad(gamepadIndex)) === "holonomic";
+  const forwardKeys = gamepadIndex === 1
+    ? (keys.has("ArrowUp") ? 1 : 0) - (keys.has("ArrowDown") ? 1 : 0)
+    : (keys.has("KeyW") ? 1 : 0) - (keys.has("KeyS") ? 1 : 0);
+  const sideKeys = gamepadIndex === 1
+    ? (keys.has("ArrowRight") ? 1 : 0) - (keys.has("ArrowLeft") ? 1 : 0)
+    : (keys.has("KeyD") ? 1 : 0) - (keys.has("KeyA") ? 1 : 0);
+  const turnKeys = gamepadIndex === 1
+    ? (keys.has("Period") ? 0.7 : 0) - (keys.has("Comma") ? 0.7 : 0)
+    : (keys.has("KeyE") ? 0.7 : 0) - (keys.has("KeyQ") ? 0.7 : 0);
+  const keyboardTank = holonomic
+    ? { ...makeTankDriveInput(forwardKeys, turnKeys), strafe: sideKeys }
+    : gamepadIndex === 1
+      ? makeTankDriveInput(forwardKeys, sideKeys)
+      : makeTankDriveInput(forwardKeys, sideKeys, turnKeys);
   const keyboard = {
     ...completeDriveInput(keyboardTank),
     weapon: gamepadIndex === 1 ? keys.has("Enter") : keys.has("Space"),
@@ -8184,6 +8336,12 @@ function readControls(gamepadIndex = 0) {
     // without one ignore it, so the control layer does not need to know which
     // machine is which (armWeapons.js does).
     weaponSecondary: gamepadIndex === 1 ? keys.has("ShiftRight") : keys.has("ShiftLeft"),
+    // Third and fourth mechanism channels. On a pad they are the brake and the
+    // boost, taken over for the two machines that have something to put there
+    // (armWeapons.js decides); on the keyboard they get their own keys so a
+    // player without a pad can still work them.
+    weaponAux: gamepadIndex === 1 ? keys.has("Period") : keys.has("KeyF"),
+    weaponLift: gamepadIndex === 1 ? keys.has("Slash") : keys.has("KeyG"),
     boostActive: false,
     brakeActive: false,
     pausePressed: false,
@@ -8217,6 +8375,8 @@ function readControls(gamepadIndex = 0) {
     weapon: (pad.buttons[7]?.value || 0) > 0.2 || (gamepadIndex === 0 && keyboard.weapon),
     weaponSecondary: Boolean(pad.buttons[5]?.pressed) || (pad.buttons[5]?.value || 0) > 0.2
       || (gamepadIndex === 0 && keyboard.weaponSecondary),
+    weaponAux: gamepadIndex === 0 && keyboard.weaponAux,
+    weaponLift: gamepadIndex === 0 && keyboard.weaponLift,
     boostActive,
     brakeActive,
     pausePressed,
@@ -8910,8 +9070,8 @@ function updateArena(dt) {
     activeRivalInput = computeArenaAiInput(rival, player, dt);
   }
   if (!activeRivalInput) activeRivalInput = completeDriveInput({ weapon: false });
-  const effectivePlayerInput = applyDamageToInput(player, playerInput);
-  const effectiveRivalInput = applyDamageToInput(rival, activeRivalInput);
+  const effectivePlayerInput = applyMechanismChannels(player, applyDamageToInput(player, playerInput));
+  const effectiveRivalInput = applyMechanismChannels(rival, applyDamageToInput(rival, activeRivalInput));
 
   updateDrivetrain(player, effectivePlayerInput, dt, player.visualScale);
   updateDrivetrain(rival, effectiveRivalInput, dt, rival.visualScale);

@@ -125,13 +125,16 @@ try {
         }, { timeout: 240_000 }).catch(() => {});
         // Hold the weapon and both drive sticks down for a few seconds of real
         // frames, so a mechanism that throws only while it is moving throws here.
-        await page.keyboard.down("Space");
-        await page.keyboard.down("ShiftLeft");
-        await page.keyboard.down("KeyW");
+        // The fight intro runs its own countdown and swallows input; wait it
+        // out, or the five seconds of "playing" land before the match starts.
         await page.waitForTimeout(5000);
-        await page.keyboard.up("KeyW");
-        await page.keyboard.up("ShiftLeft");
-        await page.keyboard.up("Space");
+        // Every mechanism channel at once: weapon, second (saws/discs/jaws/
+        // carriage/flame), third (punch arms), fourth (body lift), and drive.
+        // A bot that throws only while something is moving throws here.
+        const held = ["Space", "ShiftLeft", "KeyF", "KeyG", "KeyW"];
+        for (const key of held) await page.keyboard.down(key);
+        await page.waitForTimeout(5000);
+        for (const key of held.reverse()) await page.keyboard.up(key);
         await page.waitForTimeout(500);
       }
       report = await page.evaluate(() => {

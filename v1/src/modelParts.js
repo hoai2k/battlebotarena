@@ -357,6 +357,10 @@ function spinnerWeaponState(config, spec, object, pivot) {
   const weapon = config.weapon || {};
   return {
     type: weapon.type || "bar",
+    // A spinner can carry mechanisms too — Tantrum's drum rides a carriage and
+    // punches with its own arms — so the config block hangs off the state the
+    // same way an arm's does, and everything downstream reads one place.
+    arm: weapon,
     object,
     spinAxis: weapon.spinAxis || "x",
     axisPitch: 0,
@@ -472,6 +476,40 @@ export function splitSegmentedModelParts(model, config, spec) {
     viewerWheels.push(wheelPivot);
   }
 
+  // Aux groups: parts that are neither the chassis nor the weapon but move on
+  // their own — Tantrum's punch arms, Dragon King's jaw and track pods. Each is
+  // hung on a pivot at the axle the catalog names (their bbox centre is not it:
+  // Tantrum's arms hinge on a boss three feet behind their fists).
+  const aux = {};
+  const auxNodes = [];
+  model.traverse((child) => {
+    if (child.name?.startsWith("modelAux-")) auxNodes.push(child);
+  });
+  for (const node of auxNodes) {
+    const name = node.name.slice("modelAux-".length);
+    const authored = config.aux?.[name]?.pivot || null;
+    const pivot = authored
+      ? new THREE.Vector3(authored.x, authored.y, authored.z)
+      : resolvePivot(node, model, null);
+    detachNode(node);
+    const anchor = new THREE.Group();
+    anchor.name = `modelAux-${name}`;
+    anchor.position.copy(pivot);
+    model.add(anchor);
+    model.updateMatrixWorld(true);
+    anchor.attach(node);
+    aux[name] = anchor;
+  }
+
+  // Structure the scan could not see. Duck's plow hangs off two thin carrier
+  // bars and photogrammetry resolved them as nothing at all, which leaves the
+  // moving part floating unattached to the hinge it turns about. They are
+  // simple enough to stat as numbers.
+  for (const bar of weaponConfig.arms || []) {
+    const parent = bar.attach === "body" ? model : (weapon?.object || model);
+    buildWeaponArmBar(parent, bar);
+  }
+
   const body = model.getObjectByName("modelBody") || null;
   if (body) body.userData.viewerPart = "body";
   const wheelRadius = viewerWheels.reduce((max, wheel) => {
@@ -489,11 +527,52 @@ export function splitSegmentedModelParts(model, config, spec) {
       spinAxis: config.drivetrain?.spinAxis || "x",
     }
     : null;
+  if (weapon) {
+    // Every aux group is reachable from the weapon (Tantrum's fists hang off a
+    // spinner, not off an aux block), and the ones the catalog describes carry
+    // their numbers with them.
+    weapon.auxNodes = aux;
+    if (config.aux) weapon.aux = { ...config.aux, nodes: aux };
+  }
   return {
     weapon,
     drivetrain,
+    aux,
     viewerParts: { body, weapon: weapon?.object || null, wheels: viewerWheels },
   };
+}
+
+// One tubular arm (or the machined block one hinges in), from `from` to `to` in
+// body-local feet, mirrored to whichever side `x` names.
+function buildWeaponArmBar(parent, bar) {
+  const from = new THREE.Vector3(bar.x, bar.from.y, bar.from.z);
+  const to = new THREE.Vector3(bar.x, bar.to.y, bar.to.z);
+  const span = new THREE.Vector3().subVectors(to, from);
+  if (span.lengthSq() < 0.0001) return null;
+  const material = new THREE.MeshStandardMaterial({
+    color: bar.color || "#2a2d33",
+    metalness: 0.85,
+    roughness: 0.35,
+  });
+  const mesh = new THREE.Mesh(
+    bar.shape === "box"
+      ? new THREE.BoxGeometry(bar.width ?? 0.16, bar.height ?? 0.22, span.length())
+      : new THREE.CylinderGeometry(bar.radius ?? 0.06, bar.radius ?? 0.06, span.length(), 12),
+    material,
+  );
+  mesh.name = bar.shape === "box" ? "weaponMount" : "weaponArm";
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  // A box's length runs down +Z and a cylinder's down +Y; aim whichever is the
+  // long axis along the span.
+  mesh.quaternion.setFromUnitVectors(
+    bar.shape === "box" ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0),
+    span.clone().normalize(),
+  );
+  mesh.position.copy(from).addScaledVector(span, 0.5);
+  parent.updateMatrixWorld(true);
+  parent.attach(mesh);
+  return mesh;
 }
 
 export function splitConfiguredModelParts(model, config, spec) {

@@ -188,7 +188,43 @@ is actually wired up. So every bot is booted in a real browser, into a real
 match, with the weapon and both drive channels held down for five seconds of real
 frames. **22/22 boot clean** — no console errors, no page exceptions.
 
-## 5. Known deviations from v2, and why
+## 5. Mechanisms that are not weapons — `v1/tools/mechanism-probe.mjs`
+
+Everything a v2 bot does beyond swinging its weapon, measured one bot at a time
+and asserted by the "ported mechanisms work" check. **All present, all working.**
+
+```
+carriage    tantrum       {"wound":1,"released":0,"fling":1.5,"hitBoost":1.5}
+fists       tantrum       {"stroke":1,"punches":6,"damage":15}
+flame       freeshipping  {"burning":1,"ticks":148,"damage":22.199999999999967,"requiresGrip":false,"shoved":15.044720078823543}
+flame       kraken        {"burning":1,"ticks":33,"damage":4.4,"requiresGrip":true,"shoved":23.08518514296204}
+two-way     duck          {"raised":0.5833333333333333,"parked":0.5833333333333333,"lowered":0,"held":0}
+grip        clawviper     {"grippedFrames":143,"maxLift":0.20576656609773636,"releaseKick":0.3623262196779251}
+grip        overhaul      {"grippedFrames":142,"maxLift":0.17426148056983948,"releaseKick":0.42769525945186615}
+holonomic   shatter       {"sideways":6.785165626557216,"forward":3.5762786865234375e-7,"yawDrift":0}
+tracked     dragonking    {"before":6.377766133332709,"after":0.07254429162661014,"stopped":0.011374561266438604}
+holonomic   glitch        {"sideways":5.089339013550045,"forward":0.000002749264467638568,"yawDrift":0}
+tracked     rusty         {"before":5.548918444173724,"after":0.06863010918307977,"stopped":0.012368195689583488}
+srimech     hydra         {"beforeUpY":-1.000000000106985,"bestUpY":0.9998047838950685,"lifted":1.8032821416854858,"recovered":true}
+srimech     blip          {"beforeUpY":-0.9996326800498869,"bestUpY":0.99995834356828,"lifted":1.8625928163528442,"recovered":true}
+srimech     duck          {"beforeUpY":-1.0000000000002387,"bestUpY":0.9999965687993054,"lifted":1.6854229271411896,"recovered":true}
+srimech     freeshipping  {"beforeUpY":-0.9999263906859567,"bestUpY":0.9999444878096126,"lifted":1.889191746711731,"recovered":true}
+srimech     overhaul      {"beforeUpY":-0.9999997616880035,"bestUpY":0.9999828681801222,"lifted":1.5358527898788452,"recovered":true}
+srimech     shatter       {"beforeUpY":-1.0000000000000004,"bestUpY":0.9998090356294762,"lifted":2.182107448577881,"recovered":true}
+srimech     rusty         {"beforeUpY":-0.9999734641434457,"bestUpY":0.9991549680991972,"lifted":1.5537958145141602,"recovered":true}
+```
+
+Reading it: Tantrum's carriage travels its full stroke and returns, and its hit
+boost lands at exactly the 1.5x the catalog states, but only while the carriage
+is moving. Free Shipping burns continuously and Kraken only after its jaw is
+shut, which is the difference `requiresGrip` describes. Duck's plow parks
+mid-stroke and stays there. Both grapplers hold a foe for over two seconds and
+kick it away on release. The omniwheel bots travel 5-7ft sideways with zero
+forward drift and zero yaw. Both tracked bots shed 99% of their speed within
+0.3s of the stick being released. Every arm that can reach the floor gets its
+machine back on its wheels from fully inverted.
+
+## 6. Known deviations from v2, and why
 
 | | |
 |---|---|
@@ -196,8 +232,8 @@ frames. **22/22 boot clean** — no console errors, no page exceptions.
 | **Suspension** | v2 runs raycast suspension off `wheelAnchors`; v1 has none. The anchors become `driveContact` probes with their contact patches on the floor plane the model rests on. |
 | **Reach** | v2 measures a spinner's reach in its own sim; v1 measures it to the target's centre. Ported reach is v2's number floored by the bot's own geometry — how far its nose stands ahead of its rotor, plus a foe's half-length. Without that floor, Witch Doctor, Endgame and Glitch spun at full speed and never touched anything they drove into. |
 | **Grappler damage** | v2 gives Claw Viper and Overhaul no hold damage at all, because a v2 fight it controls can be won on the judges' cards. v1 decides everything on damage, so a grappler ticks a little while it holds you. |
-| **Weapon channels** | v2 has four held channels (RT/RB/LB/LT). v1 has two — the weapon button and the new secondary — so Dragon King's four-mechanism rig collapses into arm-and-jaw on RT with the saw motors on RB. |
-| **`weapon.track`, `weapon.fists`, `weapon.flame`, `weapon.overheadStall`** | Tantrum's winching drum carriage and punch arms, Kraken's and Free Shipping's flamethrowers, Gigabyte's roof stall are v2 mechanisms with no v1 equivalent. The bots keep their primary weapon and drive; the extras are carried in the catalog data but not simulated in v1. |
+| **Weapon channels** | v2 has four held channels (RT/RB/LB/LT) and so, now, does v1 — the third and fourth take over the brake and the boost, but only for the two machines that have something to put there, and both of those stop on their drivetrain anyway. |
+| **Grip and lift fidelity** | v2 servos a gripped victim onto a point that sweeps with the arm through its own solver, and pitches Dragon King's chassis with a real servo. v1 does both with scripted impulses against its own physics — the mechanism and the numbers are the same, the integration is v1's. |
 
 ## Re-running it
 
@@ -206,5 +242,6 @@ npm run test:v1                                          # 30 checks, 2 of them 
 node v1/tools/ported-bot-audit.mjs                       # section 1
 node v1/tools/weapon-mechanism-probe.mjs                 # section 2
 node v1/tools/drive-smoothness-probe.mjs                 # section 3
+node v1/tools/mechanism-probe.mjs                         # section 5
 node server.mjs & node v1/tools/boot-probe.mjs --arena   # section 4
 ```
