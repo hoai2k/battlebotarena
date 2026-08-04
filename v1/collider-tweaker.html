@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Battle Bot Arena Collider Tweaker</title>
+    <link rel="stylesheet" href="./src/style.css?v=bot-config-loading-1" />
+    <link rel="stylesheet" href="./src/colliderTweaker.css?v=collider-tweaker-1" />
+  </head>
+  <body class="collider-tweaker-page">
+    <div id="app">
+      <canvas id="scene"></canvas>
+      <aside class="panel collider-tweaker-panel">
+        <header class="brand">
+          <div>
+            <p>Battle Bot Arena</p>
+            <h1>Colliders</h1>
+          </div>
+          <a class="mini-button home-link" href="./index.html">Lab</a>
+        </header>
+
+        <section class="controls">
+          <label>
+            Bot
+            <select id="bot-select"></select>
+          </label>
+          <label>
+            Edit mode
+            <select id="edit-mode">
+              <option value="colliders" selected>Colliders</option>
+              <option value="weaponSplit">Weapon split</option>
+              <option value="geometryCutter">Geometry Cutter</option>
+              <option value="physicsTest">Physics Test</option>
+              <option value="physicalDamage">Physical Damage</option>
+            </select>
+          </label>
+          <label>
+            Collider view
+            <select id="collider-view-mode">
+              <option value="all" selected>All</option>
+              <option value="physics">Physics only</option>
+              <option value="drive">Drive Contact only</option>
+              <option value="weapon">Weapon only</option>
+              <option value="wedge">Wedge only</option>
+            </select>
+          </label>
+          <label>
+            Geometry view
+            <select id="geometry-view">
+              <option value="everything" selected>Everything</option>
+              <option value="body">Body only</option>
+              <option value="weapon">Weapon only</option>
+              <option value="wheels">Wheels only</option>
+            </select>
+          </label>
+          <div class="tweaker-actions">
+            <button id="output-colliders" class="control-button" type="button">Output colliders</button>
+            <button id="output-weapon-split" class="control-button" type="button" hidden>Output weapon split</button>
+            <button id="output-geometry" class="control-button" type="button" hidden>Output Geometry</button>
+          </div>
+          <div id="geometry-cutter-actions" class="tweaker-actions cutter-actions" hidden>
+            <button id="create-model-transform" class="mini-button" type="button">Bot</button>
+            <button id="create-cut-box" class="mini-button" type="button">Cut</button>
+            <button id="apply-geometry-cut" class="mini-button icon-button" type="button" aria-label="Apply geometry cut" disabled>✂</button>
+            <button id="apply-geometry-fill" class="mini-button icon-button" type="button" aria-label="Fill geometry hole" disabled>Fill</button>
+          </div>
+          <div id="physics-test-actions" class="physics-test-actions" hidden>
+            <button id="run-physics-test" class="control-button" type="button">Run Test</button>
+            <div class="split-grid physics-test-grid">
+              <label>Velocity X<input id="physics-velocity-x" type="number" step="0.1" value="0" /></label>
+              <label>Velocity Y<input id="physics-velocity-y" type="number" step="0.1" value="0" /></label>
+              <label>Velocity Z<input id="physics-velocity-z" type="number" step="0.1" value="0" /></label>
+            </div>
+            <label class="physics-slider">
+              <span>Physics gravity <output id="physics-gravity-value">-32.2</output></span>
+              <input id="physics-gravity" type="range" min="-80" max="0" step="0.1" value="-32.174" />
+            </label>
+            <label class="switch">
+              <input id="physics-view-colliders" type="checkbox" />
+              <span>View colliders</span>
+            </label>
+            <label class="switch">
+              <input id="physics-weapon-on" type="checkbox" />
+              <span>Weapon on</span>
+            </label>
+            <label class="switch">
+              <input id="physics-recently-hit" type="checkbox" />
+              <span>Recently hit</span>
+            </label>
+            <label class="switch">
+              <input id="physics-self-righting" type="checkbox" />
+              <span>Self-righting grace</span>
+            </label>
+            <button id="output-physics-test" class="control-button" type="button">Output Test</button>
+            <button id="snapshot-physics-test" class="control-button" type="button">Take Snapshot</button>
+          </div>
+          <div id="physical-damage-actions" class="physical-damage-actions" hidden>
+            <button id="cause-physical-damage" class="control-button" type="button">Cause Damage</button>
+            <div class="split-grid physical-damage-grid">
+              <label>Damage<input id="tweaker-damage-amount" type="number" min="1" max="300" step="1" value="72" /></label>
+              <label>Hits<input id="tweaker-damage-hits" type="number" min="1" max="6" step="1" value="2" /></label>
+              <label>Min break radius<input id="tweaker-damage-radius" type="number" min="0.08" max="1.4" step="0.02" value="0.24" /></label>
+              <label>Min match radius<input id="tweaker-damage-match-radius" type="number" min="0.1" max="2.4" step="0.02" value="0.42" /></label>
+              <label>Max break radius<input id="tweaker-damage-max-radius" type="number" min="0.08" max="2.4" step="0.02" value="0.96" /></label>
+              <label>Max match radius<input id="tweaker-damage-max-match-radius" type="number" min="0.1" max="3.6" step="0.02" value="1.68" /></label>
+              <label>Radius max damage<input id="tweaker-damage-max-radius-multiplier" type="number" min="1" max="20" step="0.5" value="10" /></label>
+              <label>Threshold<input id="tweaker-damage-threshold" type="number" min="2" max="80" step="1" value="28" /></label>
+              <label>Resilience<input id="tweaker-damage-resilience" type="number" min="0.25" max="5" step="0.05" value="1" /></label>
+              <label>Impulse<input id="tweaker-damage-impulse" type="number" min="0" max="2" step="0.01" value="0.42" /></label>
+              <label>Max pieces<input id="tweaker-damage-max-pieces" type="number" min="1" max="16" step="1" value="5" /></label>
+            </div>
+            <label class="switch">
+              <input id="tweaker-damage-convex" type="checkbox" checked />
+              <span>Convex debris colliders</span>
+            </label>
+            <label class="switch">
+              <input id="physical-damage-view-colliders" type="checkbox" />
+              <span>View colliders</span>
+            </label>
+            <button id="output-break-info" class="control-button" type="button" disabled>Output Break Info</button>
+            <div id="physical-damage-status" class="physical-damage-status" aria-live="polite">
+              Physical damage status will appear here.
+            </div>
+          </div>
+          <div class="tweaker-actions secondary">
+            <select id="new-collider-type" aria-label="New collider type">
+              <option value="box">Box</option>
+              <option value="wedge">Wedge</option>
+              <option value="weapon">Weapon</option>
+              <option value="driveContact">Drive Contact</option>
+            </select>
+            <button id="add-collider" class="mini-button icon-button" type="button" aria-label="Add collider">+</button>
+            <button id="delete-colliders" class="mini-button icon-button" type="button" aria-label="Delete selected colliders" disabled>Del</button>
+            <button id="undo-change" class="mini-button" type="button" disabled>Undo</button>
+            <button id="redo-change" class="mini-button" type="button" disabled>Redo</button>
+          </div>
+          <section id="weapon-split-debug" class="weapon-split-tuning" aria-label="Weapon split tuning">
+            <label class="switch">
+              <input id="view-weapon-split" type="checkbox" checked />
+              <span>View Weapon Split</span>
+            </label>
+            <div class="split-grid">
+              <label>X min<input data-split-field="region.x.0" type="number" min="-0.2" max="1.2" step="0.01" /></label>
+              <label>Y min<input data-split-field="region.y.0" type="number" min="-0.2" max="1.2" step="0.01" /></label>
+              <label>Z min<input data-split-field="region.z.0" type="number" min="-0.2" max="1.2" step="0.01" /></label>
+              <label>X max<input data-split-field="region.x.1" type="number" min="-0.2" max="1.2" step="0.01" /></label>
+              <label>Y max<input data-split-field="region.y.1" type="number" min="-0.2" max="1.2" step="0.01" /></label>
+              <label>Z max<input data-split-field="region.z.1" type="number" min="-0.2" max="1.2" step="0.01" /></label>
+              <label>Center X<input data-split-field="pivot.x" type="number" min="-0.2" max="1.2" step="0.01" /></label>
+              <label>Center Y<input data-split-field="pivot.y" type="number" min="-0.2" max="1.2" step="0.01" /></label>
+              <label>Center Z<input data-split-field="pivot.z" type="number" min="-0.2" max="1.2" step="0.01" /></label>
+            </div>
+            <label id="weapon-mirror-row" class="switch weapon-mirror-row">
+              <input id="weapon-mirror" data-split-field="mirrorDiagonal" type="checkbox" />
+              <span>Mirror diagonal fill</span>
+            </label>
+            <label id="weapon-mirror-angle-row" class="weapon-mirror-angle-row">
+              Mirror angle
+              <input id="weapon-mirror-angle" data-split-field="mirrorDiagonalAngle" type="number" min="0" max="360" step="0.5" />
+            </label>
+            <label id="weapon-axis-pitch-row" class="weapon-axis-pitch-row">
+              Axis pitch
+              <input id="weapon-axis-pitch" data-split-field="axisPitch" type="number" min="-45" max="45" step="0.5" />
+            </label>
+            <label id="weapon-region-yaw-row" class="weapon-region-yaw-row">
+              Region yaw
+              <input id="weapon-region-yaw" data-split-field="regionYaw" type="number" min="-45" max="45" step="0.5" />
+            </label>
+          </section>
+        </section>
+
+        <section class="tweaker-readout">
+          <dl>
+            <div>
+              <dt>Selected</dt>
+              <dd id="selected-collider">None</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd id="status-text">Loading</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="panel-footer-actions">
+          <button id="auto-generate-colliders" class="mini-button" type="button">Auto-generate colliders</button>
+          <button id="reset-colliders" class="mini-button" type="button">Reset</button>
+        </section>
+
+        <section id="numeric-inspector" class="numeric-inspector" hidden>
+          <header>
+            <h2 id="numeric-inspector-title">Values</h2>
+          </header>
+          <div id="numeric-inspector-fields" class="numeric-inspector-fields"></div>
+        </section>
+      </aside>
+
+      <dialog id="collider-output-modal" class="collider-output-modal">
+        <form method="dialog" class="output-card">
+          <header>
+            <h2 id="output-title">Collider output</h2>
+            <button class="mini-button" type="button" data-close-output>Close</button>
+          </header>
+          <textarea id="collider-output-text" spellcheck="false"></textarea>
+          <footer>
+            <button id="copy-output" class="control-button" type="button">Copy</button>
+          </footer>
+        </form>
+      </dialog>
+    </div>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://esm.sh/three@0.165.0",
+          "@dimforge/rapier3d-compat": "https://esm.sh/@dimforge/rapier3d-compat@0.14.0",
+          "three/addons/": "https://esm.sh/three@0.165.0/examples/jsm/"
+        }
+      }
+    </script>
+    <script type="module" src="./src/colliderTweaker.js?v=game-config-1"></script>
+  </body>
+</html>

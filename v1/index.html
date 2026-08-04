@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Battle Bot Arena</title>
+    <link rel="icon" type="image/png" href="favicon.png">
+    <link rel="apple-touch-icon" href="favicon.png">
+    <link rel="stylesheet" href="./src/style.css?v=kill-saw-callout-1" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="scene"></canvas>
+      <div id="damage-hud" class="damage-hud" aria-live="polite">
+        <div class="damage-panel damage-panel-player">
+          <div id="player-damage" class="damage-readout damage-readout-player">0%</div>
+          <div id="player-damage-status" class="damage-status"></div>
+          <div id="player-damage-events" class="damage-events" aria-live="polite"></div>
+        </div>
+        <div id="match-clock" class="match-clock" aria-live="polite">
+          <div id="match-timer" class="match-timer">3:00</div>
+          <div id="knockout-banner" class="knockout-banner"></div>
+        </div>
+        <div class="damage-panel damage-panel-rival">
+          <div id="rival-damage" class="damage-readout damage-readout-rival">0%</div>
+          <div id="rival-damage-status" class="damage-status"></div>
+          <div id="rival-damage-events" class="damage-events" aria-live="polite"></div>
+        </div>
+      </div>
+      <div id="round-end-overlay" class="round-end-overlay" aria-live="polite" hidden>
+        <div id="round-end-title" class="round-end-title">Round Over</div>
+        <img id="round-end-image" class="round-end-image" alt="" />
+        <div class="round-end-subtitle">Press any button to restart</div>
+      </div>
+      <div id="loading-overlay" aria-live="polite" hidden>
+        <div class="loading-spinner" aria-hidden="true"></div>
+        <span id="loading-message">Loading</span>
+      </div>
+      <div id="arena-callout-overlay" class="arena-callout-overlay" aria-live="polite" hidden></div>
+      <div id="fight-intro-overlay" class="fight-intro-overlay" aria-live="polite" hidden></div>
+      <div id="pause-overlay" aria-live="polite">Paused</div>
+      <aside class="panel">
+        <header class="brand">
+          <div>
+            <p>Battle Bot Arena</p>
+            <h1>Bot Lab</h1>
+          </div>
+          <div class="panel-header-controls">
+            <div class="panel-actions">
+              <button id="sound-toggle" class="panel-action-button" type="button" aria-pressed="false" title="Toggle sound effects">Sound: Off</button>
+              <button id="fullscreen-toggle" class="panel-action-button" type="button">Fullscreen</button>
+              <button id="panel-toggle" class="panel-toggle" type="button" aria-expanded="true" title="Minimize Bot Lab">Hide</button>
+            </div>
+            <span id="controller-status">Controller waiting</span>
+          </div>
+        </header>
+
+        <nav class="mode-tabs" aria-label="Battle mode">
+          <button id="battle-toggle" type="button">Start Battle</button>
+        </nav>
+
+        <section class="bot-picker" aria-label="Bot selection"></section>
+
+        <section class="readout">
+          <img id="reference" src="./public/reference/bronco.png" alt="Bronco reference" />
+          <div>
+            <h2 id="bot-name">Bronco</h2>
+            <p id="bot-notes">Scratched aluminum flipper with red top panel, VEX logos, rear hinged wedge, visible pneumatic ram.</p>
+          </div>
+        </section>
+
+        <section class="controls">
+          <label class="opponent-control">
+            Opponent
+            <select id="opponent-select"></select>
+          </label>
+          <button id="arena-reset" class="arena-only control-button" type="button">Reset Arena</button>
+          <details id="global-controls" class="global-controls">
+            <summary>Settings</summary>
+            <label class="switch">
+              <input id="enable-damage-toggle" type="checkbox" />
+              <span>Sandbox Mode</span>
+            </label>
+            <label>
+              Controls
+              <select id="control-scheme">
+                <option value="tank">Tank</option>
+                <option value="arcade">Arcade</option>
+              </select>
+            </label>
+            <label class="sandbox-only">
+              Objects
+              <select id="arena-object-mode">
+                <option value="none" selected>None</option>
+                <option value="simple">Simple</option>
+                <option value="complex">Complex</option>
+              </select>
+            </label>
+            <label id="arena-object-count-row" class="sandbox-only arena-object-count-row">
+              Number of objects
+              <div class="range-with-number">
+                <input id="arena-object-count" type="range" min="1" max="10" value="4" step="1" />
+                <input id="arena-object-count-number" class="range-number" type="number" min="1" max="10" value="4" step="1" inputmode="numeric" />
+              </div>
+            </label>
+            <label>
+              Camera view
+              <select id="camera-mode">
+                <option value="bot">Bot camera</option>
+                <option value="battle" selected>Battle camera</option>
+                <option value="arena">Arena camera</option>
+              </select>
+            </label>
+            <label class="camera-control camera-bot">
+              Camera distance
+              <div class="range-with-number">
+                <input id="camera-distance" type="range" min="2.5" max="18" value="6.2" step="0.1" />
+                <input id="camera-distance-number" class="range-number" type="number" min="2.5" max="18" value="6.2" step="0.1" inputmode="decimal" />
+              </div>
+            </label>
+            <label class="camera-control camera-bot">
+              Camera height
+              <div class="range-with-number">
+                <input id="camera-height" type="range" min="0.8" max="8" value="2.8" step="0.1" />
+                <input id="camera-height-number" class="range-number" type="number" min="0.8" max="8" value="2.8" step="0.1" inputmode="decimal" />
+              </div>
+            </label>
+            <label class="camera-control camera-arena">
+              Field of view
+              <div class="range-with-number">
+                <input id="arena-fov" type="range" min="35" max="95" value="64" step="1" />
+                <input id="arena-fov-number" class="range-number" type="number" min="35" max="95" value="64" step="1" inputmode="numeric" />
+              </div>
+            </label>
+            <label id="collider-view-mode-row" class="collider-view-mode-row">
+              Collider view
+              <select id="collider-view-mode">
+                <option value="all" selected>All</option>
+                <option value="physics">Physics only</option>
+                <option value="drive">Drive Contact only</option>
+                <option value="weapon">Weapon only</option>
+                <option value="wedge">Wedge only</option>
+              </select>
+            </label>
+            <label class="switch">
+              <input id="use-haptics" type="checkbox" checked />
+              <span>Use haptics</span>
+            </label>
+            <label class="switch camera-control camera-viewer camera-arena camera-bot camera-battle">
+              <input id="invert-orbit-y" type="checkbox" checked />
+              <span>Invert orbit Y</span>
+            </label>
+            <label>
+              Detail lighting
+              <div class="range-with-number">
+                <input id="lighting" type="range" min="0" max="1.5" value="0.72" step="0.01" />
+                <input id="lighting-number" class="range-number" type="number" min="0" max="1.5" value="0.72" step="0.01" inputmode="decimal" />
+              </div>
+            </label>
+          </details>
+          <details id="bot-config" class="bot-config debug-only">
+            <summary id="bot-config-summary">Bot Config</summary>
+            <label>
+              Ground speed (mph)
+              <div class="range-with-number">
+                <input id="ground-speed" type="range" min="1" max="36" value="3.682" step="0.1" />
+                <input id="ground-speed-value" class="range-number" type="number" min="1" max="36" value="3.682" step="0.1" inputmode="decimal" />
+              </div>
+            </label>
+            <label>
+              Acceleration
+              <div class="range-with-number">
+                <input id="drive-acceleration" type="range" min="1" max="16" value="8" step="0.1" />
+                <input id="drive-acceleration-value" class="range-number" type="number" min="1" max="16" value="8" step="0.1" inputmode="decimal" />
+              </div>
+            </label>
+            <label>
+              Turning tightness
+              <div class="range-with-number">
+                <input id="turning-tightness" type="range" min="0.35" max="1.8" value="1" step="0.01" />
+                <input id="turning-tightness-value" class="range-number" type="number" min="0.35" max="1.8" value="1" step="0.01" inputmode="decimal" />
+              </div>
+            </label>
+            <label>
+              Yaw damping
+              <div class="range-with-number">
+                <input id="yaw-damping" type="range" min="0.35" max="2.5" value="1" step="0.01" />
+                <input id="yaw-damping-value" class="range-number" type="number" min="0.35" max="2.5" value="1" step="0.01" inputmode="decimal" />
+              </div>
+            </label>
+            <label>
+              Bot weight
+              <input id="bot-weight" type="number" min="1" max="500" step="1" />
+            </label>
+            <label>
+              Weapon weight
+              <input id="weapon-weight" type="number" min="0" max="500" step="1" />
+            </label>
+            <label id="weapon-spinup-row" class="spinner-only">
+              Weapon spin-up time
+              <div class="range-with-number">
+                <input id="weapon-spinup" type="range" min="0.1" max="12" value="3" step="0.1" />
+                <input id="weapon-spinup-value" class="range-number" type="number" min="0.1" max="12" value="3" step="0.1" inputmode="decimal" />
+              </div>
+            </label>
+            <label id="weapon-inertia-row" class="spinner-only">
+              Weapon rotational inertia
+              <input id="weapon-rotational-inertia" type="number" min="0" max="5" step="0.05" />
+            </label>
+            <label id="spinner-impact-cap-enabled-row" class="switch spinner-only">
+              <input id="spinner-impact-cap-enabled" type="checkbox" />
+              <span>Spinner impact cap</span>
+            </label>
+            <label id="spinner-impact-cap-row" class="spinner-only">
+              Spinner impact cap
+              <div class="range-with-number">
+                <input id="spinner-impact-cap" type="range" min="2" max="500" value="7.5" step="0.1" />
+                <input id="spinner-impact-cap-value" class="range-number" type="number" min="2" max="500" value="7.5" step="0.1" inputmode="decimal" />
+              </div>
+            </label>
+            <label id="spinner-impact-scale-row" class="spinner-only">
+              Spinner impact scale
+              <div class="range-with-number">
+                <input id="spinner-impact-scale" type="range" min="0.1" max="4" value="1" step="0.05" />
+                <input id="spinner-impact-scale-value" class="range-number" type="number" min="0.1" max="4" value="1" step="0.05" inputmode="decimal" />
+              </div>
+            </label>
+            <label id="spinner-gyro-scale-row" class="spinner-only">
+              Spinner gyro scale
+              <div class="range-with-number">
+                <input id="spinner-gyro-scale" type="range" min="0" max="3" value="1" step="0.05" />
+                <input id="spinner-gyro-scale-value" class="range-number" type="number" min="0" max="3" value="1" step="0.05" inputmode="decimal" />
+              </div>
+            </label>
+          </details>
+          <a id="collider-tweaker-link" class="mini-button collider-tweaker-link debug-only" href="./collider-tweaker.html?bot=bronco">Open collider tweaker</a>
+          <details id="debug-info" class="debug-info debug-only">
+            <summary>Debug info</summary>
+            <label class="switch">
+              <input id="show-all-bots" type="checkbox" />
+              <span>Show all bots</span>
+            </label>
+            <label class="switch global-collider-row">
+              <input id="show-colliders" type="checkbox" />
+              <span>View colliders</span>
+            </label>
+            <label class="switch">
+              <input id="teeter-assist-toggle" type="checkbox" checked />
+              <span>Teeter Assist</span>
+            </label>
+            <label class="switch">
+              <input id="spinner-knockback-toggle" type="checkbox" checked />
+              <span>Enable spinner knockback</span>
+            </label>
+            <label class="switch">
+              <input id="plow-defence-toggle" type="checkbox" checked />
+              <span>Enable plow defence</span>
+            </label>
+            <label class="switch">
+              <input id="soft-floor-correction-toggle" type="checkbox" checked />
+              <span>Soft floor correction</span>
+            </label>
+            <label class="switch">
+              <input id="collider-com-toggle" type="checkbox" />
+              <span>Use Collider Center of Gravity</span>
+            </label>
+            <label>
+              Gravity
+              <div class="range-with-number">
+                <input id="gravity" type="range" min="-64" max="0" value="-32.174" step="0.01" />
+                <input id="gravity-number" class="range-number" type="number" min="-64" max="0" value="-32.174" step="0.01" inputmode="decimal" />
+              </div>
+            </label>
+            <div class="haptics-test-row">
+              <button id="test-haptics" class="mini-button" type="button">Test haptics</button>
+              <p id="haptics-status" class="debug-status">Haptics not tested</p>
+            </div>
+            <details id="physical-damage-controls" class="physical-damage-controls">
+              <summary>Physical Damage</summary>
+              <label class="switch">
+                <input id="physical-damage-toggle" type="checkbox" checked />
+                <span>Enable Physical Damage</span>
+              </label>
+              <label>
+                Break threshold
+                <div class="range-with-number">
+                  <input id="physical-damage-threshold" type="range" min="2" max="80" value="28" step="1" />
+                  <input id="physical-damage-threshold-value" class="range-number" type="number" min="2" max="80" value="28" step="1" inputmode="numeric" />
+                </div>
+              </label>
+              <label>
+                Significant hits to break
+                <div class="range-with-number">
+                  <input id="physical-damage-hits-required" type="range" min="1" max="6" value="2" step="1" />
+                  <input id="physical-damage-hits-required-value" class="range-number" type="number" min="1" max="6" value="2" step="1" inputmode="numeric" />
+                </div>
+              </label>
+              <label>
+                Bot resilience
+                <div class="range-with-number">
+                  <input id="physical-damage-resilience" type="range" min="0.25" max="5" value="1" step="0.05" />
+                  <input id="physical-damage-resilience-value" class="range-number" type="number" min="0.25" max="5" value="1" step="0.05" inputmode="decimal" />
+                </div>
+              </label>
+              <label>
+                Min break radius
+                <div class="range-with-number">
+                  <input id="physical-damage-radius" type="range" min="0.08" max="1.4" value="0.24" step="0.02" />
+                  <input id="physical-damage-radius-value" class="range-number" type="number" min="0.08" max="1.4" value="0.24" step="0.02" inputmode="decimal" />
+                </div>
+              </label>
+              <label>
+                Min match radius
+                <div class="range-with-number">
+                  <input id="physical-damage-match-radius" type="range" min="0.1" max="2.4" value="0.42" step="0.02" />
+                  <input id="physical-damage-match-radius-value" class="range-number" type="number" min="0.1" max="2.4" value="0.42" step="0.02" inputmode="decimal" />
+                </div>
+              </label>
+              <label>
+                Max break radius
+                <div class="range-with-number">
+                  <input id="physical-damage-max-radius" type="range" min="0.08" max="2.4" value="0.96" step="0.02" />
+                  <input id="physical-damage-max-radius-value" class="range-number" type="number" min="0.08" max="2.4" value="0.96" step="0.02" inputmode="decimal" />
+                </div>
+              </label>
+              <label>
+                Max match radius
+                <div class="range-with-number">
+                  <input id="physical-damage-max-match-radius" type="range" min="0.1" max="3.6" value="1.68" step="0.02" />
+                  <input id="physical-damage-max-match-radius-value" class="range-number" type="number" min="0.1" max="3.6" value="1.68" step="0.02" inputmode="decimal" />
+                </div>
+              </label>
+              <label>
+                Radius max damage
+                <div class="range-with-number">
+                  <input id="physical-damage-max-radius-multiplier" type="range" min="1" max="20" value="10" step="0.5" />
+                  <input id="physical-damage-max-radius-multiplier-value" class="range-number" type="number" min="1" max="20" value="10" step="0.5" inputmode="decimal" />
+                </div>
+              </label>
+              <label>
+                Debris impulse
+                <div class="range-with-number">
+                  <input id="physical-damage-impulse" type="range" min="0" max="2" value="0.42" step="0.01" />
+                  <input id="physical-damage-impulse-value" class="range-number" type="number" min="0" max="2" value="0.42" step="0.01" inputmode="decimal" />
+                </div>
+              </label>
+              <label>
+                Max pieces per bot
+                <div class="range-with-number">
+                  <input id="physical-damage-max-pieces" type="range" min="1" max="16" value="5" step="1" />
+                  <input id="physical-damage-max-pieces-value" class="range-number" type="number" min="1" max="16" value="5" step="1" inputmode="numeric" />
+                </div>
+              </label>
+              <label>
+                Failure threshold
+                <div class="range-with-number">
+                  <input id="physical-damage-failure-threshold" type="range" min="5" max="100" value="70" step="1" />
+                  <input id="physical-damage-failure-threshold-value" class="range-number" type="number" min="5" max="100" value="70" step="1" inputmode="numeric" />
+                </div>
+              </label>
+              <label class="switch">
+                <input id="physical-damage-convex" type="checkbox" checked />
+                <span>Convex debris colliders</span>
+              </label>
+              <label class="switch">
+                <input id="physical-damage-solid-fill" type="checkbox" checked />
+                <span>Solid broken surfaces</span>
+              </label>
+            </details>
+            <div class="physics-log-control arena-only">
+              <label>
+                Physics log type
+                <select id="physics-log-type">
+                  <option value="all" selected>All</option>
+                  <option value="weapons">Weapons</option>
+                </select>
+              </label>
+              <button id="physics-log-toggle" class="control-button debug-button" type="button">Record physics log</button>
+              <p id="physics-log-status" class="debug-status">Physics log idle</p>
+              <textarea id="physics-log-output" class="physics-log-output" aria-label="Copyable physics log JSON" readonly hidden></textarea>
+            </div>
+            <label class="switch">
+              <input id="show-damage-events-toggle" type="checkbox" checked />
+              <span>Show individual damage events</span>
+            </label>
+          </details>
+        </section>
+
+        <section class="arena-help">
+          <h2>Arena Controls</h2>
+          <p>Keyboard: W/S both sides, A/D or Q/E split the sides, Space weapon, Esc pause.</p>
+          <p>Sandbox opponent: arrow keys drive, Enter weapon.</p>
+          <p>Xbox: left stick left wheels, right stick right wheels, LT boost, LB brake, START pause, RT weapon.</p>
+        </section>
+
+        <section class="online-panel" aria-label="Online multiplayer">
+          <div class="online-actions">
+            <button id="host-arena" class="control-button" type="button">Host Arena Online</button>
+            <button id="join-arena" class="control-button join-online" type="button" hidden>Join Online Arena</button>
+            <button id="leave-online" class="mini-button danger" type="button" hidden>Leave</button>
+          </div>
+          <p id="online-status" class="online-status">Online idle</p>
+        </section>
+      </aside>
+    </div>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://esm.sh/three@0.165.0",
+          "three/addons/": "https://esm.sh/three@0.165.0/examples/jsm/",
+          "@dimforge/rapier3d-compat": "https://esm.sh/@dimforge/rapier3d-compat@0.14.0",
+          "@instantdb/core": "https://esm.sh/@instantdb/core@0.22.155"
+        }
+      }
+    </script>
+    <script type="module" src="./src/main.js?v=soundscape-1"></script>
+  </body>
+</html>
