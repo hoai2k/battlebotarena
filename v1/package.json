@@ -1,0 +1,20 @@
+{
+  "name": "battlebot-arena",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "python3 -m http.server 8080",
+    "start": "python3 -m http.server 8080",
+    "test:physics": "node tools/physics-headless-tests.mjs",
+    "test:models": "node tools/test-v1-model-optimization.mjs",
+    "audit:ported": "node tools/ported-bot-audit.mjs",
+    "probe:drive": "node tools/drive-smoothness-probe.mjs",
+    "probe:weapons": "node tools/weapon-mechanism-probe.mjs",
+    "probe:boot": "node tools/boot-probe.mjs"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "0.14.0",
+    "three": "0.165.0"
+  }
+}
