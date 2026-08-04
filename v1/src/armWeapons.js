@@ -251,34 +251,148 @@ export function armWeaponReach(weapon, spec) {
 // v1's driving buttons are taken over — but only by the machines that have
 // something to put on them, which is the same rule v2 uses:
 //
-//   RB  second mechanism   saw motors, discs, jaws, Tantrum's carriage, flame
-//   LB  third mechanism    Tantrum's punch arms, Dragon King's arm tilt
-//                          (that bot loses its brake — it is tracked and does
-//                          not coast, so it never needed one)
-//   LT  fourth mechanism   Dragon King's body lift (loses boost, same reason)
+//   RT  the weapon proper   — or, on Dragon King, the JAW, because the jaw is
+//                             what every other mechanism on it depends on
+//   RB  second mechanism    saw motors, discs, jaws, Tantrum's carriage, flame
+//   LB  third mechanism     Tantrum's punch arms, Dragon King's arm tilt
+//                           (that bot loses its brake — it is tracked and does
+//                           not coast, so it never needed one)
+//   LT  fourth mechanism    Dragon King's body lift (loses boost, same reason)
 //
-// One place decides, so nothing else has to know which bot is which.
+// The rules here are v2's, from src/game/weaponControls.js, deliberately
+// reproduced rather than imported: v2 shapes a whole DriveInput through a
+// per-slot shaper, and v1 resolves per weapon because a v1 weapon object is
+// already the thing that persists across frames — the match fighters have one
+// each and so does the bot-select viewer, which is exactly the separation v2
+// gets from having one shaper per consumer.
+//
+// LATCHING is the half that was missing, and it is the difference between a
+// mechanism you can use and one you cannot: a saw motor, a disc or a jaw has to
+// stay on while both hands go back to driving. Every latch is edge-triggered
+// off state kept on the weapon, so calling this twice in a frame — v1 resolves
+// once per frame for the drive channels and again per physics substep — cannot
+// double-toggle.
+
+/** Arms whose SECOND channel drives a motor, and therefore latches. */
+export const ALT_TOGGLE_TYPES = new Set(["hammerSaw", "sawArms", "lifterDisc", "grappler", "lifter"]);
+
+/**
+ * Does RB latch on this bot? The type set covers the arms whose second
+ * mechanism is a motor; a flame, a disc or a jaw latches whatever the arm
+ * underneath it is, which is how Kraken gets a flamethrower on a crusher.
+ */
+export function secondaryLatches(weapon) {
+  const config = weapon?.arm || weapon || {};
+  if (!weapon?.type) return false;
+  // A two-way arm spends the channel on the OTHER DIRECTION, and Tantrum's
+  // carriage spends it on a wind-up whose RELEASE is the shot. Both are
+  // momentary by construction, and both are checked before the type set
+  // because a plain lifter is in it.
+  if (config.twoWayArm || config.track) return false;
+  return ALT_TOGGLE_TYPES.has(weapon.type)
+    || Boolean(config.flame) || Boolean(config.sub) || Boolean(config.claw);
+}
+
+/**
+ * Is there anything on RB at all? A bot with nothing there reports the channel
+ * dead rather than passing the button through, so a stray press cannot reach a
+ * mechanism the bot does not have.
+ */
+export function usesSecondaryChannel(weapon) {
+  const config = weapon?.arm || weapon || {};
+  return Boolean(
+    config.twoWayArm || config.track || config.sub || config.claw || config.flame
+    || weapon?.claw || weapon?.subs?.length,
+  );
+}
+
+/** Does this bot spend LB on a mechanism instead of on the brake? */
+export function usesAuxChannel(weapon) {
+  // Tantrum's punch arms and Dragon King's saw-arm tilt. Both are a third
+  // machine that cannot share a button with the second one.
+  return Boolean(weapon?.arm?.fists || weapon?.fists || weapon?.aux?.jaw);
+}
+
+/** Does this bot spend LT on a mechanism instead of on the boost? */
+export function usesLiftChannel(weapon) {
+  return Boolean(weapon?.aux?.lift);
+}
+
 export function resolveWeaponControls(weapon, input = {}) {
-  const arm = weapon?.arm || weapon || {};
-  const wantsAux = Boolean(arm.fists || weapon?.aux?.pods);
-  const wantsLift = Boolean(weapon?.aux?.lift);
+  const config = weapon?.arm || weapon || {};
+  const wantsAux = usesAuxChannel(weapon);
+  const wantsLift = usesLiftChannel(weapon);
+  const primary = Boolean(input.weapon);
+  const rawSecondary = Boolean(input.weaponSecondary);
+  const aux = wantsAux ? Boolean(input.brakeActive || input.weaponAux) : false;
+  const lift = wantsLift ? Boolean(input.boostActive || input.weaponLift) : false;
+
+  let secondary = usesSecondaryChannel(weapon) ? rawSecondary : false;
+  if (secondaryLatches(weapon)) {
+    if (rawSecondary && !weapon.secondaryWasDown) weapon.secondaryLatched = !weapon.secondaryLatched;
+    secondary = Boolean(weapon.secondaryLatched);
+  }
+  if (weapon) weapon.secondaryWasDown = rawSecondary;
+
+  // Dragon King: RT is the jaw (latched in updateWeaponMechanisms, because you
+  // have to keep hold of what you caught while both hands drive), RB the saw
+  // motors, and the ARM ITSELF rides LB. Nothing else remaps its arm channel.
+  const armActive = weapon?.type === "sawArms" ? aux : primary;
+
   return {
-    weapon: Boolean(input.weapon),
-    secondary: Boolean(input.weaponSecondary),
-    aux: wantsAux ? Boolean(input.brakeActive || input.weaponAux) : false,
-    lift: wantsLift ? Boolean(input.boostActive || input.weaponLift) : false,
+    weapon: primary,
+    armActive,
+    secondary,
+    aux,
+    lift,
     brakeActive: wantsAux ? false : Boolean(input.brakeActive),
     boostActive: wantsLift ? false : Boolean(input.boostActive),
   };
 }
 
-/** Does this bot spend one of the driving buttons on a mechanism? */
-export function usesAuxChannel(weapon) {
-  return Boolean(weapon?.arm?.fists || weapon?.fists || weapon?.aux?.pods);
-}
+const PRIMARY_LABELS = {
+  bar: "SPIN UP",
+  drum: "SPIN UP",
+  flipper: "FLIP",
+  meshFlipper: "FLIP",
+  crusher: "BITE",
+  hammer: "SWING",
+  hammerSaw: "SWING",
+  sawArms: "ARMS",
+  lifter: "LIFT",
+  lifterDisc: "LIFT",
+  grappler: "FORKS",
+};
 
-export function usesLiftChannel(weapon) {
-  return Boolean(weapon?.aux?.lift);
+/**
+ * What this bot's four channels are called and whether each latches. Same
+ * answers v2's describeWeaponControls gives, for the same reason: a control
+ * legend that disagrees with the controls teaches the wrong thing.
+ */
+export function describeWeaponControls(weapon) {
+  if (!weapon?.type) return { primary: null, secondary: null, aux: null, lift: null };
+  const config = weapon.arm || weapon;
+  if (weapon.type === "sawArms") {
+    return {
+      primary: { label: "BITE", toggle: true },
+      secondary: { label: "SAWS", toggle: true },
+      aux: { label: "TILT SAWS", toggle: false },
+      lift: { label: "REAR UP", toggle: false },
+    };
+  }
+  if (config.twoWayArm) {
+    return { primary: { label: "RAISE", toggle: false }, secondary: { label: "LOWER", toggle: false }, aux: null, lift: null };
+  }
+  const spinner = weapon.type === "bar" || weapon.type === "drum";
+  const primary = { label: PRIMARY_LABELS[weapon.type] || "WEAPON", toggle: spinner ? Boolean(weapon.toggle) : false };
+  const latches = secondaryLatches(weapon);
+  let secondary = null;
+  if (config.track) secondary = { label: "PULL BACK", toggle: false };
+  else if (config.flame) secondary = { label: "FLAME", toggle: latches };
+  else if (config.claw) secondary = { label: "JAW", toggle: latches };
+  else if (config.sub) secondary = { label: weapon.type === "hammerSaw" ? "SAW" : "DISC", toggle: latches };
+  const aux = config.fists ? { label: "FISTS", toggle: false } : null;
+  return { primary, secondary, aux, lift: null };
 }
 
 // --- Mechanisms that ride a weapon of any type ------------------------------

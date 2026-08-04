@@ -84,9 +84,14 @@ export async function weaponMechanism(id) {
         rightDrive: 1,
         weapon: committed ? frame % 50 < 14 : true,
         weaponSecondary: config.twoWayArm ? false : true,
-        // The third channel, for the one machine that has something on it.
-        weaponAux: frame % 40 < 12,
-        weaponLift: true,
+        // The third channel. On Dragon King it is the ARM — the trigger there
+        // is the jaw — so it is held like any other arm's button; on Tantrum it
+        // is the punch arms, which are pulsed because a punch is a stroke.
+        weaponAux: weapon?.type === "sawArms" ? true : frame % 40 < 12,
+        // NOT the fourth: rearing the body up takes the tracks off the floor,
+        // which is the mechanism working and the opposite of driving into
+        // something. It is measured on its own, in mechanism-probe.mjs.
+        weaponLift: false,
       });
       sim.stepFrame();
       if (weapon) {

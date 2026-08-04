@@ -199,12 +199,13 @@ fists       tantrum       {"stroke":1,"punches":6,"damage":15}
 flame       freeshipping  {"burning":1,"ticks":148,"damage":22.199999999999967,"requiresGrip":false,"shoved":15.044720078823543}
 flame       kraken        {"burning":1,"ticks":33,"damage":4.4,"requiresGrip":true,"shoved":23.08518514296204}
 two-way     duck          {"raised":0.5833333333333333,"parked":0.5833333333333333,"lowered":0,"held":0}
-grip        clawviper     {"grippedFrames":143,"maxLift":0.20576656609773636,"releaseKick":0.3623262196779251}
-grip        overhaul      {"grippedFrames":142,"maxLift":0.17426148056983948,"releaseKick":0.42769525945186615}
+grip        clawviper     {"grippedFrames":143,"maxLift":0.20576656609773636,"releaseKick":0.29671792313456535}
+grip        overhaul      {"grippedFrames":142,"maxLift":0.17426148056983948,"releaseKick":0.2922322750091553}
 holonomic   shatter       {"sideways":6.785165626557216,"forward":3.5762786865234375e-7,"yawDrift":0}
 tracked     dragonking    {"before":6.377766133332709,"after":0.07254429162661014,"stopped":0.011374561266438604}
 holonomic   glitch        {"sideways":5.089339013550045,"forward":0.000002749264467638568,"yawDrift":0}
 tracked     rusty         {"before":5.548918444173724,"after":0.06863010918307977,"stopped":0.012368195689583488}
+body lift   dragonking    {"maxDeg":59.5,"heldDeg":57.9,"wantDeg":90,"rose":1.528,"sank":-0.001,"settledDeg":0.4}
 srimech     hydra         {"beforeUpY":-1.000000000106985,"bestUpY":0.9998047838950685,"lifted":1.8032821416854858,"recovered":true}
 srimech     blip          {"beforeUpY":-0.9996326800498869,"bestUpY":0.99995834356828,"lifted":1.8625928163528442,"recovered":true}
 srimech     duck          {"beforeUpY":-1.0000000000002387,"bestUpY":0.9999965687993054,"lifted":1.6854229271411896,"recovered":true}
@@ -222,9 +223,49 @@ mid-stroke and stays there. Both grapplers hold a foe for over two seconds and
 kick it away on release. The omniwheel bots travel 5-7ft sideways with zero
 forward drift and zero yaw. Both tracked bots shed 99% of their speed within
 0.3s of the stick being released. Every arm that can reach the floor gets its
-machine back on its wheels from fully inverted.
+machine back on its wheels from fully inverted. Dragon King rears 59.5° of the
+90° it is asked for — a proportional servo holding against gravity keeps a
+steady-state error, exactly as v2's does — and it does it by lifting the BODY
+1.53ft while the lowest collider on the machine never gets more than 0.001ft
+below the floor, which is the whole distinction: pitch about the axle at the
+back of the pods, not about the centre of mass.
 
-## 6. Known deviations from v2, and why
+## 6. Weapon controls — `v1/tools/weapon-control-audit.mjs`
+
+A weapon can move, land and hurt with every other check green and still be
+unplayable, because none of those checks presses a button the way a player
+does. This one imports v2's `src/game/weaponControls.js` — the module that
+already decided all of this — and compares v1's channel labels, latching rules
+and a scripted press/release trace against it, bot by bot. **All 22 match.**
+
+```
+bot           weapon       RB        LB   LT   channels (* = latches)
+clawviper     grappler     toggle    -    -    PRI=FORKS SEC=JAW*
+sawblaze      hammerSaw    toggle    -    -    PRI=SWING SEC=SAW*
+whiplash      lifterDisc   toggle    -    -    PRI=LIFT SEC=DISC*
+duck          lifter       hold      -    -    PRI=RAISE SEC=LOWER
+freeshipping  lifter       toggle    -    -    PRI=LIFT SEC=FLAME*
+overhaul      grappler     toggle    -    -    PRI=FORKS SEC=JAW*
+tantrum       drum         hold      yes  -    PRI=SPIN UP* SEC=PULL BACK AUX=FISTS
+dragonking    sawArms      toggle    yes  yes  PRI=BITE* SEC=SAWS* AUX=TILT SAWS LIF=REAR UP
+kraken        crusher      toggle    -    -    PRI=BITE SEC=FLAME*
+tombstone     bar          hold      -    -    PRI=SPIN UP*
+```
+
+(Spinners and flippers with nothing on the second channel are omitted; they all
+report the channel dead, which is what v2 does.)
+
+What this caught and fixed:
+
+| | |
+|---|---|
+| **RB was momentary everywhere** | a saw motor, a disc, a jaw or a flamethrower you have to keep a finger on cannot be used while driving with both sticks. Those channels now LATCH, matching v2; Tantrum's carriage and Duck's plow stay momentary, because releasing the carriage IS the shot and Duck's second channel is the other direction |
+| **Dragon King had three mechanisms on two buttons** | its trigger was swinging the saw arms, so the jaw — the mechanism everything else on that bot depends on — had nowhere to live. RT is now the jaw, RB the saws, LB the arm tilt, LT the body lift, which is v2's layout |
+| **The body lift drove the pods through the floor** | it was a torque about the centre of mass, which pitches the nose up by pushing the tail DOWN. It is now v2's pitch servo about the axle at the back of the pods, damped on rate and with the axle held still |
+| **The preview only ran the trigger** | the bot-select viewer passed one boolean to the weapon runtime, so on the plinth nothing but RT did anything. It now runs the whole input through the same resolver the arena does, plus the body pitch and the flame particles the plinth has no physics for |
+| **A stray press could reach a mechanism a bot did not have** | the second channel passed the button through regardless. It now reports dead unless the bot has something on it |
+
+## 7. Known deviations from v2, and why
 
 | | |
 |---|---|
@@ -232,16 +273,17 @@ machine back on its wheels from fully inverted.
 | **Suspension** | v2 runs raycast suspension off `wheelAnchors`; v1 has none. The anchors become `driveContact` probes with their contact patches on the floor plane the model rests on. |
 | **Reach** | v2 measures a spinner's reach in its own sim; v1 measures it to the target's centre. Ported reach is v2's number floored by the bot's own geometry — how far its nose stands ahead of its rotor, plus a foe's half-length. Without that floor, Witch Doctor, Endgame and Glitch spun at full speed and never touched anything they drove into. |
 | **Grappler damage** | v2 gives Claw Viper and Overhaul no hold damage at all, because a v2 fight it controls can be won on the judges' cards. v1 decides everything on damage, so a grappler ticks a little while it holds you. |
-| **Weapon channels** | v2 has four held channels (RT/RB/LB/LT) and so, now, does v1 — the third and fourth take over the brake and the boost, but only for the two machines that have something to put there, and both of those stop on their drivetrain anyway. |
+| **Weapon channels** | v2 has four held channels (RT/RB/LB/LT) and so, now, does v1 — the third and fourth take over the brake and the boost, but only for the two machines that have something to put there, and both of those stop on their drivetrain anyway. The RULES are shared rather than reimplemented: section 6 checks v1's resolver against v2's own module. Where the seam falls differs — v2 latches spinners and Dragon King's jaw in its input shaper, v1 latches the same two things one layer down, in the spinner's own toggle and in the jaw mechanism, because in v1 those latches predate the channel layer. |
 | **Grip and lift fidelity** | v2 servos a gripped victim onto a point that sweeps with the arm through its own solver, and pitches Dragon King's chassis with a real servo. v1 does both with scripted impulses against its own physics — the mechanism and the numbers are the same, the integration is v1's. |
 
 ## Re-running it
 
 ```bash
-npm run test:v1                                          # 30 checks, 2 of them the ported roster's
+npm run test:v1                                          # 32 checks, 3 of them the ported roster's
 node v1/tools/ported-bot-audit.mjs                       # section 1
 node v1/tools/weapon-mechanism-probe.mjs                 # section 2
 node v1/tools/drive-smoothness-probe.mjs                 # section 3
-node v1/tools/mechanism-probe.mjs                         # section 5
+node v1/tools/mechanism-probe.mjs                        # section 5
+node v1/tools/weapon-control-audit.mjs                   # section 6
 node server.mjs & node v1/tools/boot-probe.mjs --arena   # section 4
 ```

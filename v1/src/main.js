@@ -3297,6 +3297,8 @@ async function showViewerBot() {
   viewerBot.scale.setScalar(viewerScaleFor(selected, viewerBot));
   viewerBot.position.set(-1.6, 0, 0);
   viewerBot.rotation.set(...(selected.viewerRotation || [0, 0, 0]));
+  // Kept because a body lift on the plinth pitches ABOUT this, not from zero.
+  viewerBot.userData.viewerBaseRotationX = viewerBot.rotation.x;
   viewerBot.updateMatrixWorld(true);
   viewerBot.position.y += ARENA_VISUAL_FLOOR_Y + measureArenaVisualFloorOffset(viewerBot);
   scene.add(viewerBot);
@@ -7113,8 +7115,48 @@ function breakChairProp(prop, impulse = new THREE.Vector3()) {
 // not a spark shower: the particles are bigger, they live longer, they travel
 // along the nozzle rather than flying off it, and they fade from white through
 // orange, which is what reads as flame at arena distance.
+// Throwaway particles live in the arena while a match is on and in the viewer's
+// own group while a bot is on the plinth, so a flamethrower you are about to
+// pick actually lights when you press the button for it.
+let viewerSparks = null;
+function particleGroup() {
+  if (arena?.sparks) return arena.sparks;
+  if (mode !== "viewer") return null;
+  if (!viewerSparks) {
+    viewerSparks = new THREE.Group();
+    scene.add(viewerSparks);
+  }
+  return viewerSparks;
+}
+
+function stepParticles(group, dt) {
+  if (!group) return;
+  for (let i = group.children.length - 1; i >= 0; i -= 1) {
+    const spark = group.children[i];
+    spark.userData.life -= dt;
+    spark.userData.velocity.y -= 8 * dt;
+    spark.position.addScaledVector(spark.userData.velocity, dt);
+    spark.material.opacity = Math.max(0, spark.userData.life);
+    if (spark.userData.life <= 0) group.remove(spark);
+  }
+}
+
+// The plinth has no physics, so the one mechanism that IS a chassis movement —
+// Dragon King rearing up about the axle at the back of its pods — is drawn
+// here. The pods counter-rotate in syncWeaponMechanismVisuals either way, so
+// without this the pods swing and the body they are bolted to does not.
+function syncViewerBodyLift(weapon) {
+  if (!viewerBot) return;
+  const base = viewerBot.userData.viewerBaseRotationX || 0;
+  const lift = weapon?.aux?.lift;
+  // Positive rotation about +X raises the nose, which is the same sense the
+  // physics servo drives and the same one the pods cancel.
+  viewerBot.rotation.x = base + (lift ? ((lift.maxAngleDeg * Math.PI) / 180) * (weapon.liftAmount || 0) : 0);
+}
+
 function spawnFlame(point, direction, scale = 1, count = 5) {
-  if (!arena?.sparks) return;
+  const sparks = particleGroup();
+  if (!sparks) return;
   for (let i = 0; i < count; i += 1) {
     const size = (0.05 + Math.random() * 0.07) * scale;
     const hot = Math.random();
@@ -7134,7 +7176,7 @@ function spawnFlame(point, direction, scale = 1, count = 5) {
       direction.z * (7 + Math.random() * 5) * scale + (Math.random() - 0.5) * spread,
     );
     flame.userData.life = 0.22 + Math.random() * 0.2;
-    arena.sparks.add(flame);
+    sparks.add(flame);
   }
 }
 
@@ -7289,7 +7331,10 @@ function updateWeapon(fighter, dt, active, input = {}) {
   syncWeaponMechanismVisuals(fighter, dt);
   if (isNewArmWeapon(weapon)) {
     updateArmWeaponState(weapon, dt, {
-      active: weaponActive,
+      // `armActive` rather than the trigger: on Dragon King the trigger is the
+      // JAW and the arm rides the third channel. Every other arm resolves the
+      // two to the same button.
+      active: isWeaponBroken(fighter) ? false : channels.armActive,
       secondary: channels.secondary,
       strokeActive: isWeaponImpulseStrokeActive(fighter),
       broken: isWeaponBroken(fighter),
@@ -8496,8 +8541,14 @@ function computeArenaAiInput(fighter, opponentFighter, dt) {
   // Saw motors and jaws run whenever the bot is fighting: they cost nothing to
   // leave on and a saw that only spins on contact never cuts.
   const weaponSecondary = Boolean(fighter.weapon?.subs?.length || fighter.weapon?.claw);
+  // Machines that spend a driving button on a mechanism have to be given it, or
+  // an AI Dragon King drives the whole fight with its saw arms held up and an
+  // AI Tantrum never throws a punch.
+  const weaponAux = fighter.weapon?.type === "sawArms"
+    ? weapon
+    : Boolean(fighter.weapon?.arm?.fists) && distance < AI_STRIKE_DISTANCE;
   fighter.aiState = { ...ai, distance, dt };
-  return completeDriveInput({ ...input, weapon, weaponSecondary });
+  return completeDriveInput({ ...input, weapon, weaponSecondary, weaponAux });
 }
 
 function serializableInput(input) {
@@ -8974,9 +9025,9 @@ function predictJoinerPhysics(joinerInput, dt) {
   const joiner = arena?.fighters?.[1];
   if (!host?.rb || !joiner?.rb || !arena?.world) return;
   const hostInput = applyDamageToInput(host, { weapon: false });
-  const effectiveJoinerInput = applyDamageToInput(joiner, joinerInput);
+  const effectiveJoinerInput = applyMechanismChannels(joiner, applyDamageToInput(joiner, joinerInput));
   updateDrivetrain(joiner, effectiveJoinerInput, dt, joiner.visualScale);
-  updateWeapon(joiner, dt, effectiveJoinerInput.weapon);
+  updateWeapon(joiner, dt, effectiveJoinerInput.weapon, effectiveJoinerInput);
   const clampedDt = Math.min(dt, FIXED_PHYSICS_DT * MAX_PHYSICS_SUBSTEPS);
   const substeps = Math.max(1, Math.min(MAX_PHYSICS_SUBSTEPS, Math.ceil(clampedDt / FIXED_PHYSICS_DT)));
   const stepDt = clampedDt / substeps;
@@ -8984,7 +9035,7 @@ function predictJoinerPhysics(joinerInput, dt) {
     physics.updateWedgeStates(arena, stepDt);
     physics.driveFighter(host, hostInput, stepDt);
     physics.driveFighter(joiner, effectiveJoinerInput, stepDt);
-    updateWeapon(joiner, stepDt, effectiveJoinerInput.weapon);
+    updateWeapon(joiner, stepDt, effectiveJoinerInput.weapon, effectiveJoinerInput);
     physics.applySpinnerGyro(joiner, effectiveJoinerInput, stepDt);
     updateWeaponSpinHaptics(joiner);
     syncWeaponColliderBindings(joiner);
@@ -9182,14 +9233,7 @@ function updateArena(dt) {
     syncFighterVisualFromBody(fighter);
   });
   updatePropVisuals(dt);
-  for (let i = arena.sparks.children.length - 1; i >= 0; i -= 1) {
-    const spark = arena.sparks.children[i];
-    spark.userData.life -= dt;
-    spark.userData.velocity.y -= 8 * dt;
-    spark.position.addScaledVector(spark.userData.velocity, dt);
-    spark.material.opacity = Math.max(0, spark.userData.life);
-    if (spark.userData.life <= 0) arena.sparks.remove(spark);
-  }
+  stepParticles(arena.sparks, dt);
   online.lastFrame += 1;
   publishOnlineSnapshot();
 }
@@ -10173,7 +10217,13 @@ function animate() {
       const weapon = viewerBot.userData.weapon;
       const viewerWeaponEdge = consumeWeaponPressEdge({ weapon }, viewerInput.weapon);
       const viewerWeaponActive = isImpulseWeapon(weapon) ? viewerWeaponEdge : viewerInput.weapon;
-      updateWeapon({ weapon }, dt, viewerWeaponActive);
+      // The WHOLE input, not just the trigger. A bot on the plinth has to be
+      // driven by exactly the rules it is driven by in the arena — a saw motor
+      // that only runs in a match, or a jaw with no button on the preview,
+      // teaches the wrong thing about the machine you are about to pick.
+      updateWeapon({ weapon, group: viewerBot }, dt, viewerWeaponActive, viewerInput);
+      syncViewerBodyLift(weapon);
+      stepParticles(viewerSparks, dt);
       updateDrivetrain({ userData: viewerBot.userData, spec: selected }, viewerInput, dt, viewerBot.scale.x);
     }
   }

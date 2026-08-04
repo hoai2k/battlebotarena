@@ -97,16 +97,36 @@ way of failing silently, so every one of them is implemented and measured:
 
 | channel | gamepad | keyboard (P1 / P2) | what it runs |
 |---|---|---|---|
-| weapon | RT | Space / Enter | the primary mechanism |
+| weapon | RT | Space / Enter | the primary mechanism — or, on Dragon King, the JAW |
 | second | RB | Left Shift / Right Shift | saw motors, discs, jaws, Tantrum's carriage, the flamethrowers, Duck's plow on the way down |
-| third | LB (brake) | F / `.` | Tantrum's punch arms |
+| third | LB (brake) | F / `.` | Tantrum's punch arms, Dragon King's saw-arm tilt |
 | fourth | LT (boost) | G / `/` | Dragon King's body lift |
 
 The third and fourth take over a driving button, but only for the machines that
 have something to put there — Tantrum keeps its boost, Dragon King keeps its
 brake, and both run on drivetrains that stop themselves anyway. One function
 (`resolveWeaponControls`) decides, so nothing else has to know which bot is
-which.
+which — including the bot-select preview, which runs the same four channels the
+arena does.
+
+### Which buttons latch
+
+A mechanism you have to keep a finger on is a mechanism you cannot use while
+driving with both sticks, so some channels TOGGLE. The rules are v2's, from
+`src/game/weaponControls.js`, and `v1/tools/weapon-control-audit.mjs` compares
+v1's answers against that module bot by bot rather than against itself:
+
+| | latches | momentary |
+|---|---|---|
+| **RT** | spinners, Dragon King's jaw | flippers, crushers, hammers, lifters, forks |
+| **RB** | saw motors and discs (Sawblaze, Whiplash, Dragon King), jaws (Claw Viper, Overhaul), flamethrowers (Kraken, Free Shipping) | Tantrum's carriage — releasing it IS the shot — and Duck's plow, whose second channel is the other direction |
+| **LB / LT** | — | Tantrum's punches and Dragon King's arm tilt and body lift are all held gestures |
+
+Dragon King is the machine all four channels exist for: **RT** bites, **RB**
+runs the saws, **LB** tilts the arms onto whatever the jaw is holding, and
+**LT** rears the whole body up about the axle at the back of its track pods.
+A bot with nothing on a channel reports it dead rather than passing the button
+through, so a stray press cannot reach a mechanism the bot does not have.
 
 A grappler also does a little damage while it holds you, which v2 deliberately
 gives it none of — v2 fights can be won on the judges' cards, and v1's cannot.
@@ -114,15 +134,16 @@ gives it none of — v2 fights can be won on the judges' cards, and v1's cannot.
 ## Checking it
 
 ```bash
-npm run test:physics                        # the whole physics suite, 30 checks
+npm run test:physics                        # the whole physics suite, 32 checks
 node v1/tools/ported-bot-audit.mjs          # orientation, size, rig, colliders
+node v1/tools/weapon-control-audit.mjs      # every channel, against v2's own rules
 node v1/tools/drive-smoothness-probe.mjs    # per-bot drive quality
 node v1/tools/weapon-mechanism-probe.mjs    # per-bot weapon + does it land
 node v1/tools/mechanism-probe.mjs           # carriages, fire, grips, tracks, srimechs
 node server.mjs & node v1/tools/boot-probe.mjs --arena   # the real page, per bot
 ```
 
-The first two checks in the physics suite are the ported roster's own: every
+The first three checks in the physics suite are the ported roster's own: every
 ported bot has to drive like a v1 bot (sit still, reach and hold top speed, track
 straight, stay flat and gripped, stop without hopping, spin both ways), and every
 ported bot has to be able to fight (the mechanism moves, and it reaches an

@@ -24,6 +24,7 @@ export function botsWithMechanism(name) {
     const weapon = config?.weapon || {};
     if (name === "drive") return BOT_CONFIG[id]?.driveType;
     if (name === "aux") return Boolean(config?.aux);
+    if (name === "lift") return Boolean(config?.aux?.lift);
     return weapon[name] !== undefined;
   });
 }
@@ -129,9 +130,14 @@ export async function gripReport(id) {
       if (fighter.weapon.gripHeld) gripped += 1;
       maxLift = Math.max(maxLift, rival.rb.translation().y - startY);
     });
-    // Open the jaw: what it was carrying leaves with the arm's speed.
-    const beforeRelease = rival.rb.linvel();
+    // Open the jaw: what it was carrying leaves with the arm's speed. RB
+    // LATCHES on a jaw bot — you have to keep hold of something while both
+    // hands drive — so letting go is another PRESS, not a release.
     sim.setInput(0, drive({ weapon: true, weaponSecondary: false }));
+    sim.stepFrames(2);
+    const beforeRelease = rival.rb.linvel();
+    // The rising edge is what unlatches it, so this press is the let-go.
+    sim.setInput(0, drive({ weapon: true, weaponSecondary: true }));
     sim.stepFrames(20);
     const afterRelease = rival.rb.linvel();
     return {
@@ -184,6 +190,52 @@ export async function trackedStopReport(id) {
   return { ...result, stopped: result.after / Math.max(0.001, result.before) };
 }
 
+/**
+ * Dragon King: the body rears up about the axle at the back of its track pods.
+ *
+ * Three numbers, because there are three separate ways this fails and only the
+ * first of them is obvious. `pitch` is whether the gesture happens at all.
+ * `rose` is whether the BODY went up — a torque about the centre of mass pitches
+ * the nose up by driving the tail down, which looks identical on the nose and is
+ * the bug this replaced. `sank` is the same failure seen from underneath: how
+ * far the lowest collider on the machine ended up BELOW the floor, which is
+ * where the pods go when the body is levered off them.
+ */
+export async function liftReport(id) {
+  return withSim(id, "quantum", (sim, fighter, rival) => {
+    sim.setPose(rival, { x: 30, y: rival.restingBodyY, z: 30 }, Math.PI);
+    sim.setPose(fighter, { x: 0, y: fighter.restingBodyY, z: 0 }, 0);
+    sim.setInput(0, drive({}));
+    sim.stepFrames(40);
+    const restY = fighter.rb.translation().y;
+    const noseUp = () => {
+      const q = fighter.rb.rotation();
+      const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w));
+      return Math.asin(Math.min(1, Math.max(-1, forward.y)));
+    };
+    let pitch = 0;
+    let rose = 0;
+    let sank = 0;
+    sim.setInput(0, drive({ weaponLift: true }));
+    sim.stepFrames(150, () => {
+      pitch = Math.max(pitch, noseUp());
+      rose = Math.max(rose, fighter.rb.translation().y - restY);
+      sank = Math.min(sank, fighterColliderWorldMinY(fighter));
+    });
+    const held = noseUp();
+    sim.setInput(0, drive({}));
+    sim.stepFrames(120);
+    return {
+      maxDeg: Number(((pitch * 180) / Math.PI).toFixed(1)),
+      heldDeg: Number(((held * 180) / Math.PI).toFixed(1)),
+      wantDeg: MODEL_PART_CONFIG[id].aux.lift.maxAngleDeg,
+      rose: Number(rose.toFixed(3)),
+      sank: Number(sank.toFixed(3)),
+      settledDeg: Number(((noseUp() * 180) / Math.PI).toFixed(1)),
+    };
+  });
+}
+
 /** Beta and the arms: shove yourself back onto your wheels. */
 export async function srimechReport(id) {
   return withSim(id, "quantum", (sim, fighter, rival) => {
@@ -229,5 +281,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (BOT_CONFIG[id].driveType === "holonomic") line("holonomic", id, await holonomicReport(id));
     else line("tracked", id, await trackedStopReport(id));
   }
+  for (const id of botsWithMechanism("lift")) if (want(id)) line("body lift", id, await liftReport(id));
   for (const id of botsWithMechanism("selfRight")) if (want(id)) line("srimech", id, await srimechReport(id));
 }
