@@ -33,14 +33,16 @@
 import * as THREE from "three";
 import { loadBotModel } from "../assets/models.js";
 import { syncBotVisual, updateWeaponSub } from "./botAnimation.js";
-import { arenaEnvironment } from "./environment.js";
 import { createEffects, spawnBotFlame } from "./effects.js";
+import {
+  PREVIEW_FOV, PLINTH_HEIGHT, RING_EMISSIVE, START_YAW, START_PITCH,
+  addPreviewLights, buildPlinth, frameRadius, fitDistance, placeCamera,
+} from "./previewStage.js";
+import { SETTLE_MS, loadPosterIndex, posterMeta, posterUrl } from "./posters.js";
 import { createPreviewWeapon } from "./previewWeapon.js";
 import { createWeaponInputShaper, describeWeaponControls } from "../game/weaponControls.js";
 
 const BAY_SPACING = 30; // ft between the two bays; far enough that neither bot ever shows in the other's window
-const PLINTH_RADIUS = 3.1;
-const PLINTH_HEIGHT = 0.32;
 const STICK_DEADZONE = 0.18;
 const ORBIT_YAW_SPEED = 2.6; // rad/s at full stick
 const ORBIT_PITCH_SPEED = 1.7;
@@ -109,60 +111,16 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   renderer.toneMappingExposure = 1.05;
 
   const scene = new THREE.Scene(); // transparent background: the screen's carbon backdrop shows through
-  // The same environment the arena reflects, so a polished part looks the same
-  // on the plinth as it does in the fight.
-  scene.environment = arenaEnvironment(renderer);
-  scene.environmentIntensity = 0.8;
-
-  scene.add(new THREE.HemisphereLight(0xdbe8ff, 0x15130f, 1.65));
-  const key = new THREE.DirectionalLight(0xffffff, 3.1);
-  key.position.set(-8, 15, 10);
-  key.castShadow = true;
-  // Half the match renderer's resolution: the frustum only spans two plinths,
-  // and the map re-renders for every pod pass, every frame.
-  key.shadow.mapSize.set(1024, 1024);
-  key.shadow.camera.left = -(BAY_SPACING / 2 + 8);
-  key.shadow.camera.right = BAY_SPACING / 2 + 8;
-  key.shadow.camera.top = 16;
-  key.shadow.camera.bottom = -16;
-  scene.add(key);
-  const rim = new THREE.DirectionalLight(0x88b4ff, 0.85);
-  rim.position.set(9, 7, -12);
-  scene.add(rim);
+  // Lights, plinth and camera fit all come from engine/previewStage.js, which
+  // the poster baker uses too — see engine/posters.js for why they must agree.
+  addPreviewLights(scene, renderer, { span: BAY_SPACING / 2 + 8 });
 
   // ------------------------------------------------------------------- bays
-  const plinthMaterial = new THREE.MeshStandardMaterial({ color: 0x14171c, metalness: 0.55, roughness: 0.5 });
-
   function buildBay(slot) {
     const x = (slot === 0 ? -1 : 1) * (BAY_SPACING / 2);
-    const deco = new THREE.Group();
+    const { group: deco, ringMaterial } = buildPlinth();
     deco.position.set(x, 0, 0);
     deco.visible = false;
-    const plinth = new THREE.Mesh(
-      new THREE.CylinderGeometry(PLINTH_RADIUS, PLINTH_RADIUS + 0.25, PLINTH_HEIGHT, 48),
-      plinthMaterial,
-    );
-    plinth.position.y = PLINTH_HEIGHT / 2;
-    plinth.receiveShadow = true;
-    deco.add(plinth);
-    // Accent ring around the plinth lip, recolored per bot.
-    const ringMaterial = new THREE.MeshStandardMaterial({
-      color: 0x888c94,
-      emissive: 0x888c94,
-      emissiveIntensity: 0.55,
-      metalness: 0.3,
-      roughness: 0.4,
-    });
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(PLINTH_RADIUS + 0.06, 0.045, 10, 64), ringMaterial);
-    ring.rotation.x = Math.PI / 2;
-    ring.position.y = PLINTH_HEIGHT - 0.02;
-    deco.add(ring);
-    // Soft contact shadow pool around the plinth.
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(PLINTH_RADIUS + 4.5, 48), new THREE.ShadowMaterial({ opacity: 0.42 }));
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.y = 0.001;
-    floor.receiveShadow = true;
-    deco.add(floor);
     scene.add(deco);
 
     // Particle FX for this bay only. One effects instance PER BAY, each rooted
@@ -174,7 +132,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     const fxRoot = new THREE.Group();
     scene.add(fxRoot);
 
-    const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 120);
+    const camera = new THREE.PerspectiveCamera(PREVIEW_FOV, 1, 0.05, 120);
     return {
       slot,
       x,
@@ -195,8 +153,11 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       // list all four.
       controlsEl: pods[slot]?.controls || null,
       loadingEl: pods[slot]?.view?.querySelector?.(".pod-loading") || null,
-      // Orbit state: yaw mirrored so both bots open on a facing 3/4 view.
-      orbit: { yaw: slot === 0 ? 0.7 : -0.7, pitch: 0.4, zoom: 1, dist: 9, targetY: 1.1, lean: 0, idleFor: 99 },
+      posterEl: pods[slot]?.poster || null,
+      /** Timer for the deferred model build; see posters.js SETTLE_MS. */
+      settle: 0,
+      // Orbit state: both bays open on the same front three-quarter (START_YAW).
+      orbit: { yaw: START_YAW, pitch: START_PITCH, zoom: 1, dist: 9, targetY: 1.1, lean: 0, idleFor: 99 },
       /** Claim flourish: seconds into the spin-and-flash, or -1 when idle. */
       claim: -1,
       /** Mirrors the sim's weapon stroke machine for this bot. */
@@ -222,6 +183,10 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   }
 
   const bays = [buildBay(0), buildBay(1)];
+  // Fire-and-forget: until it resolves posterMeta() returns null and every bay
+  // falls back to the spinner, which is exactly the behaviour before posters
+  // existed. Nothing waits on it.
+  loadPosterIndex();
   const control = { duo: false, focusSlot: 0 };
   // Same shaper the match loop runs, so the latches behave identically. It is
   // this viewer's OWN instance — the match keeps its own, and neither should
@@ -388,7 +353,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
         bay.claim = -1;
         // The flash is computed from `claim` earlier in the same frame, so put
         // the ring back here rather than leaving it a frame bright.
-        bay.ringMaterial.emissiveIntensity = 0.55;
+        bay.ringMaterial.emissiveIntensity = RING_EMISSIVE;
       }
       orbit.idleFor = 0; // no turntable drift on top of the flourish
     }
@@ -397,20 +362,9 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     // wide-but-short window is limited by the vertical one — so take whichever
     // demands more room.
     const aspect = rect.width / Math.max(rect.height, 1);
-    if (orbit.fitRadius) {
-      const vFov = (bay.camera.fov * Math.PI) / 180;
-      const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect);
-      const fit = orbit.fitRadius / Math.sin(Math.min(vFov, hFov) / 2);
-      orbit.dist = clamp(fit * 1.08, 3.5, 40); // 8% margin so nothing kisses the edge
-    }
+    if (orbit.fitRadius) orbit.dist = clamp(fitDistance(orbit.fitRadius, aspect, bay.camera.fov), 3.5, 40);
     const dist = orbit.dist * orbit.zoom * (1 - 0.42 * clamp(orbit.lean, 0, 1));
-    const target = new THREE.Vector3(bay.x, orbit.targetY, 0);
-    bay.camera.position.set(
-      bay.x + dist * Math.cos(orbit.pitch) * Math.sin(orbit.yaw),
-      orbit.targetY + dist * Math.sin(orbit.pitch),
-      dist * Math.cos(orbit.pitch) * Math.cos(orbit.yaw),
-    );
-    bay.camera.lookAt(target);
+    placeCamera(bay.camera, { x: bay.x, yaw: orbit.yaw, pitch: orbit.pitch, dist, targetY: orbit.targetY });
     if (Math.abs(bay.camera.aspect - aspect) > 0.001) {
       bay.camera.aspect = aspect;
       bay.camera.updateProjectionMatrix();
@@ -419,14 +373,10 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
 
   /** Frame the freshly loaded model: orbit target/distance from its bounds. */
   function frameModel(bay) {
-    const box = new THREE.Box3().setFromObject(bay.visual.group);
-    if (box.isEmpty()) return;
-    const size = new THREE.Vector3();
-    const center = new THREE.Vector3();
-    box.getSize(size);
-    box.getCenter(center);
-    const radius = size.length() / 2;
-    bay.orbit.targetY = center.y + size.y * 0.06; // a touch high: weapons swing UP
+    const framed = frameRadius(bay.visual.group);
+    if (!framed) return;
+    const { radius, targetY } = framed;
+    bay.orbit.targetY = targetY;
     // Store the RADIUS, not a distance: the pod's aspect changes with layout
     // (and the bay grows when a bot is picked), and a distance that fits a tall
     // narrow window crops a wide one. updateCamera solves it per frame against
@@ -507,7 +457,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       // colour, so driving its emissive is a flash in the bot's OWN colour
       // rather than a generic white pop, and it needs no extra geometry.
       const flash = bay.claim >= 0 ? Math.sin((bay.claim / CLAIM_SECONDS) * Math.PI) : 0;
-      bay.ringMaterial.emissiveIntensity = 0.55 * (1 + (CLAIM_RING_FLASH - 1) * flash);
+      bay.ringMaterial.emissiveIntensity = RING_EMISSIVE * (1 + (CLAIM_RING_FLASH - 1) * flash);
       updateWeaponAnim(bay, dt);
       syncBotVisual(bay.visual, bay.spec, bay.state);
       // A lit flamethrower is drawn here, from the same helper and the same
@@ -579,8 +529,8 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     bay.state.weaponAngle = 0;
     bay.state.weaponSubAngle = 0;
     bay.state.weaponTrack = 0;
-    bay.orbit.yaw = bay.slot === 0 ? 0.7 : -0.7;
-    bay.orbit.pitch = 0.4;
+    bay.orbit.yaw = START_YAW;
+    bay.orbit.pitch = START_PITCH;
     bay.orbit.idleFor = 99; // start on the slow showcase drift
   }
 
@@ -621,15 +571,54 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     }
   }
 
-  /** Load spec's model into the slot's bay (no-op if it is already showing). */
+  /** Show a bot's baked stand-in immediately. Returns false when it has no
+   *  poster, so the caller can fall back to the spinner. */
+  function showPoster(bay, spec) {
+    if (!bay.posterEl || !posterMeta(spec.id)) return false;
+    bay.posterEl.src = posterUrl(spec.id);
+    bay.posterEl.hidden = false;
+    return true;
+  }
+
+  function hidePoster(bay) {
+    if (!bay.posterEl) return;
+    bay.posterEl.hidden = true;
+    bay.posterEl.removeAttribute("src");
+  }
+
+  /**
+   * Stage a bot in a slot: its picture goes up at once, its model is built
+   * after the choice has held still (see posters.js). No-op if it is already
+   * the bot in that bay.
+   */
   async function showBot(slot, spec) {
     const bay = bays[slot];
     if (!bay || !spec) return;
-    if (bay.spec?.id === spec.id && bay.visual) return;
+    if (bay.spec?.id === spec.id && (bay.visual || bay.settle)) return;
     const token = ++bay.token;
+    clearTimeout(bay.settle);
     removeVisual(bay);
     bay.spec = spec;
-    setLoading(bay, true);
+    bay.weapon = null;
+    // The control legend comes off the SPEC, so it is right from the first
+    // frame — reading it does not need the geometry to have arrived.
+    applyControls(bay, spec);
+    // The spinner is only for a bot with no poster. With one, the pod is
+    // already showing the bot, and a spinner on top of it says "nothing here".
+    const posted = showPoster(bay, spec);
+    setLoading(bay, !posted);
+    // Deferred so that running the cursor along a row of cards costs nothing:
+    // each new bot cancels the last one's timer, and only the one you stop on
+    // is ever downloaded.
+    bay.settle = setTimeout(() => {
+      bay.settle = 0;
+      buildBot(bay, spec, token);
+    }, SETTLE_MS);
+  }
+
+  /** Build the model for a staged bot and hand the pod over to it. */
+  async function buildBot(bay, spec, token) {
+    if (token !== bay.token) return;
     let visual = null;
     try {
       visual = await loadBotModel(spec); // THREE.Cache makes the later match load a re-parse, not a re-download
@@ -637,7 +626,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       console.warn(`[preview] model load failed for ${spec.id}`, error);
     }
     if (token !== bay.token) {
-      // Player picked something else while this one downloaded.
+      // Player moved on while this one downloaded.
       if (visual) disposeObject(visual.group);
       return;
     }
@@ -650,19 +639,24 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     bay.ringMaterial.color.set(spec.accent || "#888c94");
     bay.ringMaterial.emissive.set(spec.accent || "#888c94");
     bay.weapon = createPreviewWeapon(spec);
-    applyControls(bay, spec);
     resetBayState(bay);
     frameModel(bay);
+    // Last, so the picture is never taken down before the model that replaces
+    // it has been framed — otherwise the pod blinks empty for a frame.
+    hidePoster(bay);
   }
 
   function clearBot(slot) {
     const bay = bays[slot];
     if (!bay) return;
     bay.token += 1; // cancels an in-flight load
+    clearTimeout(bay.settle);
+    bay.settle = 0;
+    hidePoster(bay);
     bay.spec = null;
     bay.weapon = null;
     bay.claim = -1; // a bay being emptied is not a bay being claimed
-    bay.ringMaterial.emissiveIntensity = 0.55;
+    bay.ringMaterial.emissiveIntensity = RING_EMISSIVE;
     setLoading(bay, false);
     applyControls(bay, null);
     removeVisual(bay);
@@ -684,6 +678,13 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     const bay = bays[slot];
     if (!bay) return;
     bay.claim = 0;
+    // A claim IS the settle: there is nothing left to wait for, so stop
+    // holding the model back.
+    if (bay.settle) {
+      clearTimeout(bay.settle);
+      bay.settle = 0;
+      buildBot(bay, bay.spec, bay.token);
+    }
   }
 
   /** @param {{ duo?: boolean, focusSlot?: number|null }} next */

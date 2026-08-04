@@ -49,6 +49,7 @@ const loader = createLoader();
 const podEls = (side) => ({
   view: document.querySelector(`#pod-view-${side}`),
   controls: document.querySelector(`#pod-controls-${side}`),
+  poster: document.querySelector(`#pod-poster-${side}`),
 });
 const botPreview = createBotPreview({
   canvas: document.querySelector("#preview-canvas"),

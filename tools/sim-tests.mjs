@@ -586,6 +586,29 @@ await test("catalog: every bot's colliders clear the floor at rest", async () =>
   }
 });
 
+await test("posters: every bot has one, and no poster outlives its bot", async () => {
+  // The select screen shows a baked picture while a model downloads
+  // (src/engine/posters.js). A bot with no poster silently falls back to a
+  // spinner over an empty bay, which is the behaviour the posters exist to
+  // replace and looks like nothing is happening — and it is invisible from
+  // anywhere else, because everything still works. A new bot added to the
+  // roster is exactly when it happens.
+  const fs = await import("node:fs");
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const dir = new URL("../public/posters/", import.meta.url);
+  let index = {};
+  try {
+    index = JSON.parse(fs.readFileSync(new URL("posters.json", dir), "utf8"))?.bots || {};
+  } catch { /* never generated */ }
+  const ids = Object.keys(CATALOG);
+  const missing = ids.filter((id) => !index[id] || !fs.existsSync(new URL(`${id}.png`, dir)));
+  check(missing.length === 0, "every bot in the catalog has a poster",
+    `${missing.join(", ")} — run: node server.mjs & node tools/posters.mjs ${missing.join(" ")}`);
+  const orphans = Object.keys(index).filter((id) => !CATALOG[id]);
+  check(orphans.length === 0, "no poster is left over from a bot that is gone",
+    `${orphans.join(", ")} — delete them from public/posters/`);
+});
+
 await test("models: every authored panel is still in the GLB that needs it", async () => {
   // Repairs are not all the same KIND of edit, and that is the trap. A carve
   // rewrites the GLB from a saved input; a panel is APPENDED to whatever the
