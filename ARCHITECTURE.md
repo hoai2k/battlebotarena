@@ -3,7 +3,12 @@
 Ground-up redesign of the game in `/v2`, focused on being a playable game (not a
 sandbox). Same core fantasy as v1 — drive a real BattleBot, smash the other one,
 dodge kill saws — but with a proper simulation, part-separated Tripo models, and
-a broadcast-styled UI. v1 stays untouched at the repo root.
+a broadcast-styled UI.
+
+(Since this was written the two have swapped places: THIS game lives at the repo
+root and v1 lives in `/v1`, where it now runs the same roster — its bots are
+generated from the catalog below rather than re-authored, so a fix here reaches
+both. `v1/README.md` documents what does and does not port.)
 
 ## Non-negotiables
 

@@ -63,6 +63,9 @@ public/
   music/            Soundtrack
 vendor/             three.js + Rapier (so the game needs no network)
 tools/              Dev utilities: sim tests, model pipeline, model viewer
+v1/                 The original game, still playable at /v1/ — it now fights
+                    this roster too, generated from the catalog above
+                    (see v1/README.md)
 ```
 
 Architecture contracts — module boundaries, the event bus, and the physics

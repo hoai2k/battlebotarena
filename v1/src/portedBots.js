@@ -198,7 +198,7 @@ function colliderStackMinY(parts) {
     if (part.part === "driveContact" || part.ignoreGroundContact) return;
     if (part.part === "weapon" && part.ignoreLocalBottomFloorContact) return;
     const [hx, hy, hz] = (part.halfExtents || [0.4, 0.16, 0.4]).map(Math.abs);
-    const [rx, ry, rz] = part.rotation || [0, 0, 0];
+    const [rx, , rz] = part.rotation || [0, 0, 0];
     // Same corner sampling v1 grounds with (main.js colliderPartsBounds).
     const half = part.type === "cylinder" ? [Math.max(hy, hz), hx, Math.max(hy, hz)] : [hx, hy, hz];
     const cos = Math.cos(rx) * Math.cos(rz);
@@ -462,6 +462,10 @@ function armWeaponBlock(spec) {
       visualSpeed: round(Math.min(VISUAL_SPEED_MAX, Math.max(VISUAL_SPEED_MIN, (disc.maxOmega ?? 380) * VISUAL_SPEED_RATIO)), 2),
       damagePerSecond: round(disc.contactDamagePerSecond ?? disc.damagePerSecond ?? 10, 3),
       radius: round(disc.radius ?? 0.45, 4),
+      // Dragon King's two blades lean about seven degrees apart in opposite
+      // directions; spinning both about one horizontal axle is the wobble you
+      // would get from bending the axle instead of the arms.
+      axes: disc.axes ? { ...disc.axes } : undefined,
     };
   } else if (weapon.type === "hammerSaw") {
     // Sawblaze's saw is the weapon part itself, spun about the arm's own axle.

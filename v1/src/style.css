@@ -748,6 +748,11 @@ button:active,
 
 .bot-picker {
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* Twenty-eight bots is six rows of thumbnails. Cap it and let it scroll, or
+     the controls under the picker end up below the fold. */
+  max-height: 40vh;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .bot-picker button {

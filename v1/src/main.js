@@ -5,7 +5,7 @@ import { init as initInstant, id as instantId } from "@instantdb/core";
 import { BOT_CONFIG, PHYSICS_ASSISTS, botGroundSpeedFeetPerSecond } from "./botConfig.js?v=bot-speed-mph-1";
 import { MODEL_PART_CONFIG } from "./modelPartConfig.js?v=bronco-flipper-1";
 import { stepPhysicsArena } from "./arenaPhysicsStep.js";
-import { drawnBox, fractionBoundsToBox, modelAuthoringBounds, normalizeSegmentedModel, originalAuthoringBoundsForMesh, splitConfiguredModelParts, splitSegmentedModelParts } from "./modelParts.js";
+import { fractionBoundsToBox, modelAuthoringBounds, normalizeSegmentedModel, originalAuthoringBoundsForMesh, splitConfiguredModelParts, splitSegmentedModelParts } from "./modelParts.js";
 import {
   armWeaponAngle,
   isArmWeaponEngaged,
@@ -13,7 +13,7 @@ import {
   isNewArmWeapon,
   updateArmWeaponState,
 } from "./armWeapons.js";
-import { PORTED_BOT_IDS, isPortedBot } from "./portedBots.js";
+import { PORTED_BOT_IDS } from "./portedBots.js";
 import { createPhysics } from "./physics.js?v=bot-speed-mph-1";
 import { DEFAULT_PHYSICAL_DAMAGE_OPTIONS, applyPhysicalDamageBreak } from "./physicalDamage.js?v=game-config-1";
 import { PHYSICAL_DAMAGE_COLLIDER_CARVE, PHYSICAL_DAMAGE_FILL, PHYSICAL_DAMAGE_SYNC_NOTE } from "./physicalDamageShared.js";
@@ -495,6 +495,8 @@ const RIVAL_START_ELEMENT = arenaElementById("rival-start");
 const PLAYER_SPAWN = arenaSpawnFromElement(PLAYER_START_ELEMENT, { x: 0, y: 0.55, z: ARENA_HALF_LENGTH - 2.25, yaw: 0 });
 const RIVAL_SPAWN = arenaSpawnFromElement(RIVAL_START_ELEMENT, { x: 0, y: 0.55, z: -ARENA_HALF_LENGTH + 2.25, yaw: Math.PI });
 const SEGMENTED_MODEL_SURFACE = { metalness: 0.28, roughness: 0.42 };
+// Scratch vector for per-blade spin axes; the weapon update runs every frame.
+const subSpinAxis = new THREE.Vector3();
 const MODEL_BACKED_BOTS = new Set(["biteforce", "bronco", "huge", "quantum", "hypershock", "minotaur", ...PORTED_BOT_IDS]);
 const HUGE_SPINNER_BREAK_SPEED_RATIO = 0.72;
 const HUGE_SPINNER_FULL_SPEED = 145;
@@ -7137,8 +7139,14 @@ function updateWeapon(fighter, dt, active, input = {}) {
     (weapon.subs || []).forEach((sub) => {
       if (!sub.object) return;
       // A saw that IS the weapon part turns about the arm's own axis; a nested
-      // rotor turns inside the arm group about its own axle.
-      if (sub.spinsWeaponPivot) sub.spinAngle = (sub.spinAngle || 0) + sub.currentSpeed * dt;
+      // rotor turns inside the arm group about its own axle — and a bot with two
+      // rotors that do not share an axle (Dragon King) turns each about its own.
+      if (sub.spinsWeaponPivot) {
+        sub.spinAngle = (sub.spinAngle || 0) + sub.currentSpeed * dt;
+        return;
+      }
+      const axis = sub.axes?.[sub.name];
+      if (axis) sub.object.rotateOnAxis(subSpinAxis.set(axis.x, axis.y, axis.z).normalize(), sub.currentSpeed * dt);
       else sub.object.rotation.x += sub.currentSpeed * dt;
     });
     if (weapon.claw?.object) {

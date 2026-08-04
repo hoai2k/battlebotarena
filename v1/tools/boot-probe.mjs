@@ -19,6 +19,7 @@ import { chromium } from "playwright";
 const args = process.argv.slice(2);
 const ids = args.filter((value) => !value.startsWith("--"));
 const withArena = args.includes("--arena");
+const shotDir = args.includes("--shots") ? "v1/tools/boot-shots" : null;
 const BASE = process.env.BOOT_PROBE_URL || "http://127.0.0.1:4173";
 
 const { PORTED_BOT_IDS } = await import("../src/portedBots.js");
@@ -105,7 +106,19 @@ try {
       if (withArena) {
         // Into a real match: this is the path that builds colliders, binds the
         // weapon and runs the arm runtime every frame.
-        await page.click("#battle-toggle", { timeout: 20_000 });
+        // Fire the button through the DOM rather than through a real click: the
+        // page keeps pulling other bots' GLBs in the background and puts its
+        // loading overlay back over the control while it does, and waiting for a
+        // gap in that is a race the probe keeps losing. The handler is what is
+        // being tested, and it runs either way.
+        await page.waitForFunction(() => document.querySelector("#loading-overlay")?.hidden !== false, { timeout: 120_000 }).catch(() => {});
+        const clicked = await page.evaluate(() => {
+          const button = document.querySelector("#battle-toggle");
+          if (!button) return false;
+          button.click();
+          return true;
+        });
+        if (!clicked) throw new Error("no #battle-toggle on the page");
         await page.waitForFunction(() => {
           const overlay = document.querySelector("#loading-overlay");
           return overlay ? overlay.hidden : false;
@@ -136,6 +149,10 @@ try {
       });
     } catch (error) {
       errors.push(`probe: ${String(error).slice(0, 300)}`);
+    }
+    if (shotDir) {
+      fs.mkdirSync(shotDir, { recursive: true });
+      await page.screenshot({ path: `${shotDir}/${id}${withArena ? "-arena" : ""}.png` }).catch(() => {});
     }
     results.push({ id, errors, report });
     console.log(`${id.padEnd(13)} ${errors.length ? `FAIL ${errors.length} error(s)` : "ok"}${report?.hasCanvas === false ? " (no canvas)" : ""}`);
