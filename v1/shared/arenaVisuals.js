@@ -122,10 +122,10 @@ export function createArenaVisualRoot({ layout, hazards: hazardFactories, assetB
   const floorTileTexture = loadTexture("public/arena/bb_arena_tile.png", [8, 8]);
   const arenaLogoTexture = loadPlainTexture("public/arena/bb_arena_logo_alpha.png");
   const killSawTexture = loadPlainTexture("public/arena/kill_saw_alpha.png");
-  const battleBoxMetalTexture = loadTexture("reference/battlebox_metal.png", [3.4, 1]);
-  const battleBoxYellowTexture = loadTexture("reference/battlebox_yellow.png", [3.2, 1]);
-  const screwMetalTexture = loadTexture("reference/screw_metal.png", [2.8, 1]);
-  const upperDeckTexture = loadTexture("reference/upper_deck.png", [1.6, 0.8]);
+  const battleBoxMetalTexture = loadTexture("../public/arena/battlebox_metal.png", [3.4, 1]);
+  const battleBoxYellowTexture = loadTexture("../public/arena/battlebox_yellow.png", [3.2, 1]);
+  const screwMetalTexture = loadTexture("../public/arena/screw_metal.png", [2.8, 1]);
+  const upperDeckTexture = loadTexture("../public/arena/upper_deck.png", [1.6, 0.8]);
 
   function elementPosition(element, fallback = { x: 0, z: 0 }) {
     return {

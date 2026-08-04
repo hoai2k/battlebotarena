@@ -621,10 +621,10 @@ arenaLogoTexture.anisotropy = 8;
 const killSawTexture = textureLoader.load("./public/arena/kill_saw_alpha.png");
 killSawTexture.colorSpace = THREE.SRGBColorSpace;
 killSawTexture.anisotropy = 8;
-const battleBoxMetalTexture = loadTexture("./reference/battlebox_metal.png", [3.4, 1]);
-const battleBoxYellowTexture = loadTexture("./reference/battlebox_yellow.png", [3.2, 1]);
-const screwMetalTexture = loadTexture("./reference/screw_metal.png", [2.8, 1]);
-const upperDeckTexture = loadTexture("./reference/upper_deck.png", [1.6, 0.8]);
+const battleBoxMetalTexture = loadTexture("../public/arena/battlebox_metal.png", [3.4, 1]);
+const battleBoxYellowTexture = loadTexture("../public/arena/battlebox_yellow.png", [3.2, 1]);
+const screwMetalTexture = loadTexture("../public/arena/screw_metal.png", [2.8, 1]);
+const upperDeckTexture = loadTexture("../public/arena/upper_deck.png", [1.6, 0.8]);
 
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(42, 42),
