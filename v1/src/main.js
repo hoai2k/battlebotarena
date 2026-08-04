@@ -3557,6 +3557,7 @@ function applyGameRulesPayload(rules = {}) {
 
 function syncBotPicker() {
   const lockedOpponentId = onlineIsActive() ? onlineOpponentBotId() : null;
+  let selectedButton = null;
   [...picker.children].forEach((button) => {
     const bot = bots.find((candidate) => candidate.id === button.dataset.id);
     const isSelected = button.dataset.id === selected.id;
@@ -3564,7 +3565,14 @@ function syncBotPicker() {
     button.classList.toggle("active", isSelected);
     button.disabled = Boolean(lockedOpponentId && button.dataset.id === lockedOpponentId && !isSelected);
     button.title = button.disabled ? "Opponent bot locked" : "";
+    if (isSelected) selectedButton = button;
   });
+  // Twenty-eight bots do not all fit in the picker at once, so keep the chosen
+  // one in view — arriving with ?bot=rusty should not land on a grid scrolled to
+  // the top with nothing highlighted in it.
+  if (selectedButton && picker.scrollHeight > picker.clientHeight + 1) {
+    selectedButton.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
 }
 
 function syncGameBotVisibility() {
