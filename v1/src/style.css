@@ -749,7 +749,12 @@ button:active,
 .bot-picker {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   /* Twenty-eight bots is six rows of thumbnails. Cap it and let it scroll, or
-     the controls under the picker end up below the fold. */
+     the controls under the picker end up below the fold.
+     `flex: 0 0 auto` is load-bearing: the panel is a flex column, and a flex
+     item that has its own overflow loses its automatic minimum size — without
+     this the whole picker gets shrunk to zero height and the grid disappears
+     while its buttons are still there, laid out, inside nothing. */
+  flex: 0 0 auto;
   max-height: 40vh;
   overflow-y: auto;
   padding-right: 2px;

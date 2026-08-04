@@ -37,6 +37,14 @@ export function stepPhysicsArena({
   // runtime knows which button that is for which machine.
   fighters.forEach((fighter, index) => updateWeapon?.(fighter, dt, Boolean(inputs[index]?.weapon), inputs[index] || {}));
   fighters.forEach((fighter, index) => physics.applySpinnerGyro(fighter, inputs[index] || {}, dt));
+  // Magnets, srimechs and body lifts: mechanics that are not hits, applied
+  // before the world advances like every other force here.
+  fighters.forEach((fighter, index) => physics.applyWeaponMechanics?.(
+    fighter,
+    inputs[index] || {},
+    dt,
+    weaponImpactCallbacksFor(fighter, index),
+  ));
   fighters.forEach((fighter, index) => afterGyro?.(fighter, index));
   fighters.forEach((fighter) => stabilizeFighter?.(fighter));
   fighters.forEach((fighter, index) => afterStabilize?.(fighter, index));
@@ -47,6 +55,14 @@ export function stepPhysicsArena({
       arena,
       attacker: fighter,
       active: Boolean(weaponActiveForImpact(fighter, inputs[index] || {}, index)),
+      dt,
+      callbacks: weaponImpactCallbacksFor(fighter, index),
+    });
+    // Fire, punch arms and grips run on their own channels, so they are not
+    // gated on the primary weapon being engaged.
+    physics.applyWeaponMechanismImpacts?.({
+      arena,
+      attacker: fighter,
       dt,
       callbacks: weaponImpactCallbacksFor(fighter, index),
     });
