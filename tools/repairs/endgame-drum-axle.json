@@ -1,0 +1,5 @@
+[
+  { "_comment": "Same correction as Minotaur's, found by the same fit. End Game's barrel fits a circle at (0.1225, 0.0572) radius 0.0639 with 13776 of 16718 vertices agreeing (82%); the pivot was at (0.12, 0.05), 0.0251ft out once scaled and 12% of the drum radius. tools/sim-tests.mjs asserts this stays true.",
+    "mode": "pivot", "node": "modelWeapon",
+    "pivotLocal": [0.1225, 0.0572, 0.02] }
+]

@@ -1,0 +1,8 @@
+[
+ {
+  "_comment": "The disc was leaving most of itself behind. modelWeapon held only tripo_part_20 — the teardrop blade — while the hub plate it is bolted to stayed filed under modelBody, so spinning the weapon spun the blade out of its own carrier and left a grey riveted plate sitting motionless inside the swept circle. tools/part-maps/endgame.json says the weapon is [16, 24] and the shipped GLB disagreed with it — but the map is only PARTLY right. Part 16 is a side plate that reaches down to the chassis: reparenting it takes the swept radius from 0.471 to 0.843, i.e. it is not rotationally symmetric about the axle and spinning it would scythe a circle twice the disc's size through the bot's own frame. Only part 24 belongs to the rotor; its extent about the axle is 0.51 against the disc's 0.471. Reparenting rather than carving because these are whole parts that were filed in the wrong assembly, which is exactly what `reparent` is for (same case as clawviper's fork hubs).",
+  "mode": "reparent",
+  "part": 24,
+  "parent": "modelWeapon"
+ }
+]

@@ -6,28 +6,114 @@
 import { EV } from "../shared/events.js";
 import { RAPIER, WEAPON_GROUPS, tagCollider } from "./world.js";
 import { contactPointBetween } from "./contacts.js";
+import { createSpinnerModel, resolveWeaponTuning, damageImpulseForRate } from "./weaponTuning.js";
+import { createFlamethrower } from "./flamethrower.js";
 import * as m from "./math.js";
 
 export const WEAPON_TUNING = Object.freeze({
-  spinDownFactor: 2.5, // spin-down time = spinUpSeconds * this
+  // Coast-down, in seconds from full speed to stopped. This is v1's number.
+  //
+  // v1 gave every spinner its own wind-up but shared one coast: 1.1s across the
+  // whole six-bot roster, with HUGE the single exception at 0.8s. That is not
+  // physics — spin-up is set by motor power and coast-down by bearing friction
+  // and windage, and real bar spinners genuinely coast for tens of seconds,
+  // which is why teams fit brakes. It is a control decision. The wind-up is the
+  // commitment the player is buying; making them wait through a proportional
+  // coast just taxes them twice for the same choice, and a rotor that stays
+  // live for ten seconds after the trigger comes off is not something anyone
+  // can plan around. So spin-up varies per bot and spin-down does not, unless
+  // a weapon states its own with weapon.spinDownSeconds.
+  spinDownSeconds: 1.1,
   minHitRatio: 0.12, // below this spin ratio the blade is harmless
-  hitCooldownSeconds: 0.09, // per target pair
+  hitCooldownSeconds: 0.18, // per target pair (v1's rate; the spin ramp doubles hits without it)
   wallHitCooldownSeconds: 0.16,
   wallImpulseFactor: 0.4, // of the raw budget, before the 0.6*cap wall cap
-  liftFactor: { drum: 0.85, bar: 0.25 }, // vertical component mixed into hits
-  kickbackLiftFraction: 0.25, // attacker downward share of target lift
-  heavyHitCapFraction: 0.5, // J >= cap*this flags the hit "heavy"
+  heavyHitCapFraction: 0.5, // J >= cap*this flags a stroke weapon's hit "heavy"
   flipperImpulseDir: { up: 1, forward: 0.45 },
   flipperRecoilFraction: 0.3,
   crusherTickSeconds: 0.25,
+  // --- self-righting ---------------------------------------------------------
+  // A bot on its back is not out of the fight: any arm that can reach the floor
+  // shoves against it, and a spun-up rotor can be walked over by throwing the
+  // drive from lock to lock. Both need the bot to actually be ON something —
+  // neither works in mid-air.
+  srimechUpY: 0.25, // above this the bot is upright enough; do nothing
+  // The srimech is ONE impulse per stroke, not a torque spread across it:
+  // rolling a flat 250lb machine over its own edge has to beat m*g*halfWidth
+  // the whole way, so a distributed torque just rocks it and it drops back. A
+  // kick that leaves the floor finishes the rotation in the air. Its size is
+  // derived rather than dialled — see srimechKickSpeed() — because a fixed
+  // speed that turns a light bot half a revolution sends a heavy one to the
+  // ceiling: at 11.5 ft/s flat, Bronco pulled 2.2 revolutions a second and
+  // Deep Six peaked 7ft up.
+  srimechTurns: 0.62, // revolutions to aim for while airborne (a bit past half)
+  srimechCooldownSeconds: 0.6, // one kick per stroke, and no machine-gunning
+  gyroSelfRightLift: 2.6, // ft/s^2 of unweighting while the rotor walks it over
+  // Roll authority for a spun-up rotor being walked over on the sticks. Also
+  // has to beat gravity's restoring torque, which for a 250lb bot about its own
+  // edge is ~80 rad/s^2 of angular acceleration — hence the size of this.
+  gyroSelfRightRate: 150,
+  gyroSelfRightMinRatio: 0.25,
+  gyroSelfRightMinEffort: 0.3,
   crusherDragBlendRate: 3.5, // 1/s velocity bleed while clamped
   hammerContactAfter: 0.35, // fraction of swing before the head can connect
   hammerGrindTickSeconds: 0.3,
-  hammerGrindImpulse: 8,
+  // --- weapon on weapon --------------------------------------------------------
+  // Two live rotors meeting is one exchange that lands on BOTH machines, not a
+  // hit in either direction. Each bot eats the other rotor's push plus the
+  // kickback off its own, so a clash separates them harder than either hit does
+  // alone — but a blade that catches a blade deflects rather than bites, so less
+  // of the budget goes into the shove and less again into damage.
+  clashPushShare: 0.7,
+  clashDamageShare: 0.55,
+  clashLift: 0.18, // of the horizontal impulse — weapons meeting kick both noses up
+  clashSpinLoss: 0.4, // extra rotor speed lost, x the OTHER weapon's hit strength
+  clashCooldownSeconds: 0.2, // per pair, and it blocks the body hit for the same window
 });
 
 const TU = WEAPON_TUNING;
 const UP = { x: 0, y: 1, z: 0 };
+
+/**
+ * Drive a swinging arm into the floor to throw an overturned bot back over.
+ * The impulse lands at the arm's business end, which is ahead of the centre of
+ * mass, so the bot leaves the ground pitching — the roll finishes in the air.
+ * Returns whether it fired, so a weapon can rate-limit itself.
+ */
+/**
+ * How hard to kick, from the bot's own numbers. An impulse `m*v` at arm `r`
+ * spins the bot at `w = m*v*r/I` and buys `t = 2v/g` of airtime, so it turns
+ * `w*t/2pi = m*v^2*r/(pi*g*I)` revolutions. Solve that for the speed that turns
+ * `srimechTurns`, and every bot lands the same way up regardless of its mass,
+ * length or how far its arm reaches.
+ */
+function srimechKickSpeed(vehicle, arm) {
+  const turns = TU.srimechTurns;
+  return Math.sqrt((turns * Math.PI * 32.174 * vehicle.inertia.x) / (vehicle.mass * Math.max(0.2, arm)));
+}
+
+function armSrimech(vehicle, state, simTime, scale = 1) {
+  const rot = vehicle.body.rotation();
+  if (m.qRotate(rot, UP).y > TU.srimechUpY) return false;
+  if (simTime - state.lastSrimechAt < TU.srimechCooldownSeconds) return false;
+  if (!vehicle.touchingGround()) return false;
+  state.lastSrimechAt = simTime;
+  const spec = vehicle.spec;
+  // Where the arm meets the floor: out at the nose, level with its hinge.
+  const at = {
+    x: spec.weapon.pivot?.x ?? 0,
+    y: spec.weapon.pivot?.y ?? 0,
+    z: -spec.bodyDims.z * 0.42,
+  };
+  const arm = Math.abs(at.z - 0.08 * spec.bodyDims.z); // about the COM, not the origin
+  const point = m.add(vehicle.body.translation(), m.qRotate(rot, at));
+  vehicle.body.applyImpulseAtPoint(
+    m.scale(UP, vehicle.mass * srimechKickSpeed(vehicle, arm) * scale),
+    point,
+    true,
+  );
+  return true;
+}
 
 function horizontalBetween(fromPos, toPos) {
   return m.flatNorm(m.sub(toPos, fromPos)) ?? { x: 0, y: 0, z: -1 };
@@ -65,19 +151,23 @@ function frontZone(spec, reach, extra = {}) {
 function createSpinner({ world, meta, vehicle, index, emit }) {
   const spec = vehicle.spec;
   const w = spec.weapon;
-  const isDrum = w.type === "drum";
-  const radius = w.radius ?? 0.55;
-  const halfLength = (w.length ?? 1.6) / 2;
+  const model = createSpinnerModel(spec);
+  const tuning = model.tuning;
+  const radius = w.radius ?? Math.max(w.dims?.y ?? 0.55, w.dims?.z ?? 0.55);
 
   // Thin solid collider glued to the chassis body (same body = no self-hits).
-  // Drum: cylinder across the front (axis x). Bar: thin wide cuboid.
-  let desc;
-  if (isDrum) {
-    desc = RAPIER.ColliderDesc.cylinder(halfLength, radius)
-      .setRotation(m.qFromAxisAngle({ x: 0, y: 0, z: 1 }, Math.PI / 2));
-  } else {
-    desc = RAPIER.ColliderDesc.cuboid(w.barHalfLength ?? 2.0, 0.08, radius);
-  }
+  // It stands in for the SWEPT volume, not the blade pose, because the collider
+  // never rotates: a disc of the weapon's own radius, as thick as the weapon is
+  // along its spin axis, centred on the pivot. Sizing it from the catalog
+  // matters — the old fixed 4ft-wide slab was wider than Tombstone's whole
+  // chassis and reached a foot past his tail, so he shouldered opponents and
+  // walls away from empty air.
+  const axis = w.axis ?? { x: 1, y: 0, z: 0 };
+  const along = Math.abs(axis.x) > 0.5 ? "x" : Math.abs(axis.z) > 0.5 ? "z" : "y";
+  const halfThickness = w.dims?.[along] ?? (w.length !== undefined ? w.length / 2 : 0.4);
+  const desc = RAPIER.ColliderDesc.cylinder(halfThickness, radius);
+  if (along === "x") desc.setRotation(m.qFromAxisAngle({ x: 0, y: 0, z: 1 }, Math.PI / 2));
+  else if (along === "z") desc.setRotation(m.qFromAxisAngle({ x: 1, y: 0, z: 0 }, Math.PI / 2));
   desc
     .setTranslation(w.pivot.x, w.pivot.y, w.pivot.z)
     .setDensity(0)
@@ -89,10 +179,94 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
   const collider = world.createCollider(desc, vehicle.body);
   tagCollider(meta, collider, { kind: "weapon", botIndex: index, surface: "bot" });
 
+  const coastSeconds = w.spinDownSeconds ?? TU.spinDownSeconds;
+
+  // Tantrum's drum is not bolted to the frame: it rides a carriage on the rails
+  // down the middle of the bot. Holding the saw channel winches it back and up
+  // the track to the far stop; letting go fires it forward again, and the whole
+  // point of the mechanic is that the drum is TRAVELLING when it arrives.
+  //
+  // The collider is dragged along with it, which is the cost of the wind-up:
+  // while the drum is parked at the back it is a foot behind where it can reach
+  // anything. Moving a collider relative to its parent is not a teleport of a
+  // dynamic body — the chassis body is untouched — so the no-setTranslation
+  // rule is not in play here.
+  const track = w.track ?? null;
+  let carriage = 0; // 0 at the front stop where the drum rests, 1 parked at the back top
+  let carriageRate = 0; // stroke per second, negative on the forward stroke
+
+  function updateTrack(dt, ctx) {
+    const pulling = Boolean(ctx.input?.sawActive);
+    const rate = pulling
+      ? 1 / Math.max(0.05, track.retractSeconds)
+      : -1 / Math.max(0.05, track.flingSeconds);
+    const next = m.clamp(carriage + rate * dt, 0, 1);
+    carriageRate = (next - carriage) / dt;
+    if (next === carriage) return;
+    carriage = next;
+    collider.setTranslationWrtParent({
+      x: w.pivot.x + (track.offset.x ?? 0) * carriage,
+      y: w.pivot.y + track.offset.y * carriage,
+      z: w.pivot.z + track.offset.z * carriage,
+    });
+  }
+
+  // How much harder the drum lands mid-fling. It is applied to the finished
+  // impulses rather than fed into the spinner model's approach-speed term
+  // because that term is inside the budget cap, and the cap is the ROTOR's
+  // stored energy — the carriage's momentum is not part of it and should not be
+  // swallowed by it. The multiplier is flat across the stroke since the
+  // carriage runs at a constant rate.
+  function flingScale() {
+    if (!track || carriageRate >= 0) return 1;
+    const moving = m.clamp(-carriageRate * track.flingSeconds, 0, 1);
+    return 1 + (track.hitBoost - 1) * moving;
+  }
+
   let omega = 0;
   let angle = 0;
+  // A rotor whose face IS the roof can be stopped dead by a blow from directly
+  // above (see overheadStall). Until this time the motor cannot pull against it.
+  let stallUntil = -Infinity;
   let lastEmittedRatio = -1;
+  let lastEmittedPowered = false;
   const lastHitAt = new Map(); // "foe" | "arena" -> simTime
+
+  // Tantrum's fist arms: a third, independent mechanism on the aux channel.
+  // They hinge on the axle across the back of the bot and swing up through a
+  // quarter turn, so their zone is short and high — they hit what is already
+  // pressed against the front, which is exactly the moment the drum has stalled
+  // against an opponent and needs help.
+  const fists = w.fists ?? null;
+  const fistZone = fists ? frontZone(spec, fists.reach ?? 1.0, { pad: -0.1, minY: -0.2, maxY: 1.6 }) : null;
+  let fistStroke = 0; // 0 arms down at rest, 1 arms up at full lift
+  let fistOut = false; // debounces one hit per punch
+  function updateFists(dt, ctx) {
+    const punching = Boolean(ctx.input?.auxActive);
+    const seconds = Math.max(0.05, fists.punchSeconds ?? 0.18);
+    fistStroke = m.clamp(fistStroke + (punching ? dt / seconds : -dt / (seconds * 2.2)), 0, 1);
+    if (fistStroke < 0.85) { if (fistStroke < 0.4) fistOut = false; return; }
+    if (fistOut) return;
+    fistOut = true;
+    const foe = ctx.foe;
+    const local = toLocal(vehicle, foe.body.translation());
+    if (!localZoneContains(fistZone, local)) return;
+    const h = horizontalBetween(vehicle.body.translation(), foe.body.translation());
+    const impulse = fists.impulse ?? 90;
+    const point = m.add(foe.body.translation(), m.v3(0, 0.35, 0));
+    foe.body.applyImpulseAtPoint(m.add(m.scale(h, impulse), m.scale(UP, impulse * 0.35)), point, true);
+    vehicle.body.applyImpulse(m.scale(h, -impulse * 0.35), true);
+    emit(EV.WEAPON_HIT, {
+      attackerIndex: index,
+      targetIndex: foe.index,
+      point,
+      normal: m.scale(h, -1),
+      impulse: damageImpulseForRate(fists.damagePerHit ?? 2.5, 1),
+      appliedImpulse: impulse,
+      energyBefore: 0,
+      heavy: false,
+    });
+  }
 
   function energy() {
     return 0.5 * w.inertia * omega * omega;
@@ -107,41 +281,86 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
     return m.add(vehicle.body.translation(), m.qRotate(vehicle.body.rotation(), w.pivot));
   }
 
+  // v1's shaping chain, bridged into v2 units by weaponTuning.js. The catalog's
+  // per-bot numbers live under weapon.tuning, which nothing here used to read,
+  // so every spinner ran on the generic defaults and all three drums sat on
+  // their budget cap above ~10-20% spin — one flat hit at any speed.
   function hitTarget(foe, contact, simTime) {
-    const e = energy();
-    const mEff = (vehicle.mass * foe.mass) / (vehicle.mass + foe.mass);
-    const efficiency = w.efficiency ?? 0.4;
-    const raw = Math.sqrt(2 * mEff * e * efficiency) * (w.impulseScale ?? 1);
-    const impulse = Math.min(raw, w.budgetCap); // cap AFTER all multipliers
-    if (impulse < 1) return;
-
-    const lift = w.liftFactor ?? TU.liftFactor[w.type] ?? 0.5;
+    const energyBefore = energy();
     const h = horizontalBetween(vehicle.body.translation(), foe.body.translation());
-    const dir = m.norm(m.add(h, m.scale(UP, lift)));
-    foe.body.applyImpulseAtPoint(m.scale(dir, impulse), contact.point, true);
+    const rel = m.sub(foe.body.linvel(), vehicle.body.linvel());
+    const hit = model.hit({
+      ratio: omega / w.maxOmega,
+      targetSpec: foe.spec,
+      approachSpeed: Math.max(0, -m.dot(rel, h)),
+    });
+    if (hit.push < 1) return;
+    // A drum on a carriage that is mid-fling arrives with the machine's own
+    // closing speed added to it, and that is the whole reason to pull it back.
+    const fling = flingScale();
+    const push = hit.push * fling;
+    const lift = hit.lift * fling;
 
-    // Equal-and-opposite kickback (scaled per weapon), lift mostly cancelled so
-    // the attacker recoils instead of being slammed into the floor.
-    const kick = w.kickbackScale ?? 0.7;
-    const kickDir = m.norm(m.add(m.scale(h, -1), m.scale(UP, -lift * TU.kickbackLiftFraction)));
-    vehicle.body.applyImpulseAtPoint(m.scale(kickDir, impulse * kick), pivotWorld(), true);
+    // Target: horizontal push + lift at the real contact point.
+    foe.body.applyImpulseAtPoint(
+      m.add(m.scale(h, push), m.scale(UP, lift)),
+      contact.point,
+      true,
+    );
+    // v1 forced a minimum upward velocity here (setLinvel). Impulse top-up
+    // instead — same result, and the no-teleport rule holds.
+    const vy = foe.body.linvel().y;
+    if (hit.liftVelocityFloor > vy) {
+      foe.body.applyImpulse(m.scale(UP, (hit.liftVelocityFloor - vy) * foe.mass), true);
+    }
+    const right = m.norm(m.cross(UP, h), { x: 1, y: 0, z: 0 });
+    foe.body.applyTorqueImpulse({
+      x: right.x * hit.targetPitchTorque,
+      y: hit.targetYawTorque,
+      z: right.z * hit.targetPitchTorque,
+    }, true);
 
-    drainEnergy((impulse * impulse) / (2 * mEff) / efficiency);
+    // Attacker: kickback along -h, a little downward, plus counter-yaw.
+    // recoilScale is Gigabyte's: every hit throws IT as hard as its target, and
+    // that ricochet is why it loses control the moment it connects. Momentum
+    // says a hit is equal and opposite whatever the weapon, so this is a
+    // statement about how much of it the chassis absorbs rather than physics.
+    const recoil = w.recoilScale ?? 1;
+    vehicle.body.applyImpulseAtPoint(
+      m.scale(m.add(m.scale(h, -hit.kickback), m.scale(UP, -hit.kickbackLift)), recoil),
+      pivotWorld(),
+      true,
+    );
+    vehicle.body.applyTorqueImpulse({ x: 0, y: -hit.ownerYawTorque * recoil, z: 0 }, true);
+    if (hit.ownerPitchTorque) {
+      // Tumble the attacker about its own lateral axis — Deep Six beaching
+      // itself on a big hit is the whole reason it is not simply the best bot.
+      const lateral = m.qRotate(vehicle.body.rotation(), { x: 1, y: 0, z: 0 });
+      vehicle.body.applyTorqueImpulse(m.scale(lateral, hit.ownerPitchTorque), true);
+    }
+
+    // v1 drained blade SPEED, not energy — a solid hit costs you the spin-up.
+    omega *= hit.spinRetained;
+
     emit(EV.WEAPON_HIT, {
       attackerIndex: index,
       targetIndex: foe.index,
       point: contact.point,
       normal: contact.normal,
-      impulse,
-      energyBefore: e,
-      heavy: impulse >= w.budgetCap * TU.heavyHitCapFraction,
+      // Damage runs off v1's pre-impulseScale hit strength, not the applied
+      // impulse: that split is why Minotaur hurts without shoving and Tombstone
+      // throws you across the box without doing proportionate damage.
+      impulse: hit.damageImpulse * fling,
+      appliedImpulse: push, // what the body actually got, for effects/haptics
+      energyBefore,
+      heavy: push / foe.mass >= 12, // "heavy" = it launched them (ft/s), not "it capped"
     });
     lastHitAt.set("foe", simTime);
   }
 
   function hitArena(contact, simTime) {
     const e = energy();
-    const efficiency = w.efficiency ?? 0.4;
+    const efficiency = tuning.efficiency;
     const raw = Math.sqrt(2 * vehicle.mass * e * efficiency);
     const impulse = Math.min(raw * TU.wallImpulseFactor, w.budgetCap * 0.6);
     if (impulse < 2) return;
@@ -161,51 +380,262 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
     lastHitAt.set("arena", simTime);
   }
 
+  /**
+   * Weapon into weapon. Resolved ONCE for the pair, by whichever side notices
+   * first — the other one is stood down through applyClash() below, which is
+   * also what stops a rotor that is under the hit cooldown from being counted
+   * twice in the same tick.
+   *
+   * Both machines are hit. Each side's outgoing hit is computed from its own
+   * spinner model at its own current speed, so the exchange is decided by who
+   * has the energy: a spun-up shell meeting a dead bar throws the bar's owner
+   * and takes almost nothing back.
+   */
+  function clashWeapons(foe, foeWeapon, contact, simTime) {
+    const energyBefore = energy();
+    const rel = m.sub(foe.body.linvel(), vehicle.body.linvel());
+    const h = horizontalBetween(vehicle.body.translation(), foe.body.translation());
+    const approachSpeed = Math.max(0, -m.dot(rel, h));
+    const mine = model.hit({ ratio: omega / w.maxOmega, targetSpec: foe.spec, approachSpeed });
+    const theirs = foeWeapon?.clashOutput?.(spec, approachSpeed) ?? null;
+    const myRecoil = w.recoilScale ?? 1;
+
+    // Each bot gets the other rotor's push plus the kickback off its own.
+    const onFoe = (mine.push * TU.clashPushShare) + (theirs?.kickback ?? 0);
+    const onMe = ((theirs?.push ?? 0) * TU.clashPushShare) + mine.kickback * myRecoil;
+    foe.body.applyImpulseAtPoint(
+      m.add(m.scale(h, onFoe), m.scale(UP, onFoe * TU.clashLift)),
+      contact.point,
+      true,
+    );
+    vehicle.body.applyImpulseAtPoint(
+      m.add(m.scale(h, -onMe), m.scale(UP, onMe * TU.clashLift)),
+      contact.point,
+      true,
+    );
+
+    // Both rotors are slowed, each by how hard the OTHER one landed on top of
+    // its own post-hit drain. This is the moment a shell spinner loses its
+    // fight: it takes seconds to get that speed back.
+    const myRetained = m.clamp(mine.spinRetained - TU.clashSpinLoss * (theirs?.strength ?? 0), 0.03, 1);
+    const theirRetained = theirs
+      ? m.clamp(theirs.spinRetained - TU.clashSpinLoss * mine.strength, 0.03, 1)
+      : 1;
+    omega *= myRetained;
+    lastHitAt.set("foe", simTime);
+    lastHitAt.set("clash", simTime);
+    foeWeapon?.applyClash?.(simTime, theirRetained);
+
+    if (mine.push >= 1) {
+      emit(EV.WEAPON_HIT, {
+        attackerIndex: index,
+        targetIndex: foe.index,
+        point: contact.point,
+        normal: contact.normal,
+        impulse: mine.damageImpulse * TU.clashDamageShare,
+        appliedImpulse: onFoe,
+        energyBefore,
+        heavy: mine.strength >= 0.6,
+      });
+    }
+    if (theirs && theirs.push >= 1) {
+      emit(EV.WEAPON_HIT, {
+        attackerIndex: foe.index,
+        targetIndex: index,
+        point: contact.point,
+        normal: m.scale(contact.normal, -1),
+        impulse: theirs.damageImpulse * TU.clashDamageShare,
+        appliedImpulse: onMe,
+        energyBefore: 0,
+        heavy: theirs.strength >= 0.6,
+      });
+    }
+  }
+
+  const since = (key, simTime) => simTime - (lastHitAt.get(key) ?? -Infinity);
+
   function checkContacts(ctx) {
     const { foe, simTime } = ctx;
+    // Classify first, act after. A full-body shell's weapon collider and its
+    // chassis collider are the same lump of steel, so hitting one reports both
+    // pairs in the same step — and a rotor that has met the other bot's WEAPON
+    // has met the weapon, whatever else it touched on the way.
+    let foeWeaponHit = null;
+    let foeBodyHit = null;
+    let arenaHit = null;
     world.contactPairsWith(collider, (other) => {
       const info = meta.get(other.handle);
       if (!info) return;
-      if (info.kind === "bot" && info.botIndex === foe.index) {
-        const last = lastHitAt.get("foe");
-        if (last !== undefined && simTime - last < TU.hitCooldownSeconds) return;
-        const contact = contactPointBetween(world, collider, other);
-        if (contact) hitTarget(foe, contact, simTime);
-      } else if (info.kind === "arena" && info.surface !== "floor") {
-        const last = lastHitAt.get("arena");
-        if (last !== undefined && simTime - last < TU.wallHitCooldownSeconds) return;
-        const contact = contactPointBetween(world, collider, other);
-        if (contact) hitArena(contact, simTime);
-      }
+      if (info.botIndex === foe.index && info.kind === "weapon") foeWeaponHit = other;
+      else if (info.botIndex === foe.index && info.kind === "bot") foeBodyHit ??= other;
+      else if (info.kind === "arena" && info.surface !== "floor") arenaHit ??= other;
     });
+
+    if (foeWeaponHit && since("clash", simTime) >= TU.clashCooldownSeconds) {
+      const contact = contactPointBetween(world, collider, foeWeaponHit);
+      if (contact) clashWeapons(foe, ctx.foeWeapon, contact, simTime);
+    } else if (foeBodyHit && since("foe", simTime) >= TU.hitCooldownSeconds) {
+      const contact = contactPointBetween(world, collider, foeBodyHit);
+      if (contact) hitTarget(foe, contact, simTime);
+    }
+    if (arenaHit && since("arena", simTime) >= TU.wallHitCooldownSeconds) {
+      const contact = contactPointBetween(world, collider, arenaHit);
+      if (contact) hitArena(contact, simTime);
+    }
   }
 
   return {
     type: w.type,
     update(dt, fire, ctx) {
       const spinUpRate = w.maxOmega / Math.max(0.05, w.spinUpSeconds);
-      const spinDownRate = w.maxOmega / Math.max(0.05, w.spinUpSeconds * TU.spinDownFactor);
-      if (fire) omega = Math.min(w.maxOmega, omega + spinUpRate * dt);
+      const spinDownRate = w.maxOmega / Math.max(0.05, coastSeconds);
+      // A jammed rotor stays jammed: the motor is already pulling against it and
+      // holding the trigger does nothing until it frees itself.
+      const jammed = ctx.simTime < stallUntil;
+      if (jammed) omega = 0;
+      else if (fire) omega = Math.min(w.maxOmega, omega + spinUpRate * dt);
       else omega = Math.max(0, omega - spinDownRate * dt);
       angle += omega * dt;
 
       const ratio = omega / w.maxOmega;
-      if (Math.abs(ratio - lastEmittedRatio) >= 0.01) {
+      // A spun-up rotor fights the steering. Only a full-body shell is heavy
+      // enough for this to be worth modelling, and on Gigabyte it is half the
+      // character of the machine: six seconds of nearly helpless spin-up buys
+      // the hardest hit in the game and costs most of the turning.
+      if (w.gyroPenalty) vehicle.setGyroYawScale?.(1 - w.gyroPenalty * ratio);
+      // Emit on a POWER change too, not just a speed change: the rumble has to
+      // stop the instant the trigger does, and at a held full ratio there is no
+      // speed change to carry the news.
+      if (Math.abs(ratio - lastEmittedRatio) >= 0.01 || Boolean(fire) !== lastEmittedPowered) {
         lastEmittedRatio = ratio;
-        emit(EV.WEAPON_SPIN, { botIndex: index, weaponType: w.type, ratio });
+        lastEmittedPowered = Boolean(fire);
+        // hapticScale rides along so the pad rumble can be per-bot without the
+        // input layer having to know the catalog.
+        emit(EV.WEAPON_SPIN, {
+          botIndex: index,
+          weaponType: w.type,
+          ratio,
+          // Whether the motor is DRIVING, which is not the same as whether the
+          // rotor is turning: a big spinner coasts for many seconds after the
+          // trigger comes off. The pad should follow the motor.
+          powered: Boolean(fire),
+          hapticScale: tuning.hapticScale,
+        });
       }
+
+      // Upside down with the rotor lit, throwing the drive from lock to lock
+      // walks the bot over: the suspension is switched off at that attitude, so
+      // there is nothing damping the roll the rotor's reaction puts in. This is
+      // how a Minotaur gets off its back, and it costs the same stick work.
+      if (ratio > TU.gyroSelfRightMinRatio && vehicle.touchingGround()) {
+        const rot = vehicle.body.rotation();
+        if (m.qRotate(rot, UP).y < TU.srimechUpY) {
+          const left = ctx.input?.leftDrive ?? 0;
+          const right = ctx.input?.rightDrive ?? 0;
+          const steer = (left - right) / 2;
+          const effort = m.clamp(Math.abs(steer) + Math.abs((left + right) / 2) * 0.4, 0, 1);
+          if (effort >= TU.gyroSelfRightMinEffort) {
+            const forward = m.qRotate(rot, { x: 0, y: 0, z: -1 });
+            // gyroScale only leans the result: a bot tuned for a heavy gyro in
+            // normal driving should not also be the one that rockets off its
+            // back (Deep Six at 2.2 ran 330 rad/s^2 and left the floor).
+            const rate = TU.gyroSelfRightRate * ratio * effort
+              * m.clamp(tuning.gyroScale, 0.6, 1.4);
+            vehicle.body.applyTorqueImpulse(
+              m.scale(forward, Math.sign(steer || 1) * vehicle.inertia.z * rate * dt),
+              true,
+            );
+            vehicle.body.applyImpulse(m.scale(UP, vehicle.mass * TU.gyroSelfRightLift * dt), true);
+          }
+        }
+      }
+
+      // Gyroscopic reaction: a spun-up rotor fights the drive, pitching the bot
+      // under throttle and rolling/yawing it into turns. Needs the drive axes,
+      // which is why sim.js passes the whole input through.
+      const gyro = model.gyroTorque({
+        ratio,
+        throttle: ((ctx.input?.leftDrive ?? 0) + (ctx.input?.rightDrive ?? 0)) / 2,
+        turn: ((ctx.input?.leftDrive ?? 0) - (ctx.input?.rightDrive ?? 0)) / 2,
+        dt,
+      });
+      if (gyro) vehicle.body.applyTorqueImpulse(gyro, true);
+
+      // Before the contact check, so a hit landing this step sees where the
+      // carriage has actually got to and how fast it is travelling.
+      if (track) updateTrack(dt, ctx);
       if (ratio > TU.minHitRatio) checkContacts(ctx);
+      if (fists) updateFists(dt, ctx);
     },
     getAngle: () => angle,
+    getSubAngle: () => fistStroke,
+    getTrack: () => carriage,
     getRatio: () => omega / w.maxOmega,
+
+    /**
+     * What this rotor would deliver right now, for the OTHER bot's clash
+     * resolver. Null when it is not turning fast enough to be a weapon, which is
+     * what makes a live rotor into a dead one a one-sided exchange.
+     */
+    clashOutput(targetSpec, approachSpeed) {
+      if (omega / w.maxOmega <= TU.minHitRatio) return null;
+      const hit = model.hit({ ratio: omega / w.maxOmega, targetSpec, approachSpeed });
+      // kickback already carries this bot's recoilScale, so the other side can
+      // use it the same way it uses its own without knowing whose it is.
+      return { ...hit, kickback: hit.kickback * (w.recoilScale ?? 1) };
+    },
+
+    /** The other side resolved the clash: take the drain and stand down. */
+    applyClash(simTime, retained) {
+      omega *= retained;
+      lastHitAt.set("foe", simTime);
+      lastHitAt.set("clash", simTime);
+    },
+
+    /**
+     * How far out from the bot's centre the rotor still forms the roof, so an
+     * overhead weapon can tell whether it landed ON the spinning face or beside
+     * it. 0 for every weapon that is not its own bodywork.
+     */
+    roofRadius: () => w.overheadStall?.radius ?? 0,
+
+    /**
+     * A blow straight down onto the rotor face. On a full-body shell the rotor
+     * IS the roof, so a hammer that lands square on top drives the rim into the
+     * chassis and stops it dead — the one thing that beats a spun-up shell
+     * without having to out-hit it. Opt-in per bot via weapon.overheadStall;
+     * every other weapon presents an edge up there and ignores this.
+     * @returns {boolean} whether it actually stopped a turning rotor
+     */
+    overheadStall(power, simTime) {
+      const cfg = w.overheadStall;
+      if (!cfg || power < (cfg.minPower ?? 0.4)) return false;
+      const stopped = omega / w.maxOmega > TU.minHitRatio;
+      omega = 0;
+      // Anything hard enough to reach the rotor at all jams it for at least half
+      // the window; the rest scales with the arc. The real cost is not the jam
+      // anyway, it is that the rotor restarts from nothing.
+      const seconds = (cfg.seconds ?? 1.2) * (0.5 + 0.5 * m.clamp(power, 0, 1));
+      stallUntil = Math.max(stallUntil, simTime + seconds);
+      return stopped;
+    },
+
     setOmega(value) {
       omega = m.clamp(value, 0, w.maxOmega);
     },
     reset() {
       omega = 0;
       angle = 0;
+      stallUntil = -Infinity;
       lastEmittedRatio = -1;
       lastHitAt.clear();
+      fistStroke = 0;
+      fistOut = false;
+      if (track) {
+        carriage = 0;
+        carriageRate = 0;
+        collider.setTranslationWrtParent({ x: w.pivot.x, y: w.pivot.y, z: w.pivot.z });
+      }
     },
   };
 }
@@ -217,13 +647,21 @@ function createSpinner({ world, meta, vehicle, index, emit }) {
 function createFlipper({ vehicle, index, emit }) {
   const spec = vehicle.spec;
   const w = spec.weapon;
-  const strokeSeconds = w.strokeSeconds ?? 0.18;
-  const returnSeconds = w.returnSeconds ?? 1.2;
-  const zone = w.zone ?? frontZone(spec, w.reach ?? 1.8);
+  // Bronco's 2.0s reload lives in weapon.tuning and never reached here, so the
+  // sim silently used the 1.2s default while ai.js (which does read the nested
+  // block) planned around 2.0 — the two disagreed about the same weapon.
+  const tune = resolveWeaponTuning(spec);
+  const strokeSeconds = tune.strokeSeconds;
+  const returnSeconds = tune.returnSeconds;
+  const zone = tune.zone ?? frontZone(spec, tune.reach ?? 1.8);
 
   let phase = "idle"; // idle | firing | returning
   let t = 0;
   let hitThisStroke = false;
+
+  // Firing the plate against the floor is how a flipper gets off its back. It
+  // is the srimech on the real machines too, which is why Hydra has no other.
+  const srimech = { lastSrimechAt: -Infinity };
 
   function tryFlip(foe) {
     const local = toLocal(vehicle, foe.body.translation());
@@ -260,6 +698,7 @@ function createFlipper({ vehicle, index, emit }) {
       if (phase === "firing") {
         t += dt;
         if (!hitThisStroke) tryFlip(ctx.foe);
+        armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
         if (t >= strokeSeconds) {
           phase = "returning";
           t = 0;
@@ -275,8 +714,12 @@ function createFlipper({ vehicle, index, emit }) {
       if (phase === "returning") return Math.max(0, 1 - t / returnSeconds);
       return 0;
     },
+    // The meter reads CHARGE, not arm position: a flipper's reload is the thing
+    // the player needs to see. Bronco's 2s and Hydra's 4s recharge are both a
+    // core part of their rhythm and were previously invisible.
     getRatio() {
-      return this.getAngle();
+      if (phase === "returning") return m.clamp(t / returnSeconds, 0, 1);
+      return phase === "idle" ? 1 : 0;
     },
     reset() {
       phase = "idle";
@@ -293,14 +736,30 @@ function createFlipper({ vehicle, index, emit }) {
 function createCrusher({ vehicle, index, emit }) {
   const spec = vehicle.spec;
   const w = spec.weapon;
-  const zone = w.zone ?? frontZone(spec, w.reach ?? 1.2, { pad: -0.2, maxY: 1.0 });
-  const clampForce = w.clampForce ?? 380; // lbf held at the jaw
+  const tune = resolveWeaponTuning(spec);
+  const zone = tune.zone ?? frontZone(spec, tune.reach ?? 1.2, { pad: -0.2, maxY: 1.0 });
+  // Releasing on the same zone that engaged means the tiniest wobble at the
+  // boundary drops the bite; the hold zone is deliberately looser.
+  const holdZone = w.holdZone ?? frontZone(spec, (tune.reach ?? 1.2) + 1.6, { pad: 0.5, maxY: 1.6 });
+  const clampForce = tune.clampForce; // lbf held at the jaw
+  const tuning = w.tuning ?? {};
+  // Where a bitten bot is carried: straight ahead of the jaw, on the deck.
+  const holdPoint = { x: 0, y: 0.25, z: -(spec.bodyDims.z / 2 + (tuning.holdReach ?? 1.2)) };
+  const holdStrength = tuning.holdStrength ?? 6; // 1/s spring toward the hold point
+  const holdDamping = tuning.holdDamping ?? 1; // share of the carrier's velocity matched
 
-  let engaged = false;
+  let engaged = false; // clamped onto the foe right now — also what a flamethrower
+                       // with requiresGrip asks about, since Kraken's nozzle
+                       // points into the bite zone and does nothing until the
+                       // jaw is shut on something.
   let stroke = 0;
+  const srimech = { lastSrimechAt: -Infinity };
   let lastTickAt = -Infinity;
 
+
+  const isGripping = () => engaged;
   return {
+    isGripping,
     type: "crusher",
     update(dt, fire, ctx) {
       const { foe, simTime } = ctx;
@@ -310,15 +769,47 @@ function createCrusher({ vehicle, index, emit }) {
         engaged = true;
         emit(EV.WEAPON_FIRED, { botIndex: index, weaponType: "crusher" });
       }
-      if (!inZone) engaged = false;
+      // Once bitten, the jaw keeps its grip until the trigger is released or
+      // the target is torn out of the wider hold zone.
+      if (engaged && (!fire || !localZoneContains(holdZone, local))) engaged = false;
+      const previousStroke = stroke;
       stroke = m.clamp(stroke + (fire ? dt / 0.25 : -dt / 0.4), 0, 1);
+      // Closing the jaw against the floor is Quantum's srimech.
+      if (stroke > previousStroke) armSrimech(vehicle, srimech, simTime, w.selfRightScale ?? 1);
       if (!engaged) return;
 
-      // Clamp: pin the target down at the jaw and bleed its velocity.
-      const jawPoint = m.add(foe.body.translation(), m.v3(0, 0.3, 0));
+      const carrier = vehicle.body;
+      const toFoe = horizontalBetween(carrier.translation(), foe.body.translation());
+      // Clamp: the jaw closes on the edge of the target NEAREST the crusher, so
+      // the bite pitches its nose down onto the wedge. Pressing straight down
+      // through the target's own centre — which is what a centred contact point
+      // does, torque-free — just bolts it to the floor, and the friction under
+      // 380lbf of it cancelled almost exactly the traction Quantum needed to
+      // tow anything: full throttle while biting moved it 0.01ft.
+      const jawPoint = m.add(foe.body.translation(), m.add(m.scale(toFoe, -0.5), m.v3(0, 0.3, 0)));
       foe.body.applyImpulseAtPoint(m.scale(UP, -clampForce * dt), jawPoint, true);
+
+      // Carry: servo the target toward a hold point in FRONT of the jaw so a
+      // bitten bot gets hauled around instead of merely pinned in place. The
+      // wanted velocity is the carrier's own plus a spring term, which is what
+      // makes the pair move as one unit. Equal-and-opposite at the jaw —
+      // dragging 250lb has to cost something, or the crusher tows for free.
+      const target = m.add(carrier.translation(), m.qRotate(carrier.rotation(), holdPoint));
+      const offset = m.sub(target, foe.body.translation());
+      const wanted = m.add(m.scale(carrier.linvel(), holdDamping), m.scale(offset, holdStrength));
+      const effective = (vehicle.mass * foe.mass) / (vehicle.mass + foe.mass);
+      let pull = m.scale(m.sub(wanted, foe.body.linvel()), effective * Math.min(1, dt * 10));
+      // Cap so a target that is somehow far away is tugged, not catapulted.
+      const cap = effective * (tuning.holdImpulseCap ?? 60) * dt;
+      const magnitude = m.length(pull);
+      if (magnitude > cap) pull = m.scale(pull, cap / magnitude);
+      foe.body.applyImpulse(pull, true);
+      carrier.applyImpulseAtPoint(m.scale(pull, -1), m.add(carrier.translation(), m.qRotate(carrier.rotation(), w.pivot)), true);
+      // Bleed the target toward the CARRIER's velocity, not toward zero. The
+      // absolute bleed this replaces was the other half of the anchor: it
+      // fought the tow every tick it was towed.
       const drag = Math.min(0.6, dt * TU.crusherDragBlendRate);
-      foe.body.applyImpulse(m.scale(foe.body.linvel(), -foe.mass * drag * 0.5), true);
+      foe.body.applyImpulse(m.scale(m.sub(carrier.linvel(), foe.body.linvel()), foe.mass * drag * 0.5), true);
 
       if (simTime - lastTickAt >= TU.crusherTickSeconds) {
         lastTickAt = simTime;
@@ -327,7 +818,7 @@ function createCrusher({ vehicle, index, emit }) {
           targetIndex: foe.index,
           point: jawPoint,
           normal: m.v3(0, -1, 0),
-          impulse: clampForce * TU.crusherTickSeconds,
+          impulse: damageImpulseForRate(tune.holdDamagePerSecond || 6, TU.crusherTickSeconds),
           energyBefore: 0,
           heavy: false,
         });
@@ -348,14 +839,20 @@ function createCrusher({ vehicle, index, emit }) {
 // ---------------------------------------------------------------------------
 
 function createHammerSaw({ vehicle, index, emit }) {
+  // Dragon King's jaw rides this weapon's aux channel. It is not part of the
+  // arm mechanism at all — it is the grip that makes the saws worth anything,
+  // and it has to be able to hold while the arms are doing something else.
+  let auxStroke = 0;
   const spec = vehicle.spec;
   const w = spec.weapon;
-  const swingSeconds = w.swingSeconds ?? 0.4;
-  const returnSeconds = w.returnSeconds ?? 0.5;
-  const zone = w.zone ?? frontZone(spec, w.reach ?? 2.4, { maxY: 1.6 });
+  const tune = resolveWeaponTuning(spec);
+  const swingSeconds = tune.swingSeconds;
+  const returnSeconds = tune.returnSeconds;
+  const zone = tune.zone ?? frontZone(spec, tune.reach ?? 2.4, { maxY: 1.6 });
 
   let phase = "idle"; // idle | swinging | held | returning
   let t = 0;
+  const srimech = { lastSrimechAt: -Infinity };
   let hitThisSwing = false;
   let lastGrindAt = -Infinity;
 
@@ -391,7 +888,7 @@ function createHammerSaw({ vehicle, index, emit }) {
       targetIndex: foe.index,
       point: m.add(foe.body.translation(), m.v3(0, 0.4, 0)),
       normal: m.v3(0, -1, 0),
-      impulse: TU.hammerGrindImpulse,
+      impulse: damageImpulseForRate(tune.grindDamagePerSecond || 5, TU.hammerGrindTickSeconds),
       energyBefore: 0,
       heavy: false,
     });
@@ -400,6 +897,12 @@ function createHammerSaw({ vehicle, index, emit }) {
   return {
     type: "hammerSaw",
     update(dt, fire, ctx) {
+      // Jaw: held, not latched. Letting go IS letting go of the opponent.
+      const jaw = vehicle.spec.aux?.jaw;
+      if (jaw) {
+        const seconds = Math.max(0.05, jaw.seconds ?? 0.4);
+        auxStroke = m.clamp(auxStroke + (ctx?.input?.auxActive ? dt / seconds : -dt / seconds), 0, 1);
+      }
       if (phase === "idle" && fire) {
         phase = "swinging";
         t = 0;
@@ -408,6 +911,7 @@ function createHammerSaw({ vehicle, index, emit }) {
       }
       if (phase === "swinging") {
         t += dt;
+        armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
         if (!hitThisSwing && t >= swingSeconds * TU.hammerContactAfter) trySlam(ctx.foe);
         if (t >= swingSeconds) {
           phase = fire ? "held" : "returning";
@@ -424,6 +928,9 @@ function createHammerSaw({ vehicle, index, emit }) {
         if (t >= returnSeconds) phase = "idle";
       }
     },
+    getAuxAngle: () => auxStroke,
+    /** The jaw is the grip: Dragon King's saws do nothing without one. */
+    isGripping: () => auxStroke > 0.6,
     getAngle() {
       if (phase === "swinging") return Math.min(1, t / swingSeconds);
       if (phase === "held") return 1;
@@ -443,14 +950,692 @@ function createHammerSaw({ vehicle, index, emit }) {
 }
 
 // ---------------------------------------------------------------------------
+// Saw arms + jaw (dragonking)
+// ---------------------------------------------------------------------------
+
+// Dragon King is four separate machines and every one of them is on its own
+// button, because none of them means anything alone: the jaw is the grip, the
+// saws only cut what the jaw is already holding, the arms decide where the saws
+// are pointing, and the body lift is what lets any of it reach a bot BEHIND the
+// robot. It shared createHammerSaw with Sawblaze, which models a single swing
+// and could express none of that.
+//
+//   RT  jaw   LATCHED. Press to open, press again to bite and hold. A latch,
+//             not a hold, because the whole point is to keep hold of something
+//             while both hands are busy driving and running the saws.
+//   RB  saws  LATCHED spin-up. They are a motor, not a strike.
+//   LB  arms  HELD tilt toward the front. Release and they rake back up.
+//   LT  lift  HELD, and it belongs to the vehicle, not here — see sim/vehicle.js.
+function createSawArms({ vehicle, index, emit }) {
+  const spec = vehicle.spec;
+  const w = spec.weapon;
+  const tune = resolveWeaponTuning(spec);
+  const jawCfg = spec.aux?.jaw ?? {};
+  const sub = w.sub ?? {};
+
+  const zone = tune.zone ?? frontZone(spec, tune.reach ?? 2.4, { maxY: 1.6 });
+  const biteZone = w.biteZone ?? frontZone(spec, jawCfg.reach ?? 1.6, { pad: -0.1, maxY: 1.2 });
+  const holdPoint = jawCfg.holdPoint ?? { x: 0, y: 0.3, z: -(spec.bodyDims.z / 2 + 0.9) };
+
+  let jawOpen = false; // the latch: false = shut, true = held open
+  let jawStroke = 1; // 1 shut on the deck, 0 fully open
+  let gripped = false; // shut ON something
+  let armStroke = 0; // 0 raked back over the body, 1 tilted forward
+  let sawSpin = 0; // 0..1
+  let lastGrindAt = -Infinity;
+  const srimech = { lastSrimechAt: -Infinity };
+
+  /**
+   * Bite: the jaw is SHUTTING and there is something in the mouth. The window
+   * is the close itself — 0.55 shut up to but not including fully shut — so a
+   * mouth that is already closed cannot grab a bot that wanders into it. You
+   * have to open it and shut it on something, which is the whole gesture.
+   */
+  function tryBite(foe) {
+    if (gripped || jawStroke < 0.55 || jawStroke >= 1) return;
+    const local = toLocal(vehicle, foe.body.translation());
+    if (!localZoneContains(biteZone, local)) return;
+    gripped = true;
+    emit(EV.WEAPON_FIRED, { botIndex: index, weaponType: "jaw" });
+  }
+
+  /**
+   * Hold what is bitten. Same shape as the crusher's carry — servo the target
+   * toward a point in front of the mouth so it is HAULED rather than merely
+   * pinned, and pay for it equal-and-opposite so towing 250lb costs something.
+   */
+  function carry(dt, foe) {
+    const carrier = vehicle.body;
+    const target = m.add(carrier.translation(), m.qRotate(carrier.rotation(), holdPoint));
+    const offset = m.sub(target, foe.body.translation());
+    if (m.length(offset) > (jawCfg.breakDistance ?? 3.2)) { gripped = false; return; }
+    const wanted = m.add(m.scale(carrier.linvel(), 0.9), m.scale(offset, jawCfg.holdStrength ?? 9));
+    const effective = (vehicle.mass * foe.mass) / (vehicle.mass + foe.mass);
+    let pull = m.scale(m.sub(wanted, foe.body.linvel()), effective * Math.min(1, dt * 10));
+    const cap = effective * (jawCfg.holdImpulseCap ?? 60) * dt;
+    const magnitude = m.length(pull);
+    if (magnitude > cap) pull = m.scale(pull, cap / magnitude);
+    foe.body.applyImpulse(pull, true);
+    vehicle.body.applyImpulse(m.scale(pull, -1), true);
+    // Clamp force down through the mouth, so a held bot is pressed onto the
+    // fixed lower scoop instead of floating in front of it.
+    const jawPoint = m.add(foe.body.translation(), m.v3(0, 0.3, 0));
+    foe.body.applyImpulseAtPoint(m.scale(UP, -(jawCfg.clampForce ?? 260) * dt), jawPoint, true);
+  }
+
+  /**
+   * Where the blades ARE, in world space, following the arms.
+   *
+   * The arms swing about weapon.pivot through weapon.axis by restAngle ->
+   * fireAngle, exactly as the renderer poses them, so the blade hub goes wherever
+   * the picture puts it — down in front when LB is held, back over the deck at
+   * rest, and out behind the robot when LT rears the chassis up, because the
+   * whole thing is then carried by the body's own rotation.
+   */
+  function sawHubWorld() {
+    const axis = m.norm(w.axis ?? { x: 1, y: 0, z: 0 }, { x: 1, y: 0, z: 0 });
+    const angle = (w.restAngle ?? 0) + armStroke * ((w.fireAngle ?? 0) - (w.restAngle ?? 0));
+    const arm = m.sub(sub.pivot ?? w.pivot, w.pivot);
+    const local = m.add(w.pivot, m.qRotate(m.qFromAxisAngle(axis, angle), arm));
+    return m.add(vehicle.body.translation(), m.qRotate(vehicle.body.rotation(), local));
+  }
+
+  /**
+   * Distance from a world point to a bot's chassis box, measured in that bot's
+   * own frame. A blade touching the corner of a machine is touching it; a sphere
+   * around the victim's centre is not the same question and gets both the near
+   * misses and the buried-inside cases wrong.
+   */
+  function distanceToChassis(foe, worldPoint) {
+    const p = toLocal(foe, worldPoint);
+    const d = foe.spec.bodyDims;
+    const near = {
+      x: m.clamp(p.x, -d.x / 2, d.x / 2),
+      y: m.clamp(p.y, 0, d.y),
+      z: m.clamp(p.z, -d.z / 2, d.z / 2),
+    };
+    return m.length(m.sub(p, near));
+  }
+
+  /**
+   * The saws cut what they TOUCH. They used to cut only what the jaw was
+   * holding, which meant blades could pass clean through an opponent — the bite
+   * is hard to land, and the two mechanisms are not the same machine. Holding is
+   * still the payoff (a pinned bot cannot drive away from a running saw, and the
+   * rate goes up), but it is no longer the price of admission.
+   */
+  function grind(foe, simTime) {
+    if (sawSpin < 0.35) return;
+    if (simTime - lastGrindAt < TU.hammerGrindTickSeconds) return;
+    const contact = distanceToChassis(foe, sawHubWorld()) <= (sub.radius ?? 0.7);
+    // The held-bot path keeps the old loose zone test: a bot clamped in the jaw
+    // is by definition in front of the mouth, and it should not stop taking the
+    // saw because the blade hub is an inch outside its hull.
+    const held = gripped && armStroke >= 0.5
+      && localZoneContains(zone, toLocal(vehicle, foe.body.translation()));
+    if (!contact && !held) return;
+    lastGrindAt = simTime;
+    const rate = (sub.damagePerSecond ?? 14) * sawSpin * (held ? 1 : (sub.looseCutScale ?? 0.6));
+    emit(EV.WEAPON_HIT, {
+      attackerIndex: index,
+      targetIndex: foe.index,
+      point: m.add(foe.body.translation(), m.v3(0, 0.4, 0)),
+      normal: m.v3(0, -1, 0),
+      impulse: damageImpulseForRate(rate, TU.hammerGrindTickSeconds),
+      energyBefore: 0,
+      heavy: false,
+    });
+  }
+
+  return {
+    type: "sawArms",
+    update(dt, fire, ctx) {
+      // `fire` is already the LATCH state: weaponControls toggles it, so here it
+      // simply means "the jaw is being held open".
+      jawOpen = Boolean(fire);
+      const jawSeconds = Math.max(0.05, jawCfg.seconds ?? 0.4);
+      jawStroke = m.clamp(jawStroke + (jawOpen ? -dt : dt) / jawSeconds, 0, 1);
+      if (jawOpen) gripped = false;
+      else tryBite(ctx.foe);
+      if (gripped) carry(dt, ctx.foe);
+
+      const armSeconds = Math.max(0.05, tune.strokeSeconds ?? 0.4);
+      const armBack = Math.max(0.05, tune.returnSeconds ?? 0.7);
+      const tilting = Boolean(ctx.input?.auxActive);
+      armStroke = m.clamp(armStroke + (tilting ? dt / armSeconds : -dt / armBack), 0, 1);
+
+      const spinSeconds = Math.max(0.05, sub.spinUpSeconds ?? 1);
+      const spinning = Boolean(ctx.input?.sawActive);
+      sawSpin = m.clamp(sawSpin + (spinning ? dt / spinSeconds : -dt / (spinSeconds * 1.6)), 0, 1);
+
+      // Driving the arms down against the floor rolls the bot back over, the
+      // same as any other arm that can reach it.
+      if (tilting) armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
+      grind(ctx.foe, ctx.simTime);
+    },
+    /** Arm tilt drives the visual arm angle. */
+    getAngle: () => armStroke,
+    /** Saw spin-up, for the blades' own rotation. */
+    getSubAngle: () => sawSpin,
+    /** How far OPEN, 0..1. botAnimation swings the snout up by this much. */
+    getAuxAngle: () => 1 - jawStroke,
+    getRatio: () => sawSpin,
+    isGripping: () => gripped,
+    reset() {
+      jawOpen = false;
+      jawStroke = 1;
+      gripped = false;
+      armStroke = 0;
+      sawSpin = 0;
+      lastGrindAt = -Infinity;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Hammer (beta)
+// ---------------------------------------------------------------------------
+
+// Beta is a hammerSaw without the disc, but the two things that make a hammer
+// feel like a hammer are exactly what the hammerSaw stroke does not model:
+// the swing is fast and the re-cock is slow, and the head is worth almost
+// nothing at the top of the arc and everything at the bottom. Beta's magnets
+// (~400kg of downforce on the real robot) are here too, as a standing
+// down-impulse plus a damped strike reaction — it should neither be flipped
+// easily nor throw itself over when the head lands.
+function createHammer({ vehicle, index, emit }) {
+  const spec = vehicle.spec;
+  const w = spec.weapon;
+  const tune = resolveWeaponTuning(spec);
+  const strokeSeconds = tune.strokeSeconds; // fast strike
+  const returnSeconds = tune.returnSeconds; // slow re-cock
+  const zone = tune.zone ?? frontZone(spec, tune.reach ?? 1.6, { maxY: 1.5 });
+  const downforce = w.downforce ?? 0; // lbf held onto the floor
+  const reactionScale = w.reactionScale ?? 0.15;
+
+  // Rusty holds. Its arm is a pneumatic gantry and re-cocking it is a separate
+  // action that repeatedly FAILED on the real machine, leaving the head
+  // dragging — in one FaceOffs fight the dragging axe fell into the killsaw
+  // slot and immobilised the robot. So the stroke stays down while the trigger
+  // is down and only re-cocks when you let go, on one button. Beta keeps the
+  // one-shot: its hammer is a strike, not a hold.
+  const holdsStroke = Boolean(w.holdStroke);
+  let phase = "idle"; // idle | swinging | held | returning
+  let t = 0;
+  let hitThisSwing = false;
+
+  // The head is worth nothing near the top and everything at the bottom, so
+  // the strike lands LATE in the stroke, not the instant the target is in
+  // reach — firing at first contact handed out ~10% hits.
+  const strikeAt = w.strikeAt ?? 0.82;
+  const arcPower = (stroke) => m.clamp(stroke, 0, 1) ** 2;
+
+  // Where the head plants: straight ahead in the bot's own centre plane, about
+  // half its reach past the nose. The zone that decides whether a strike lands
+  // at all is far looser than this — this is the point that answers the narrower
+  // question of what the head came down ON.
+  function headStrikePoint() {
+    const at = {
+      x: w.pivot?.x ?? 0,
+      y: 0,
+      z: -(spec.bodyDims.z / 2 + (tune.reach ?? 1.6) * 0.5),
+    };
+    return m.add(vehicle.body.translation(), m.qRotate(vehicle.body.rotation(), at));
+  }
+
+  function trySlam(ctx, stroke) {
+    const foe = ctx.foe;
+    const local = toLocal(vehicle, foe.body.translation());
+    if (!localZoneContains(zone, local)) return;
+    const power = arcPower(stroke);
+    if (power < 0.05) return;
+    hitThisSwing = true;
+    const impulse = w.budgetCap * power;
+    const h = horizontalBetween(vehicle.body.translation(), foe.body.translation());
+
+    // Square on top of a spinning roof. Only a weapon that IS the bodywork
+    // reports a roof radius, so this is a shell spinner and nothing else: the
+    // head drives the rim down into the chassis and the rotor stops.
+    const roof = ctx.foeWeapon?.roofRadius?.() ?? 0;
+    const offset = m.sub(foe.body.translation(), headStrikePoint());
+    const onTop = roof > 0 && Math.hypot(offset.x, offset.z) <= roof;
+    const jammed = onTop && Boolean(ctx.foeWeapon.overheadStall(power, ctx.simTime));
+    // Overhead arc lands on the target's roof: almost straight down, so it gets
+    // driven into the floor rather than shoved away.
+    const dir = m.norm(m.add(m.scale(h, 0.2), m.scale(UP, -0.98)));
+    const point = m.add(foe.body.translation(), m.v3(0, 0.45, 0));
+    foe.body.applyImpulseAtPoint(m.scale(dir, impulse), point, true);
+    // Magnets eat most of the reaction; without this Beta backflips off its own
+    // hit, which is the single thing the real robot was built not to do.
+    vehicle.body.applyImpulseAtPoint(
+      m.scale(UP, impulse * reactionScale),
+      m.add(vehicle.body.translation(), m.qRotate(vehicle.body.rotation(), w.pivot)),
+      true,
+    );
+    emit(EV.WEAPON_HIT, {
+      attackerIndex: index,
+      targetIndex: foe.index,
+      point,
+      normal: m.v3(0, -1, 0),
+      impulse,
+      appliedImpulse: impulse,
+      energyBefore: 0,
+      // A blow that stops a rotor is a solid one by definition, whatever the
+      // arc was worth on its own.
+      heavy: power > 0.6 || jammed,
+      stalledWeapon: jammed,
+    });
+  }
+
+  // Driving the head into the floor levers the body back over — the hammer is
+  // Beta's srimech as much as its weapon.
+  const srimech = { lastSrimechAt: -Infinity };
+
+  return {
+    type: "hammer",
+    update(dt, fire, ctx) {
+      if (downforce > 0 && vehicle.isGrounded()) {
+        vehicle.body.applyImpulse(m.scale(UP, -downforce * dt), true);
+      }
+      if (phase === "idle" && fire) {
+        phase = "swinging";
+        t = 0;
+        hitThisSwing = false;
+        emit(EV.WEAPON_FIRED, { botIndex: index, weaponType: "hammer" });
+      }
+      if (phase === "swinging") {
+        t += dt;
+        const stroke = Math.min(1, t / strokeSeconds);
+        if (!hitThisSwing && stroke >= strikeAt) trySlam(ctx, stroke);
+        armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
+        if (t >= strokeSeconds) {
+          phase = holdsStroke && fire ? "held" : "returning";
+          t = 0;
+        }
+      } else if (phase === "held") {
+        // Parked at the bottom of the arc. Keep levering against the floor:
+        // this is the pose that rights the bot, and on Rusty it is also the
+        // pose that gets the head caught on things.
+        armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
+        if (!fire) {
+          phase = "returning";
+          t = 0;
+        }
+      } else if (phase === "returning") {
+        t += dt;
+        if (t >= returnSeconds) phase = "idle";
+      }
+    },
+    getAngle() {
+      if (phase === "swinging") return Math.min(1, t / strokeSeconds);
+      if (phase === "held") return 1;
+      if (phase === "returning") return Math.max(0, 1 - t / returnSeconds);
+      return 0;
+    },
+    getRatio() {
+      // The meter reads "ready to swing", which for a hammer is the re-cock.
+      if (phase === "returning") return Math.max(0, 1 - t / returnSeconds);
+      return phase === "idle" ? 1 : 0;
+    },
+    reset() {
+      phase = "idle";
+      t = 0;
+      hitThisSwing = false;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Lifter + disc (whiplash)
+// ---------------------------------------------------------------------------
+
+// Two weapons on one assembly: a rear-hinged arm the player HOLDS at an angle
+// (not a one-shot stroke — the point is to get under an opponent and carry
+// them), and a disc on that arm which spins independently on its own toggle,
+// exactly the RT/RB split Sawblaze already uses.
+// Also serves the plain `lifter` (Duck's beak, Free Shipping's forklift): same
+// arm, no disc. Everything disc-shaped is gated on `weapon.disc` existing, so a
+// lifter without one neither spins a phantom rotor nor chews the target on a
+// channel its bot has no hardware for. Free Shipping instead spends that
+// channel on `weapon.flame`.
+function createLifterDisc({ vehicle, index, emit }) {
+  const spec = vehicle.spec;
+  const w = spec.weapon;
+  // The plow's solid, swung about the arm's own pivot. Duck's plow is drawn on
+  // an arm that reaches over the top of the machine, but its collider used to
+  // sit where the catalog parked it and never move: raise the arm and the plow
+  // became a hologram, so bringing it down on an opponent passed straight
+  // through and the only thing that ever touched them was the lift impulse's
+  // zone test. Marking a collider `ridesArm` in the catalog hands it to this.
+  //
+  // These are colliders on the bot's OWN body, so re-posing them relative to
+  // that body is not a teleport of a dynamic body and the no-setTranslation
+  // rule does not apply. Rapier resolves the new pose on the next step like any
+  // other moving part.
+  const armColliders = vehicle.armColliders ?? [];
+  const armAxis = m.norm(w.axis ?? { x: 1, y: 0, z: 0 }, { x: 1, y: 0, z: 0 });
+  function poseArmColliders(stroke) {
+    if (armColliders.length === 0) return;
+    const angle = (w.restAngle ?? 0) + stroke * ((w.fireAngle ?? 0) - (w.restAngle ?? 0));
+    const turn = m.qFromAxisAngle(armAxis, angle - (w.restAngle ?? 0));
+    for (const ride of armColliders) {
+      ride.collider.setTranslationWrtParent(
+        m.add(w.pivot, m.qRotate(turn, m.sub(ride.offset, w.pivot))),
+      );
+      ride.collider.setRotationWrtParent(m.qMul(turn, ride.rotation));
+    }
+  }
+  const tune = resolveWeaponTuning(spec);
+  const disc = w.disc ?? null;
+  const flame = w.flame ?? null;
+  const raiseSeconds = tune.strokeSeconds;
+  const lowerSeconds = w.lowerSeconds ?? tune.strokeSeconds * 1.3;
+  // The lift zone sits LOW and close: the forks have to be under the target.
+  const liftZone = tune.zone ?? frontZone(spec, tune.reach ?? 1.5, { minY: -0.9, maxY: 0.8 });
+  // The disc rides high on the arm, so its reach is taller and a little longer.
+  const discZone = w.discZone ?? frontZone(spec, (tune.reach ?? 1.5) + 0.5, { minY: -0.5, maxY: 1.8 });
+  const liftImpulse = w.liftImpulse ?? 150;
+  const discMaxOmega = disc?.maxOmega ?? 380;
+
+  let stroke = 0; // 0 forks down, 1 arm fully raised
+  let omega = 0;
+  let carrying = false;
+  // Hooked: the arm was brought DOWN onto a foe and has caught it, so the next
+  // lift carries that foe even though it is no longer in the low fork zone.
+  // Without this a two-way arm can only ever scoop something already lying in
+  // front of the forks — you could drop the plow onto a bot and it would pass
+  // straight through it. Duck's arm reaches over the top now, so coming down on
+  // someone is a real move and has to mean something.
+  let hooked = false;
+  // Reaches higher and a little further than the fork zone: the plow catches an
+  // opponent anywhere down its face, not only where it meets the floor.
+  const hookZone = w.hookZone ?? frontZone(spec, (tune.reach ?? 1.5) + 0.4, { minY: -0.9, maxY: 1.5 });
+  let lastEmittedRatio = -1;
+  const srimech = { lastSrimechAt: -Infinity };
+  let lastDiscHitAt = -Infinity;
+  let lastLiftTickAt = -Infinity;
+
+  function pivotWorld() {
+    return m.add(vehicle.body.translation(), m.qRotate(vehicle.body.rotation(), w.pivot));
+  }
+
+  return {
+    type: w.type,
+    update(dt, fire, ctx) {
+      const { foe, simTime } = ctx;
+      const previous = stroke;
+      // Two-way arm (Duck): `fire` drives it up, the secondary channel drives it
+      // down, and it HOLDS where it is left. Every other lifter keeps the old
+      // shape — held raises, released falls back — because their second channel
+      // is spoken for by a disc or a flamethrower.
+      const drop = w.twoWayArm ? Boolean(ctx.input?.sawActive) : !fire;
+      const dir = w.twoWayArm ? (fire ? 1 : 0) - (drop ? 1 : 0) : (fire ? 1 : -1);
+      stroke = m.clamp(stroke + (dir > 0 ? dt / raiseSeconds : dir < 0 ? -dt / lowerSeconds : 0), 0, 1);
+      const rise = stroke - previous;
+      // Carry the plow's solid with the arm before anything else this step, so
+      // a contact resolving now sees the plow where it is drawn.
+      if (rise !== 0) poseArmColliders(stroke);
+      // Upside down, raising the forks drives them into the floor instead —
+      // which is how a lifter gets back onto its wheels.
+      if (rise > 0) armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
+
+      // Lift: spread over the whole stroke rather than fired in one impulse, so
+      // holding the arm halfway holds the opponent halfway up.
+      const local = toLocal(vehicle, foe.body.translation());
+      const inZone = localZoneContains(liftZone, local);
+      // Bringing the arm DOWN across a foe hooks it; it stays hooked while it
+      // is still in front, and lets go the moment it is not.
+      const inHookZone = localZoneContains(hookZone, local);
+      if (rise < 0 && inHookZone) hooked = true;
+      if (!inHookZone) hooked = false;
+      if (rise > 0 && (inZone || hooked)) {
+        if (!carrying) {
+          carrying = true;
+          emit(EV.WEAPON_FIRED, { botIndex: index, weaponType: w.type });
+        }
+        const share = rise * liftImpulse;
+        const h = horizontalBetween(vehicle.body.translation(), foe.body.translation());
+        // Lift at the target's near edge so it tips onto its back rather than
+        // rising level off the floor.
+        const point = m.add(foe.body.translation(), m.scale(h, -0.45));
+        foe.body.applyImpulseAtPoint(m.scale(UP, share), point, true);
+        vehicle.body.applyImpulseAtPoint(m.scale(UP, -share * (w.liftRecoil ?? 0.5)), pivotWorld(), true);
+        // A lifter's job is control, not damage — but a bot that can NEVER
+        // score cannot win a judged match, and Duck scored a flat zero across a
+        // full fight before this. The forks grinding under an opponent tick a
+        // small amount, the same way the grappler's carry does.
+        if (simTime - lastLiftTickAt >= TU.crusherTickSeconds) {
+          lastLiftTickAt = simTime;
+          emit(EV.WEAPON_HIT, {
+            attackerIndex: index,
+            targetIndex: foe.index,
+            point,
+            normal: m.v3(0, -1, 0),
+            impulse: damageImpulseForRate(tune.holdDamagePerSecond || 2.5, TU.crusherTickSeconds),
+            appliedImpulse: share,
+            energyBefore: 0,
+            heavy: false,
+          });
+        }
+      }
+      if (!inZone) carrying = false;
+
+      if (!disc) return;
+      // Disc: its own toggle, spinning whatever the arm is doing.
+      const spinning = Boolean(ctx.input?.sawActive);
+      const spinUp = discMaxOmega / Math.max(0.05, disc.spinUpSeconds ?? 1.4);
+      const spinDown = discMaxOmega / Math.max(0.05, disc.spinDownSeconds ?? TU.spinDownSeconds);
+      omega = spinning
+        ? Math.min(discMaxOmega, omega + spinUp * dt)
+        : Math.max(0, omega - spinDown * dt);
+      const ratio = omega / discMaxOmega;
+      if (Math.abs(ratio - lastEmittedRatio) >= 0.01) {
+        lastEmittedRatio = ratio;
+        // Announced as a bar so the audio layer's spinner whine picks it up.
+        emit(EV.WEAPON_SPIN, { botIndex: index, weaponType: "bar", ratio, hapticScale: tune.hapticScale });
+      }
+
+      // Disc contact: continuous chew, not one big spike. Damage comes from
+      // holding it on them, which is what the lift is for.
+      if (ratio > TU.minHitRatio && localZoneContains(discZone, local)
+        && simTime - lastDiscHitAt >= TU.hammerGrindTickSeconds) {
+        lastDiscHitAt = simTime;
+        const h = horizontalBetween(vehicle.body.translation(), foe.body.translation());
+        const push = (disc.budgetCap ?? 90) * ratio * 0.12;
+        const point = m.add(foe.body.translation(), m.v3(0, 0.3, 0));
+        foe.body.applyImpulseAtPoint(m.add(m.scale(h, push), m.scale(UP, push * 0.4)), point, true);
+        emit(EV.WEAPON_HIT, {
+          attackerIndex: index,
+          targetIndex: foe.index,
+          point,
+          normal: m.v3(0, -1, 0),
+          impulse: damageImpulseForRate(disc.contactDamagePerSecond ?? 14, TU.hammerGrindTickSeconds),
+          appliedImpulse: push,
+          energyBefore: 0,
+          heavy: false,
+        });
+      }
+    },
+    getAngle: () => stroke,
+    // The meter reads the disc when it is spinning, the arm otherwise.
+    getRatio: () => Math.max(stroke, disc ? omega / discMaxOmega : 0),
+    reset() {
+      stroke = 0;
+      omega = 0;
+      carrying = false;
+      hooked = false;
+      poseArmColliders(0);
+      lastEmittedRatio = -1;
+      lastDiscHitAt = -Infinity;
+      lastLiftTickAt = -Infinity;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Grappler (claw viper)
+// ---------------------------------------------------------------------------
+
+// A control weapon, not a damage one. The forks lift on the trigger and the
+// jaw clamps on the RB channel; the hard part is neither of those, it is
+// HOLDING what you grabbed. A clamped opponent is servoed to a grip point that
+// rides with the arm, so raising the forks raises the victim and swinging past
+// vertical suplexes it — the whole point of the machine. Releasing hands the
+// arm's tip velocity to the victim, which is what turns a lift into a throw.
+function createGrappler({ vehicle, index, emit }) {
+  const spec = vehicle.spec;
+  const w = spec.weapon;
+  const tune = resolveWeaponTuning(spec);
+  const claw = w.claw ?? {};
+  const liftSeconds = w.liftSeconds ?? tune.strokeSeconds;
+  const lowerSeconds = w.lowerSeconds ?? liftSeconds * 1.3;
+  const clampSeconds = claw.clampSeconds ?? 0.25;
+  // Grab zone: low and right in front, where the forks actually are.
+  const grabZone = w.zone ?? frontZone(spec, tune.reach ?? 1.4, { minY: -0.9, maxY: 0.9 });
+  const downforce = w.downforceLbs ?? 0;
+  const gripStrength = w.gripStrength ?? 16; // 1/s spring onto the grip point
+  const gripImpulseCap = w.gripImpulseCap ?? 140;
+
+  let lift = 0; // 0 forks down, 1 fully raised
+  let clamp = 0; // 0 jaw open, 1 jaw shut
+  let gripped = false;
+  const srimech = { lastSrimechAt: -Infinity };
+  let lastTickAt = -Infinity;
+
+  /** Grip point in BODY-local space, carried around the fork hinge by `lift`. */
+  function gripLocal() {
+    const reach = w.gripReach ?? (spec.bodyDims.z / 2 + 0.7);
+    const arm = { x: 0, y: (w.gripHeight ?? 0.35) - w.pivot.y, z: -reach - w.pivot.z };
+    // The forks sweep about the lateral axis, so the grip point sweeps with it.
+    const angle = (w.restAngle ?? 0) + lift * ((w.liftAngle ?? -2.1) - (w.restAngle ?? 0));
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    return {
+      x: w.pivot.x + arm.x,
+      y: w.pivot.y + arm.y * cos - arm.z * sin,
+      z: w.pivot.z + arm.y * sin + arm.z * cos,
+    };
+  }
+
+  function armWorld(local) {
+    return m.add(vehicle.body.translation(), m.qRotate(vehicle.body.rotation(), local));
+  }
+
+  return {
+    type: "grappler",
+    update(dt, fire, ctx) {
+      const { foe, simTime } = ctx;
+      if (downforce > 0 && vehicle.isGrounded()) {
+        vehicle.body.applyImpulse(m.scale(UP, -downforce * dt), true);
+      }
+      const jawClosing = Boolean(ctx.input?.sawActive);
+      const previousLift = lift;
+      lift = m.clamp(lift + (fire ? dt / liftSeconds : -dt / lowerSeconds), 0, 1);
+      if (lift > previousLift) armSrimech(vehicle, srimech, ctx.simTime, w.selfRightScale ?? 1);
+      clamp = m.clamp(clamp + (jawClosing ? dt / clampSeconds : -dt / clampSeconds), 0, 1);
+
+      const local = toLocal(vehicle, foe.body.translation());
+      const inReach = localZoneContains(grabZone, local);
+      if (!gripped && clamp > 0.6 && inReach && lift < 0.35) {
+        gripped = true;
+        emit(EV.WEAPON_FIRED, { botIndex: index, weaponType: "grappler" });
+      }
+      if (gripped && clamp < 0.4) {
+        // Release: hand the victim the speed of the arm tip so a lift that ends
+        // past vertical actually throws rather than just letting go.
+        const swing = (previousLift - lift) / Math.max(dt, 1e-6);
+        const tip = m.sub(armWorld(gripLocal()), vehicle.body.translation());
+        const throwImpulse = m.scale(tip, -swing * foe.mass * (w.throwScale ?? 0.6));
+        foe.body.applyImpulse(throwImpulse, true);
+        gripped = false;
+      }
+      if (!gripped) return;
+
+      // Carry: servo the victim onto the grip point, matching the carrier's own
+      // velocity so the pair moves as one unit.
+      const target = armWorld(gripLocal());
+      const offset = m.sub(target, foe.body.translation());
+      const wanted = m.add(vehicle.body.linvel(), m.scale(offset, gripStrength));
+      const effective = (vehicle.mass * foe.mass) / (vehicle.mass + foe.mass);
+      let pull = m.scale(m.sub(wanted, foe.body.linvel()), effective * Math.min(1, dt * 12));
+      const cap = effective * gripImpulseCap * dt;
+      const magnitude = m.length(pull);
+      if (magnitude > cap) pull = m.scale(pull, cap / magnitude);
+      foe.body.applyImpulse(pull, true);
+      // Hoisting 250lb has to be felt at the hinge, or the lift is free.
+      vehicle.body.applyImpulseAtPoint(m.scale(pull, -1), armWorld(w.pivot), true);
+      // A clamped bot is CLAMPED. The linear servo alone leaves it free to
+      // rotate, and a 250lb machine that keeps whatever spin it arrived with
+      // wanders and lolls on the forks — it reads as floating in front of the
+      // arm rather than held by it. Bleed its angular velocity toward the
+      // carrier's so the pair turns as one piece, paid for at the hinge like
+      // everything else the arm does.
+      const gripDamping = w.gripAngularDamping ?? 9;
+      const spinGap = m.sub(vehicle.body.angvel(), foe.body.angvel());
+      const foeInertia = (foe.inertia?.y ?? foe.mass) * Math.min(1, dt * gripDamping);
+      const twist = m.scale(spinGap, foeInertia);
+      foe.body.applyTorqueImpulse(twist, true);
+      vehicle.body.applyTorqueImpulse(m.scale(twist, -0.35), true);
+
+      // Holding does NOT hurt. A grappler's forks are blunt — a lifter that
+      // ground its victim down just by keeping hold of it made the arm a
+      // damage weapon you never had to aim, and made the interesting move (put
+      // them on the screws, drop them from height, throw them into a wall)
+      // pointless. Damage comes from where you PUT them, which the arena's own
+      // hazards and the impact router already charge for.
+      if (tune.holdDamagePerSecond > 0 && simTime - lastTickAt >= TU.crusherTickSeconds) {
+        lastTickAt = simTime;
+        emit(EV.WEAPON_HIT, {
+          attackerIndex: index,
+          targetIndex: foe.index,
+          point: target,
+          normal: m.v3(0, -1, 0),
+          impulse: damageImpulseForRate(tune.holdDamagePerSecond, TU.crusherTickSeconds),
+          appliedImpulse: 0,
+          energyBefore: 0,
+          heavy: false,
+        });
+      }
+    },
+    getAngle: () => lift,
+    getSubAngle: () => clamp,
+    getRatio: () => Math.max(lift, clamp),
+    isGripping: () => gripped,
+    reset() {
+      lift = 0;
+      clamp = 0;
+      gripped = false;
+      lastTickAt = -Infinity;
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 
 /** Create the weapon system for one bot from its BotSimSpec. */
 export function createWeapon(args) {
+  const built = buildWeapon(args);
+  return args.vehicle.spec.weapon?.flame ? withFlamethrower(built, args) : built;
+}
+
+function buildWeapon(args) {
   const type = args.vehicle.spec.weapon?.type;
-  if (type === "bar" || type === "drum") return createSpinner(args);
+  // A full-body shell spinner runs the same rotor machine; what makes Gigabyte
+  // different is that createSpinner sizes the weapon collider from
+  // weapon.radius and weapon.dims, and on this bot that IS the whole hull —
+  // so there is no safe side and no weapon face to aim, which is the point.
+  if (type === "bar" || type === "drum" || type === "shellSpinner") return createSpinner(args);
   if (type === "flipper") return createFlipper(args);
   if (type === "crusher") return createCrusher(args);
+  // Dragon King's saw arms are Sawblaze's machine: the arm swings and HOLDS at
+  // full extension while the trigger is down (that is the cut), and the blades
+  // are their own latched channel. The difference is the jaw, which is an aux
+  // group rather than part of the weapon.
+  if (type === "sawArms") return createSawArms(args);
   if (type === "hammerSaw") return createHammerSaw(args);
+  if (type === "hammer") return createHammer(args);
+  if (type === "lifterDisc" || type === "lifter") return createLifterDisc(args);
+  if (type === "grappler") return createGrappler(args);
   // Weaponless fallback (keeps the sim robust to partial specs).
   return {
     type: "none",
@@ -458,5 +1643,39 @@ export function createWeapon(args) {
     getAngle: () => 0,
     getRatio: () => 0,
     reset() {},
+  };
+}
+
+/**
+ * Bolt a flamethrower onto any weapon. The weapon keeps running its own
+ * mechanism untouched; this adds the burn on the secondary channel and reports
+ * the jet ramp as the sub-angle, which is what the renderer draws fire from.
+ * A weapon that already reports a sub-angle of its own (Tantrum's fists,
+ * Whiplash's disc) keeps it — those bots have no flame, and a bot cannot spend
+ * the same channel twice.
+ */
+function withFlamethrower(base, args) {
+  const { vehicle, index, emit } = args;
+  const spec = vehicle.spec;
+  const flame = createFlamethrower({
+    spec, vehicle, index, emit,
+    zoneFor: frontZone,
+    inZone: localZoneContains,
+    tickSeconds: TU.hammerGrindTickSeconds,
+  });
+  if (!flame) return base;
+  return {
+    ...base,
+    update(dt, fire, ctx) {
+      base.update(dt, fire, ctx);
+      // `gripped` is the weapon's own idea of whether it is holding something.
+      // Kraken's flame points into the bite zone and is useless without one.
+      flame.update(dt, Boolean(ctx?.input?.sawActive), ctx, base.isGripping?.() ?? false);
+    },
+    getSubAngle: () => flame.getBurn(),
+    reset() {
+      base.reset?.();
+      flame.reset();
+    },
   };
 }

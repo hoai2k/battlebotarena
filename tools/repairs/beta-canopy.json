@@ -1,0 +1,92 @@
+{
+  "_comment": "Beta's electronics bay is reconstructed open: the orange beta plate, the motors and the loom sit exposed between the armour walls with nothing over them. This is a lexan canopy over that bay — transparent, so the parts stay visible, and tucked down between the shell's side walls so the armour is still what protects it. Everything here is measured off an (x,z) -> highest-body-geometry map of modelBody rather than eyeballed. TOP: -0.122, the top of the orange plate, so the canopy never stands above it. WIDTH: 0.218 at the waist, which is as far out as it goes before meeting the armour wall's inner face at |x| 0.23. FRONT: z=0.060 at the sides, where the bay floor drops into a trough at -0.26, with a bite taken out of the middle (|x| < 0.10) because the hammer's gearbox stands up to -0.03 there and the arm swings through it. REAR: tapers to |x| 0.130 at z=-0.330, following the rim.",
+  "parent": "modelBody",
+  "material": {
+    "name": "BetaCanopy",
+    "baseColorFactor": [
+      0.58,
+      0.68,
+      0.78
+    ],
+    "alpha": 0.3,
+    "metallicFactor": 0.0,
+    "roughnessFactor": 0.04
+  },
+  "panels": [
+    {
+      "name": "panelCanopy",
+      "type": "plate",
+      "axis": "y",
+      "range": [
+        -0.33,
+        -0.122
+      ],
+      "outline": [
+        [
+          -0.13,
+          -0.33
+        ],
+        [
+          0.13,
+          -0.33
+        ],
+        [
+          0.182,
+          -0.295
+        ],
+        [
+          0.206,
+          -0.238
+        ],
+        [
+          0.216,
+          -0.14
+        ],
+        [
+          0.218,
+          0.01
+        ],
+        [
+          0.212,
+          0.06
+        ],
+        [
+          0.1,
+          0.06
+        ],
+        [
+          0.1,
+          0.02
+        ],
+        [
+          -0.1,
+          0.02
+        ],
+        [
+          -0.1,
+          0.06
+        ],
+        [
+          -0.212,
+          0.06
+        ],
+        [
+          -0.218,
+          0.01
+        ],
+        [
+          -0.216,
+          -0.14
+        ],
+        [
+          -0.206,
+          -0.238
+        ],
+        [
+          -0.182,
+          -0.295
+        ]
+      ]
+    }
+  ]
+}

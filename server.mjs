@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { networkInterfaces } from "node:os";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { extname, join, normalize, resolve } from "node:path";
@@ -26,6 +27,12 @@ const types = {
 
 // Source files revalidate every load so /v2 needs no ?v= cache-bust params.
 // Big binaries (models, music) are content-stable, so let the browser keep them.
+// Source is revalidated every request. Models are NOT in this set only because
+// they are 10-17MB and re-downloading them on every reload is unusable — but
+// they still must not be served blind from cache, because a model repair is a
+// change to the file and nothing else, and an hour of stale .glb looks exactly
+// like a fix that did not work. They get a validator instead (see below), so a
+// changed model is picked up on the next load and an unchanged one costs a 304.
 const noCache = new Set([".html", ".js", ".mjs", ".css"]);
 
 function sendError(response, code, message) {
@@ -64,7 +71,17 @@ async function handle(request, response) {
     "content-type": types[ext] || "application/octet-stream",
     "accept-ranges": "bytes",
   };
-  headers["cache-control"] = noCache.has(ext) ? "no-cache" : "public, max-age=3600";
+  headers["cache-control"] = noCache.has(ext) ? "no-cache" : "public, max-age=0, must-revalidate";
+  // Size + mtime is enough to tell one build of a model from another, and it
+  // costs a stat we have already done.
+  const tag = `"${info.size.toString(16)}-${Math.floor(info.mtimeMs).toString(16)}"`;
+  headers.etag = tag;
+  headers["last-modified"] = info.mtime.toUTCString();
+  const since = request.headers["if-none-match"];
+  if (since && since.split(",").some((v) => v.trim() === tag)) {
+    response.writeHead(304, { etag: tag, "cache-control": headers["cache-control"] });
+    return response.end();
+  }
 
   // Range support matters for <audio>: browsers request music by byte range and
   // some will not start playback (or cannot seek) without a proper 206.
@@ -125,6 +142,18 @@ process.on("uncaughtException", (error) => {
   console.error(`[server] uncaught: ${error?.stack || error}`);
 });
 
-server.listen(port, "127.0.0.1", () => {
+// Bind every interface by default so a PHONE on the same wifi can open the
+// game and the debug pages. Loopback-only meant the only way to look at
+// anything on a handset was to not look at it. Set HOST=127.0.0.1 to go back
+// to loopback if you are on a network you do not trust.
+const host = process.env.HOST || "0.0.0.0";
+server.listen(port, host, () => {
   console.log(`BattleBot Arena running at http://127.0.0.1:${port}`);
+  if (host === "0.0.0.0") {
+    for (const [name, addrs] of Object.entries(networkInterfaces())) {
+      for (const a of addrs || []) {
+        if (a.family === "IPv4" && !a.internal) console.log(`  on ${name}: http://${a.address}:${port}`);
+      }
+    }
+  }
 });

@@ -63,6 +63,9 @@ public/
   music/            Soundtrack
 vendor/             three.js + Rapier (so the game needs no network)
 tools/              Dev utilities: sim tests, model pipeline, model viewer
+v1/                 The original game, still playable at /v1/ — it now fights
+                    this roster too, generated from the catalog above
+                    (see v1/README.md)
 ```
 
 Architecture contracts — module boundaries, the event bus, and the physics
@@ -71,12 +74,42 @@ blueprint — are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
 ## Development
 
 ```bash
-node tools/sim-tests.mjs          # 13 headless physics scenarios
-node tools/feel-probe.mjs bronco  # driving response/smoothness metrics
+node tools/sim-tests.mjs             # headless physics scenarios
+node tools/feel-probe.mjs bronco     # driving response/smoothness metrics
+node tools/weapon-tuning-verify.mjs  # per-spinner damage ladder
+node tools/roster-probe.mjs          # every bot, AI-driven, vs a reference foe
+node tools/boot-probe.mjs duck       # boot the real page into a match (needs the server)
 ```
 
 Open `tools/viewer.html?bot=minotaur` in the browser to inspect a bot model
 (`&spin=1` animates its weapon, `&parts=1` shows raw segmentation parts).
+
+`tools/rig-inspect.mjs` is the one that matters when a bot's rig looks wrong.
+It loads a bot **through the game loader** and measures it in game space with
+the model grounded, which is the only space the catalog's numbers mean anything
+in — a raw-GLB viewer cannot show you a model that is upside down, a nose held
+off the floor, or an arm whose rest angle buries it:
+
+```bash
+node server.mjs &
+node tools/rig-inspect.mjs duck /tmp/shots side,iso --tint --colliders
+node tools/rig-inspect.mjs shatter --arc -2.6,-2.3,0.1   # pick a fireAngle
+```
+
+### Bot sizing and real-machine data
+
+Every catalog entry carries a `realWorld` block — the team, the machine's
+weight and top speed, its weapon's weight and tip speed, its drive and battery
+pack — gathered from the [BattleBots Wiki](https://battlebots.fandom.com) and
+team sites. Each bot's GLB is then scaled so its **measured width in game
+space** equals `realWorld.size.widthFt`; length is a sanity check on that, not
+a second target, because a uniform scale cannot satisfy both.
+
+Real BattleBots almost never publish overall dimensions. `size.source` says
+which grade each figure is: `published` (Mammoth, Deep Six), `wheel-calibrated`
+(HUGE, off its 40in wheels) or `class-estimate` (everything else, placed inside
+the envelope a 250lb machine occupies). See the SIZING header in
+`src/assets/catalog.js`.
 
 ### Bot models
 

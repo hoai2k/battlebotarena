@@ -1,0 +1,7 @@
+{
+  "_note": "Parts 3 and 4 are the two black triangular gussets bolted to the top of the shell, either side of the pole hub — visible in the reference photo. They are shell, not chassis, so they spin with it; they were in body and stood still while the dome turned under them. Part 5 (the bearing flange at the dead centre) and part 8 (the self-righting pole) stay in body: the pole does not rotate, which is the whole point of it.",
+  "weapon": [7, 0, 1, 9, 2, 6, 3, 4],
+  "wheels": [],
+  "weaponAxis": [0, 1, 0],
+  "pivotOverride": [0.06, -0.2, -0.02]
+}

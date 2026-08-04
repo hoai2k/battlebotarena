@@ -1,0 +1,146 @@
+[
+  {
+    "_comment": "Bake the yaw INTO the model so its centreline is a coordinate plane. Glitch's drum axle measures [0.4483, 0.0567, -0.8921] in model space \u2014 27 degrees off any axis \u2014 which means the bot's plane of symmetry is 27 degrees off too, and every tool downstream works in axis-aligned boxes and planes. Rotating every part about Y by -1.1055 rad puts the axle on model +X, so the symmetry plane becomes x=0 and the mirror below is expressible at all. modelYaw absorbs the same rotation in the other direction, so nothing about how the bot faces changes.",
+    "part": 10,
+    "mode": "rotate",
+    "axis": 1,
+    "angle": -1.1055,
+    "pivot": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "part": 7,
+    "mode": "rotate",
+    "axis": 1,
+    "angle": -1.1055,
+    "pivot": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "part": 6,
+    "mode": "rotate",
+    "axis": 1,
+    "angle": -1.1055,
+    "pivot": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "part": 4,
+    "mode": "rotate",
+    "axis": 1,
+    "angle": -1.1055,
+    "pivot": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "part": 11,
+    "mode": "rotate",
+    "axis": 1,
+    "angle": -1.1055,
+    "pivot": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "part": 9,
+    "mode": "rotate",
+    "axis": 1,
+    "angle": -1.1055,
+    "pivot": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "part": 5,
+    "mode": "rotate",
+    "axis": 1,
+    "angle": -1.1055,
+    "pivot": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "part": 2,
+    "mode": "rotate",
+    "axis": 1,
+    "angle": -1.1055,
+    "pivot": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "part": 12,
+    "mode": "rotate",
+    "axis": 1,
+    "angle": -1.1055,
+    "pivot": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "part": 3,
+    "mode": "rotate",
+    "axis": 1,
+    "angle": -1.1055,
+    "pivot": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "part": 1,
+    "mode": "rotate",
+    "axis": 1,
+    "angle": -1.1055,
+    "pivot": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "part": 0,
+    "mode": "rotate",
+    "axis": 1,
+    "angle": -1.1055,
+    "pivot": [
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "part": 8,
+    "mode": "rotate",
+    "axis": 1,
+    "angle": -1.1055,
+    "pivot": [
+      0,
+      0,
+      0
+    ]
+  }
+]

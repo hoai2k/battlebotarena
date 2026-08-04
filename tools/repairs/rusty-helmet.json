@@ -1,0 +1,10 @@
+[
+  { "_comment": "Rusty's helmet is a spun steel mixing bowl bolted over a rusted-steel body — bare polished metal with a satin shine and a rolled lip, and the one bright thing on the whole robot. The DOME (part 13) was already repainted onto RustyStainlessDome by an earlier pass, but its ROLLED RIM (part 11) was left on the scan's texture, so the helmet was metal with a photographed band around its edge. The rim gets the same material, and the dome is retuned toward the reference: brighter and glossier.",
+    "part": 11, "mode": "paint",
+    "region": { "type": "box", "min": [-0.2, -0.1, -0.5], "max": [0.7, 0.6, 0.5] },
+    "material": { "name": "RustyStainlessRim", "baseColorFactor": [0.86, 0.88, 0.91, 1], "metallicFactor": 1.0, "roughnessFactor": 0.26 } },
+
+  { "_comment": "metallicFactor 1.0 is only correct because the renderer now has an environment to reflect — see engine/renderer.js. Before that it was 0.45, because a fully metallic material with nothing to mirror renders black, and the compromise read as white plastic.",
+    "mode": "material", "name": "RustyStainlessDome",
+    "baseColorFactor": [0.86, 0.88, 0.91, 1], "metallicFactor": 1.0, "roughnessFactor": 0.26 }
+]

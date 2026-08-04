@@ -1,0 +1,20 @@
+{
+  "_comment": "Closes the back of Copperhead once copperhead-rear-flat.json has cut the protrusions off the bottom layer. The rear is a plain frame on the real machine, but the scan only ever resolved the pan (game y 0.06..0.30) and the deck's rear rail (y 0.84..0.90) — between them, right across the width, there was nothing at all, and from behind you looked straight through the machine at the inside of its own front bodywork and at a fist-sized lump of scan mush floating in the middle of it. Coordinates are modelBody space, converted from the measured game-space opening with rig-inspect's __toGlb ON THE CARVED MODEL: the loader re-centres the body on its own bbox, so cutting the rear moved every game-space number 0.1125ft aft and the mapping had to be re-taken after the cut. game -> GLB is x*0.30772+0.0007 (as GLB z), y*0.30772-0.0620 (as GLB y), z*-0.30772+0.1583 (as GLB x).",
+  "parent": "modelBody",
+  "material": {
+    "name": "CopperheadRearPanel",
+    "_comment": "The machine's own black, sampled off the baked 1024x1024 body atlas rather than guessed: the texels under tripo_part_15 — the black frame that runs between the wheels immediately IN FRONT of this opening — have median sRGB (36,37,39), and the model's dominant neutral texel bins sit in the same place (36,36,36 / 44,44,44 / 28,28,28). Converted to the LINEAR factor glTF wants. metallic/roughness are models.js SURFACE, which the loader applies to every scanned part: repaintScanned only touches materials that carry a map, so an untextured panel keeps whatever it is given and would otherwise read as chalk against the paint either side of it.",
+    "baseColorFactor": [0.0176, 0.0185, 0.0203, 1],
+    "metallicFactor": 0.28,
+    "roughnessFactor": 0.42
+  },
+  "panels": [
+    {
+      "_comment": "Rear bulkhead. Measured opening in game space after the cut: empty across y 0.30..0.84 for the whole span x -0.90..+0.96 in the slab z[0.94,1.00]. The plate is sized to y 0.22..0.87 so it laps 0.08 into the pan below and 0.03 into the deck rail above rather than meeting them on a seam, and x -0.885..+0.925 so it stops just inboard of the tyres (their inner faces measure x=-0.895 and x=+0.935, and at this z the wheel discs still reach y 0.58..0.86 — a plate as wide as the pan would have grown out through the rubber). z 0.930..0.990 puts its back face 0.01ft IN FRONT of the pan and deck edges at z=1.00, so it is never the rearmost surface and never fights a coplanar face with the cut.",
+      "name": "panelRear",
+      "type": "box",
+      "min": [-0.1463, 0.0057, -0.2699],
+      "max": [-0.1279, 0.2057, 0.2870]
+    }
+  ]
+}

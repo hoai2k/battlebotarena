@@ -1,0 +1,231 @@
+// Bot classification guide for imported bots:
+// Unit guide:
+// - Distances are feet; bot ground-speed config values are miles per hour.
+// - Other linear speeds are feet per second; accelerations are feet per second squared.
+// - Angular speeds are radians per second. Durations are seconds.
+// - Damage caps/scales use hp, where 1 damage unit = 1 hp.
+//   Bot maxHp is the visible hit-point pool. The main match HUD displays
+//   damage as percent of maxHp; individual damage event popups show hp.
+//   With the current 1000 hp bots, 1% damage is 10 hp.
+// - Spinner weapons use MODEL_PART_CONFIG[id].weapon.type of "bar" or "drum".
+//   Set weaponMaxAngularSpeed for physics speed, weaponWeightLbs/weaponRotationalInertia
+//   for stored energy, and optional spinnerImpact*/spinnerGyroScale tuning below.
+//   Spinner hit strength is data-driven: spinnerEnergyTransferEfficiency controls
+//   how much stored energy becomes a hit, spinnerTargetImpulseScale controls
+//   horizontal knockback, spinnerTargetLiftScale/Velocity/Clearance control lift,
+//   spinnerReach controls how early the weapon connects, spinnerImpactCap limits
+//   the hit, and spinnerKickbackScale adjusts owner recoil.
+// - Impulse weapons use "flipper" or "meshFlipper"; crushers use "crusher".
+// - Wedges are collider parts with type/part "wedge"; drive traction comes from
+//   collider parts marked part: "driveContact" with side: "left" or "right".
+// Bots ported from v2 (Sawblaze and Tombstone included — v1's own entries for
+// those two pointed at GLBs that were never in the repo) are generated from the
+// v2 catalog rather than hand-written here. See portedBots.js.
+import { PORTED_BOT_CONFIG } from "./portedBots.js";
+
+export const FEET_PER_SECOND_PER_MPH = 22 / 15;
+
+export function mphToFeetPerSecond(mph) {
+  return mph * FEET_PER_SECOND_PER_MPH;
+}
+
+export function botGroundSpeedFeetPerSecond(spec, key = "maxSpeed", fallbackMph = 0) {
+  const mph = Number.isFinite(spec?.[key]) ? spec[key] : fallbackMph;
+  return mphToFeetPerSecond(mph);
+}
+
+export const BOT_CONFIG = {
+  biteforce: {
+    name: "Bite Force",
+    short: "BF",
+    ref: "../public/reference/biteforce.png",
+    notes: "White and blue wedge-shaped vertical spinner with front forks, compact drive pods, and a central front weapon.",
+    maxSpeed: 8.182,
+    maxBoostSpeed: 12.682,
+    driveAcceleration: 8.2,
+    turningTightness: 1.05,
+    yawDamping: 1.0,
+    weaponSpinUpSeconds: 1.8,
+    maxHp: 1000,
+    weightLbs: 250,
+    weaponWeightLbs: 40,
+    weaponMaxAngularSpeed: 487,
+    weaponRotationalInertia: 1.0,
+    weaponRotationalInertiaType: "vertical-front",
+    spinnerEnergyTransferEfficiency: 0.5,
+    spinnerTargetImpulseScale: 13.8,
+    spinnerTargetLiftScale: 32.0,
+    spinnerTargetLiftVelocity: 4.5,
+    spinnerTargetLiftClearance: 0.55,
+    spinnerImpactCapEnabled: true,
+    spinnerImpactCap: 120,
+    spinnerImpactScale: 1,
+    spinnerGyroScale: 0.75,
+    frontYawOffset: 0,
+    viewerRotation: [0, Math.PI - 0.2, 0],
+  },
+  bronco: {
+    name: "Bronco",
+    short: "BR",
+    ref: "../public/reference/bronco.png",
+    notes: "Scratched aluminum flipper with red top panel, VEX logos, rear hinged wedge, visible pneumatic ram.",
+    maxSpeed: 7.5,
+    maxBoostSpeed: 10.568,
+    driveAcceleration: 6.7,
+    turningTightness: 0.9,
+    yawDamping: 1.15,
+    weaponSpinUpSeconds: 0.2,
+    maxHp: 1000,
+    weightLbs: 250,
+    weaponWeightLbs: 80,
+    weaponMaxAngularSpeed: 48,
+    weaponReturnSeconds: 2,
+    weaponRotationalInertia: 0,
+    weaponRotationalInertiaType: "vertical-front",
+    targetLiftVelocity: 23.0,
+    targetPitchVelocity: 10.2,
+    frontYawOffset: 0,
+    viewerRotation: [0, Math.PI - 0.2, 0],
+  },
+  huge: {
+    name: "HUGE",
+    short: "HG",
+    ref: "../public/reference/huge.png",
+    notes: "Oversized white wheels with open spokes, narrow body bridge, black eye graphics, central blue bar spinner.",
+    maxSpeed: 3.682,
+    maxBoostSpeed: 5.727,
+    driveAcceleration: 8.4,
+    turningTightness: 0.72,
+    yawDamping: 1.0,
+    weaponSpinUpSeconds: 5,
+    maxHp: 1000,
+    weightLbs: 250,
+    weaponWeightLbs: 30,
+    weaponMaxAngularSpeed: 352,
+    weaponRotationalInertia: 0.75,
+    weaponRotationalInertiaType: "vertical",
+    spinnerEnergyTransferEfficiency: 0.76,
+    spinnerTargetImpulseScale: 10.0,
+    spinnerTargetLiftScale: 36.0,
+    spinnerTargetLiftVelocity: 4.5,
+    spinnerTargetLiftClearance: 0.55,
+    spinnerHalfSpeedPowerMultiplier: 4.0,
+    spinnerFullSpeedPowerMultiplier: 2.15,
+    spinnerImpactCapEnabled: true,
+    spinnerImpactCap: 280,
+    spinnerImpactScale: 1.05,
+    spinnerGyroScale: 0.55,
+    spinnerHapticScale: 2.0,
+    frontYawOffset: 0,
+    viewerRotation: [0, Math.PI - 0.2, 0],
+  },
+  quantum: {
+    name: "Quantum",
+    short: "QT",
+    ref: "../public/reference/quantum.png",
+    notes: "Blue and black low wedge body with polished hydraulic crusher jaw, cutouts, teeth, and blue drive pods.",
+    maxSpeed: 7.5,
+    maxBoostSpeed: 10.227,
+    driveAcceleration: 6.2,
+    turningTightness: 0.84,
+    yawDamping: 1.0,
+    weaponSpinUpSeconds: 0.2,
+    maxHp: 1000,
+    weightLbs: 250,
+    weaponWeightLbs: 250,
+    weaponRotationalInertia: 0,
+    weaponRotationalInertiaType: "vertical-front",
+    frontYawOffset: 0,
+    viewerRotation: [0, Math.PI - 0.2, 0],
+  },
+  hypershock: {
+    name: "Hypershock",
+    short: "HS",
+    ref: "../public/reference/hypershock.png",
+    notes: "Lime-green four-wheel vert with front weapon module, black wedge armor, exposed treaded tires, and top stabilizer fins.",
+    maxSpeed: 13.636,
+    maxBoostSpeed: 21.136,
+    driveAcceleration: 8.6,
+    turningTightness: 1.12,
+    yawDamping: 1.22,
+    weaponSpinUpSeconds: 2.1,
+    maxHp: 1000,
+    weightLbs: 250,
+    weaponWeightLbs: 43,
+    weaponMaxAngularSpeed: 650,
+    weaponRotationalInertia: 1.05,
+    weaponRotationalInertiaType: "vertical-front",
+    spinnerEnergyTransferEfficiency: 0.52,
+    spinnerTargetImpulseScale: 8.5,
+    spinnerTargetLiftScale: 30.0,
+    spinnerTargetLiftVelocity: 4.5,
+    spinnerTargetLiftClearance: 0.55,
+    spinnerImpactCapEnabled: true,
+    spinnerImpactCap: 130,
+    spinnerImpactScale: 1,
+    spinnerGyroScale: 0.85,
+    canDriveInverted: true,
+    frontYawOffset: 0,
+    viewerRotation: [0, Math.PI - 0.2, 0],
+  },
+  minotaur: {
+    name: "Minotaur",
+    short: "MN",
+    ref: "../public/reference/minotaur.png",
+    notes: "Compact black drum spinner with copper front drum, side wheel pockets, bull graphic, and low front forks.",
+    maxSpeed: 10.909,
+    maxBoostSpeed: 16.909,
+    driveAcceleration: 7.9,
+    turningTightness: 0.98,
+    yawDamping: 1.0,
+    weaponSpinUpSeconds: 1.8,
+    maxHp: 1000,
+    weightLbs: 250,
+    weaponWeightLbs: 70,
+    weaponMaxAngularSpeed: 1200,
+    weaponRotationalInertia: 1.15,
+    weaponRotationalInertiaType: "vertical-front",
+    spinnerEnergyTransferEfficiency: 0.26,
+    spinnerTargetImpulseScale: 4.4,
+    spinnerKickbackScale: 0.12,
+    spinnerTargetLiftScale: 18.0,
+    spinnerTargetLiftVelocity: 4.0,
+    spinnerTargetLiftClearance: 0.35,
+    spinnerImpactCapEnabled: true,
+    spinnerImpactCap: 130,
+    spinnerImpactScale: 1,
+    spinnerGyroScale: 1.45,
+    canDriveInverted: true,
+    frontYawOffset: 0,
+    viewerRotation: [0, Math.PI - 0.2, 0],
+  },
+  ...PORTED_BOT_CONFIG,
+};
+
+export const PHYSICS_ASSISTS = {
+  stableDrive: true,
+  groundContactTraction: true,
+  groundScrape: {
+    enabled: true,
+    probeDistance: 0.22,
+    minAngularSpeed: 0.7,
+    linearFriction: 0.18,
+    tumbleFriction: 0.42,
+    maxLinearImpulse: 4.8,
+  },
+  hugeClimbAssist: true,
+  scriptedWeaponImpulses: true,
+  broncoUnderFlipper: {
+    enabled: true,
+    forwardMin: -0.15,
+    forwardMax: 2.25,
+    lateralHalfWidth: 1.45,
+    verticalMin: -0.1,
+    verticalMax: 1.45,
+    contactHeight: 0.34,
+    liftMultiplier: 4.8,
+    forwardMultiplier: 0.35,
+    fallbackPitchTorqueMultiplier: 0.28,
+    attackerRecoilMultiplier: 0.22,
+  },
+};

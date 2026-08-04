@@ -1,0 +1,43 @@
+[
+  {
+    "_comment": "Dragon King was standing on a filament. Part 5 is 0.02 x 0.26 x 0.05 in GLB units \u2014 a rod one inch thick and a foot long in game space, hanging from the front of the hull straight down, and it was the lowest drawn point in the whole model. normalizeScene grounds on the lowest drawn point, so the rod took the floor and both track pods hung a foot in the air (measured: pod underside at game y 1.023). The reference photo has nothing there. Same failure as Copperhead's belly whiskers, which read as an upside-down model for a long time before anyone measured it.",
+    "part": 5,
+    "mode": "delete",
+    "region": {
+      "type": "box",
+      "min": [
+        -1,
+        -1,
+        -1
+      ],
+      "max": [
+        1,
+        1,
+        1
+      ]
+    }
+  },
+  {
+    "_comment": "And the front grabber assembly (aux jaw, parts 1 and 0) is baked drooping: its lowest point hung 0.56ft BELOW the track pods, so grounding put the bot on its chin with both tracks in the air. The reference has the head's chin and the tracks both on the floor. Rotate the group up about its own aux pivot, model space [0, 0, 0.12], which is the hinge the loader animates it about \u2014 so the rest pose moves and the stroke still starts from it.",
+    "part": 1,
+    "mode": "rotate",
+    "axis": 0,
+    "angle": -0.5,
+    "pivot": [
+      0,
+      0,
+      0.12
+    ]
+  },
+  {
+    "part": 0,
+    "mode": "rotate",
+    "axis": 0,
+    "angle": -0.5,
+    "pivot": [
+      0,
+      0,
+      0.12
+    ]
+  }
+]

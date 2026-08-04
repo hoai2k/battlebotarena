@@ -5,19 +5,24 @@ import { createEventBus, EV } from "./shared/events.js";
 import { settings } from "./shared/settings.js";
 import { createRenderer } from "./engine/renderer.js";
 import { createCameraDirector, createChaseCamera } from "./engine/cameras.js";
-import { createEffects } from "./engine/effects.js";
+import { createEffects, spawnBotFlame } from "./engine/effects.js";
 import { createArenaVisuals } from "./engine/arena.js";
+import { createBotPreview } from "./engine/botPreview.js";
+import { syncBotVisual, updateWeaponSub } from "./engine/botAnimation.js";
+import { buildTrackParts } from "./engine/tracks.js";
 
 // Written by the parallel build agents; wired here at integration time.
 import { createUI } from "./ui/ui.js";
+import { createLoader } from "./ui/loader.js";
 import { getBotSpec } from "./assets/catalog.js";
-import { loadBotModel, weaponVisualAngle } from "./assets/models.js";
+import { loadBotModel } from "./assets/models.js";
 import { createSim } from "./sim/sim.js";
 import { createMatch } from "./game/match.js";
 import { computeAiInput, resetAiState } from "./game/ai.js";
 import { createInput } from "./game/input.js";
 import { createGameAudio } from "./game/audio.js";
 import { createMusic } from "./game/music.js";
+import { createWeaponInputShaper } from "./game/weaponControls.js";
 
 const bus = createEventBus();
 const stage = createRenderer(document.querySelector("#scene"));
@@ -32,6 +37,24 @@ const inputP2 = createInput({ on: bus.on, playerIndex: 1, gamepadIndex: 1 });
 // Music is app-level, not per-session: it follows EV.MATCH phases on the bus.
 const music = createMusic(bus);
 
+const loader = createLoader();
+// 3D showcase on the bot select screen: each chosen bot renders on a lit
+// turntable inside its pod. ui.js only emits selection actions; the routing
+// to this module happens below (UI never imports three.js).
+// The pod is a showcase and a controller test bench, nothing more: its weapons
+// run off the pad's own triggers, the same ones the match reads. It used to
+// carry three on-screen test buttons as well, which could only ever cover the
+// channels someone remembered to add a button for — Dragon King has four
+// mechanisms and there were three buttons.
+const podEls = (side) => ({
+  view: document.querySelector(`#pod-view-${side}`),
+  controls: document.querySelector(`#pod-controls-${side}`),
+  poster: document.querySelector(`#pod-poster-${side}`),
+});
+const botPreview = createBotPreview({
+  canvas: document.querySelector("#preview-canvas"),
+  pods: [podEls("player"), podEls("rival")],
+});
 let arenaVisuals = null;
 let session = null; // { sim, match, botVisuals: [{group, parts, spec}], raf }
 let paused = false;
@@ -99,19 +122,64 @@ bus.on(EV.PART_BREAK, (event) => {
 });
 
 // --- Match session lifecycle ----------------------------------------------
+/** Yield to the browser so the loading overlay actually paints between the
+ *  synchronous chunks of match setup (model parsing, the settle loop). */
+const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
+
 async function startMatch({ playerBotId, rivalBotId, difficulty }) {
   await endMatch();
+  // Free the showcase's GPU copies while the arena runs; ui.js re-emits the
+  // selection whenever the select screen is re-entered, so they reload from
+  // cache on the way back.
+  botPreview.unload();
   const specs = [getBotSpec(playerBotId), getBotSpec(rivalBotId)];
-  const botVisuals = await Promise.all(specs.map((spec) => loadBotModel(spec)));
+
+  // Bot models are the long pole: 10-17MB each, and both are needed before the
+  // match can start. Aggregate the two downloads into one bar; if either
+  // response has no content-length (chunked/gzipped) the whole bar goes
+  // indeterminate rather than reporting a half-truth.
+  loader.show({ title: "Loading Bots", detail: `${specs[0].name} vs ${specs[1].name}`, progress: 0 });
+  const modelProgress = [0, 0];
+  const reportModels = () => {
+    const known = modelProgress.every((p) => typeof p === "number");
+    // Models occupy the first 80% of the bar; setup takes the rest.
+    loader.setProgress(known ? ((modelProgress[0] + modelProgress[1]) / 2) * 0.8 : null);
+  };
+  const botVisuals = await Promise.all(
+    specs.map((spec, i) =>
+      loadBotModel(spec, {
+        onProgress: (fraction) => {
+          modelProgress[i] = fraction;
+          reportModels();
+        },
+      }).then((visual) => {
+        modelProgress[i] = 1;
+        reportModels();
+        // A tracked bot's band is built from the loaded geometry rather than
+        // shipped in the GLB — see engine/tracks.js for why the scan cannot
+        // provide one. Built once here; botAnimation only scrolls it.
+        buildTrackParts(visual, spec);
+        return visual;
+      })
+    )
+  );
   botVisuals.forEach((visual) => stage.scene.add(visual.group));
+
+  loader.setTitle("Preparing Arena");
+  loader.setDetail("Building the arena");
+  loader.setProgress(0.84);
+  await nextFrame();
   if (!arenaVisuals) arenaVisuals = createArenaVisuals(stage.scene);
+
+  loader.setDetail("Starting physics");
+  loader.setProgress(0.9);
+  await nextFrame();
   const sim = await createSim({ bots: specs, emit: bus.emit });
   const match = createMatch({ sim, specs, emit: bus.emit, on: bus.on });
   const audio = createGameAudio(bus, { specs });
   audio.setListenerProvider?.(() => stage.camera);
   resetAiState();
-  weaponLatch[0] = weaponLatch[1] = false;
-  sawActive[0] = sawActive[1] = false;
+  playerWeapons.reset();
   setPaused(false);
   // Align each model's ground line with the physics floor by MEASUREMENT:
   // settle the sim silently for a moment, read where each body actually rests
@@ -120,6 +188,9 @@ async function startMatch({ playerBotId, rivalBotId, difficulty }) {
   // reset to spawn. Shifting the model CONTENTS (not the group) keeps
   // rotations centered on the body.
   const idleInput = { leftDrive: 0, rightDrive: 0, weapon: false, brake: false };
+  loader.setDetail("Calibrating chassis");
+  loader.setProgress(0.96);
+  await nextFrame();
   for (let i = 0; i < 150; i += 1) sim.stepFrame(1 / 60, [idleInput, idleInput]);
   // Average the last 30 frames so residual suspension oscillation cancels.
   const settleSum = [0, 0];
@@ -138,9 +209,23 @@ async function startMatch({ playerBotId, rivalBotId, difficulty }) {
   });
   sim.reset();
   session = { sim, match, botVisuals, specs, difficulty, audio };
+  // Frame the cameras around the bots that are actually in this match. The
+  // radius comes off the LOADED model, not the catalog: bodyDims describe the
+  // shell, and a bot's silhouette is mostly weapon — Mammoth's disc rides a
+  // truss well outside its chassis, and at the fixed follow distance you could
+  // not see your own machine.
+  const radii = botVisuals.map((visual) => {
+    const sphere = new THREE.Box3().setFromObject(visual.group).getBoundingSphere(new THREE.Sphere());
+    return sphere.radius || 0;
+  });
+  chaseCameraA.setSubjectRadius(radii[0]);
+  chaseCameraB.setSubjectRadius(radii[1]);
+  cameraDirector.setSubjectRadius(Math.max(...radii));
   cameraDirector.snapTo(sim.getRenderState());
   chaseCameraA.snapTo(sim.getRenderState()[0]);
   chaseCameraB.snapTo(sim.getRenderState()[1]);
+  loader.setProgress(1);
+  loader.hide();
   match.start?.();
 }
 
@@ -156,82 +241,56 @@ async function endMatch() {
 const ui = createUI({
   bus,
   onAction: async (action) => {
-    if (action.type === "startMatch") await startMatch(action);
-    else if (action.type === "rematch" && session) await startMatch({
-      playerBotId: session.specs[0].id,
-      rivalBotId: session.specs[1].id,
-      difficulty: session.difficulty,
-    });
-    else if (action.type === "toTitle" || action.type === "changeBots") {
-      music.player.stop({ fadeOut: 0.5 });
+    try {
+      if (action.type === "startMatch") await startMatch(action);
+      else if (action.type === "rematch" && session) await startMatch({
+        playerBotId: session.specs[0].id,
+        rivalBotId: session.specs[1].id,
+        difficulty: session.difficulty,
+      });
+      else if (action.type === "previewSelection") {
+        // What the bot select screen wants staged in each bay. This is NOT the
+        // selection: an unclaimed bay stages whatever the cursor is over, so
+        // the ids arrive already resolved (and "random" already reduced to
+        // nothing, since a mystery opponent has no model to show).
+        (action.showIds || []).forEach((id, slot) => {
+          if (id) botPreview.showBot(slot, getBotSpec(id));
+          else botPreview.clearBot(slot);
+        });
+        botPreview.setControl({ duo: action.duo, focusSlot: action.focusSlot });
+        // A bay that just went from browsed to claimed spins and lights up. The
+        // model is usually already loaded — browsing put it there — so this is
+        // the only thing that distinguishes the press from the hover.
+        if (typeof action.claimSlot === "number") botPreview.claimBot(action.claimSlot);
+      }
+      else if (action.type === "toTitle" || action.type === "changeBots") {
+        loader.hide();
+        music.player.stop({ fadeOut: 0.5 });
+        await endMatch();
+      }
+    } catch (error) {
+      // A half-built match must never leave the loading overlay up with no way
+      // out — surface it and drop the player back to the roster.
+      console.error("[BBA2] match setup failed", error);
+      loader.hide();
       await endMatch();
+      ui.goTo?.("botSelect");
     }
   },
 });
 
 // --- Frame loop ------------------------------------------------------------
-const scratchAxis = new THREE.Vector3();
-
-function syncBotVisual(visual, spec, state) {
-  visual.group.position.copy(state.position);
-  visual.group.quaternion.copy(state.quaternion);
-  if (visual.parts.weapon && state.weaponAngle !== undefined) {
-    scratchAxis.set(spec.weapon.axis.x, spec.weapon.axis.y, spec.weapon.axis.z).normalize();
-    visual.parts.weapon.quaternion.setFromAxisAngle(scratchAxis, weaponVisualAngle(visual, spec, state));
-  }
-  visual.parts.wheels?.forEach((wheel, i) => {
-    wheel.rotation.x = state.wheelSpin?.[i % (state.wheelSpin?.length || 1)] ?? 0;
-  });
-  // Bronco's pneumatic ram compresses with the flipper: fully shortened at
-  // rest (arm down over it), full length at the top of the stroke. The aux
-  // anchor sits at the ram's base, so scaling never pokes below the mount.
-  const ram = visual.parts.aux?.ram;
-  if (ram && spec.weapon?.type === "flipper") {
-    const stroke = THREE.MathUtils.clamp(state.weaponAngle ?? 0, 0, 1);
-    ram.scale.y = 0.35 + 0.65 * stroke;
-  }
-}
-
-// Sawblaze's saw disc: nested sub-spinner inside the arm. Spins up while the
-// RB toggle is on, coasts down when off; rides the arm's swing either way.
-const SAW_DISC_SPEED = 42; // rad/s at full speed
-function updateWeaponSub(visual, spec, slot, dt, active) {
-  const sub = visual.parts.weaponSub;
-  if (!sub || spec.weapon?.type !== "hammerSaw") return;
-  const state = (visual.__subSpin ||= { angle: 0, speed: 0 });
-  const target = active ? SAW_DISC_SPEED : 0;
-  state.speed += (target - state.speed) * Math.min(1, dt * (active ? 2.2 : 1.1));
-  state.angle += state.speed * dt;
-  scratchAxis.set(spec.weapon.axis.x, spec.weapon.axis.y, spec.weapon.axis.z).normalize();
-  sub.quaternion.setFromAxisAngle(scratchAxis, state.angle);
-}
+// syncBotVisual / updateWeaponSub live in engine/botAnimation.js, shared with
+// the bot-select showcase so a test-fired weapon moves exactly like the match.
 
 // --- Player weapon semantics (v1 parity) -----------------------------------
-// Spinners (bar/drum): RT/Space TOGGLES the spinner on press. Flipper: press
-// to fire (momentary). Crusher: hold to bite. HammerSaw: RT held swings the
-// arm forward; RB toggles the saw motor (drives audio + the disc feel).
-const weaponLatch = [false, false];
-const sawActive = [false, false];
-const prevWeaponDown = [false, false];
-const prevAltDown = [false, false];
+// The rules themselves live in game/weaponControls.js, shared with the
+// bot-select practice viewer so a weapon you learn on the plinth is driven the
+// same way in the arena.
+const playerWeapons = createWeaponInputShaper();
+let lastInputs = null;
+const shapePlayerInput = (raw, spec, slot) => playerWeapons.shape(raw, spec, slot);
 let splitActive = false;
-
-function shapePlayerInput(raw, spec, slot) {
-  const type = spec.weapon?.type;
-  const weaponEdge = raw.weapon && !prevWeaponDown[slot];
-  const altEdge = raw.weaponAlt && !prevAltDown[slot];
-  prevWeaponDown[slot] = raw.weapon;
-  prevAltDown[slot] = raw.weaponAlt;
-  if (type === "bar" || type === "drum") {
-    if (weaponEdge) weaponLatch[slot] = !weaponLatch[slot];
-    return { ...raw, weapon: weaponLatch[slot] };
-  }
-  if (type === "hammerSaw") {
-    if (altEdge) sawActive[slot] = !sawActive[slot];
-    return { ...raw, sawActive: sawActive[slot] };
-  }
-  return raw; // flipper fires on press, crusher bites while held
-}
 
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
@@ -250,14 +309,28 @@ function frame() {
           : computeAiInput(renderNow[1], renderNow[0], session.specs[1], session.difficulty, dt),
       ];
       const filtered = session.match.filterInputs ? session.match.filterInputs(inputs) : inputs;
+      lastInputs = filtered;
       session.sim.stepFrame(dt, filtered);
       session.match.update?.(dt);
       session.audio.updateFrame?.(filtered, renderNow);
-      filtered.forEach((filteredInput, i) => updateWeaponSub(session.botVisuals[i], session.specs[i], i, dt, Boolean(filteredInput?.sawActive)));
+      filtered.forEach((filteredInput, i) => updateWeaponSub(session.botVisuals[i], session.specs[i], dt, Boolean(filteredInput?.sawActive)));
     }
 
     const renderState = session.sim.getRenderState();
-    renderState.forEach((state, i) => syncBotVisual(session.botVisuals[i], session.specs[i], state));
+    renderState.forEach((state, i) => syncBotVisual(session.botVisuals[i], session.specs[i], state, dt));
+    // Flamethrowers. The sim reports the burn as weaponSubAngle (0..1), so the
+    // jet is driven from render state like any other moving part rather than
+    // from the input, and it keeps burning through the frames where the input
+    // has already been consumed.
+    if (!paused) {
+      renderState.forEach((state, i) => {
+        // __groundDrop is the shift startMatch() put into the model's CONTENTS
+        // to stand it on the floor; the nozzles are body-local like every other
+        // catalog point, so without it the jet leaves from that far above the
+        // muzzle it was measured against.
+        spawnBotFlame(effects, session.specs[i], state, state.weaponSubAngle ?? 0, session.botVisuals[i].__groundDrop ?? 0);
+      });
+    }
     arenaVisuals?.updateHazards(session.sim.getHazardState?.(), paused ? 0 : dt);
 
     // Split-screen when both players are human AND bot camera is selected;
@@ -308,4 +381,27 @@ window.__bba2 = {
     return session?.match.getState?.();
   },
   camera: stage.camera,
+  botPreview,
+  effects,
+  // Boot straight into a fight without clicking through the menus, so a
+  // headless browser can verify that a bot actually renders and drives rather
+  // than only that its catalog entry parses.
+  startMatch,
+  // Drive one bot's animation directly, at a state of the caller's choosing, and
+  // draw a frame from it. A moving part that is only reachable through the match
+  // loop can only be checked at whatever speed the match happens to be running;
+  // tools/track-probe.mjs needs a KNOWN wheel speed and successive frames that
+  // differ by nothing else. THREE rides along so a probe can measure the model
+  // it is looking at without importing its own copy.
+  THREE,
+  syncBotVisual,
+  updateWeaponSub,
+  // The inputs the loop last acted on, AFTER shaping and after match.filterInputs.
+  // A mechanism that does not move has three places to be lost — the pad read,
+  // the per-bot shaping, and the damage/phase filter — and only the last of them
+  // is visible from the sim. Exposed so a probe can say WHICH.
+  get lastInputs() {
+    return lastInputs;
+  },
+  render: () => stage.render(),
 };

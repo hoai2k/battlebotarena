@@ -9,7 +9,25 @@ export const ARENA = {
   width: 48, // x extent (v1 dimensions.width)
   length: 48, // z extent (v1 dimensions.length)
   floorY: 0,
-  floorHalfHeight: 0.05, // v1 physicsFloorHalfHeight
+  // The slab's TOP is at y=0 whatever this is — world.js centres it at
+  // -floorHalfHeight — so this is depth below the driving surface and nothing
+  // else. v1 shipped 0.05, a 0.1ft skin, and that was a trap.
+  //
+  // sim/vehicle.js recovers a bot that has been driven into the floor by
+  // relying on a SOLID raycast that starts inside the slab reporting a
+  // time-of-impact of 0, which reads as full compression and pushes the corner
+  // back out. That recovery only works while a probe anchor is still inside the
+  // slab. Through a 0.1ft skin a bot clears it in a single step — 250lb taking
+  // a hard downward hit moves further than that in 1/60s — and once every
+  // anchor is underneath, the probes cast down into empty space, the suspension
+  // reads airborne, the drive cuts out and there is no force left that can ever
+  // bring it back up. HUGE did exactly that and sat a foot under the floor,
+  // wheels buried, throttle doing nothing.
+  //
+  // 2.0 gives the existing recovery four feet of slab to catch an anchor in. A
+  // static cuboid costs nothing to make deeper, and a bot further under than
+  // that is beyond saving anyway.
+  floorHalfHeight: 2.0,
   ceilingHeight: 9.45, // v1 dimensions.ceilingHeight
   wallThickness: 0.5,
 };

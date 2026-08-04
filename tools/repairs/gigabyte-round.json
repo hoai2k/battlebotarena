@@ -1,0 +1,9 @@
+[
+  { "_comment": "Gigabyte's dome came out of the scan as an ellipse: 3.81ft across one axis and 3.11ft across the other, 18% out of round. On a bot whose entire hull is the rotor that is not cosmetic — a spinning ellipse reads as a wobbling dome rather than as a shell at 188mph. Squash the long axis (GLB z) back onto the short one about the shell's own spin centre. Every part of modelWeapon gets the same treatment or the rim teeth part company with the rim they are bolted to. UVs are untouched, so the flames and the lettering just compress very slightly along one axis.",
+    "part": 7, "mode": "scale", "factor": [1, 1, 0.8149], "pivot": [0.06, -0.2, -0.02] },
+  { "part": 0, "mode": "scale", "factor": [1, 1, 0.8149], "pivot": [0.06, -0.2, -0.02] },
+  { "part": 1, "mode": "scale", "factor": [1, 1, 0.8149], "pivot": [0.06, -0.2, -0.02] },
+  { "part": 9, "mode": "scale", "factor": [1, 1, 0.8149], "pivot": [0.06, -0.2, -0.02] },
+  { "part": 2, "mode": "scale", "factor": [1, 1, 0.8149], "pivot": [0.06, -0.2, -0.02] },
+  { "part": 6, "mode": "scale", "factor": [1, 1, 0.8149], "pivot": [0.06, -0.2, -0.02] }
+]

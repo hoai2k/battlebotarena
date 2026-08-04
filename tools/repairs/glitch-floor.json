@@ -1,0 +1,11 @@
+[
+  {
+    "_comment": "Glitch's plate has cutouts you are supposed to see the arena floor through, and the scan closed them with a flat pale sheet. It is the plate's own UNDERSIDE, at a constant GLB y of -0.1267, and it is not near-white in the texture — a colour probe finds only 146 triangles in the whole part — so this has to be cut by geometry, not repainted. A top-down height scan finds it exactly: every cell where the TOPMOST surface sits at -0.1267 instead of at the plate's top face (around -0.02 to -0.075) is a cell you can see straight down onto the underside through, and those cells form one block plus a small patch at the tail. Cut as a thin y-slab inside those two footprints rather than as a plain box, so the underside survives everywhere it is doing its job and only opens where the plate is genuinely cut away.",
+    "part": 10, "mode": "delete",
+    "region": { "type": "box", "min": [0.085, -0.142, 0.075], "max": [0.315, -0.110, 0.505] }
+  },
+  {
+    "part": 10, "mode": "delete", "allowEmpty": true,
+    "region": { "type": "box", "min": [-0.36, -0.142, 0.455], "max": [-0.22, -0.110, 0.520] }
+  }
+]

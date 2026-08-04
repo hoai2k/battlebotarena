@@ -9,10 +9,13 @@
     "dev": "node server.mjs",
     "test": "node tools/sim-tests.mjs",
     "test:sim": "node tools/sim-tests.mjs",
-    "feel": "node tools/feel-probe.mjs"
+    "feel": "node tools/feel-probe.mjs",
+    "test:v1": "node v1/tools/physics-headless-tests.mjs",
+    "audit:v1": "node v1/tools/ported-bot-audit.mjs"
   },
   "devDependencies": {
-    "@dimforge/rapier3d-compat": "0.14.0"
+    "@dimforge/rapier3d-compat": "0.14.0",
+    "three": "0.165.0"
   },
   "engines": {
     "node": ">=18"

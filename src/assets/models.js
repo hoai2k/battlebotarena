@@ -15,6 +15,10 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
+// Cache parsed GLB responses: a rematch or a re-pick of the same bot would
+// otherwise re-download 10-17MB per model and sit on the loading screen again.
+THREE.Cache.enabled = true;
+
 const loader = new GLTFLoader();
 const MAX_WHEEL_NODES = 8;
 
@@ -24,6 +28,33 @@ function accentMaterial(spec, { dark = false, metal = 0.55 } = {}) {
     metalness: metal,
     roughness: 0.55,
   });
+}
+
+// Tripo writes no pbrMetallicRoughness block, so glTF's defaults apply and every
+// scanned material arrives at metalness 1 / roughness 1. That pair is the worst
+// case there is: fully metallic means NO diffuse term at all, and fully rough
+// means the specular is smeared to nothing, so the baked albedo is left tinting
+// a reflection nobody can see. The result reads as chalk or matte plastic no
+// matter how good the photograph was.
+//
+// These machines are painted metal. Paint is a dielectric over steel: mostly
+// diffuse, with a tight specular that catches the arena lights. Dropping
+// metalness and roughness to those values is what puts the photograph back on
+// the surface and the highlight back on the edges.
+const SURFACE = { metalness: 0.28, roughness: 0.42 };
+
+function repaintScanned(object, spec) {
+  const surface = { ...SURFACE, ...(spec.surface || {}) };
+  object.traverse((child) => {
+    // Only touch materials that came in from the GLB with a baked texture.
+    // Procedural parts (placeholder bodies, Duck's carrier bars, the spin
+    // ghost) are authored with the values they want.
+    if (!child.isMesh || !child.material?.map) return;
+    child.material.metalness = surface.metalness;
+    child.material.roughness = surface.roughness;
+    child.material.needsUpdate = true;
+  });
+  return object;
 }
 
 function markShadows(object) {
@@ -122,6 +153,43 @@ function placeholderWeapon(spec) {
     tooth.position.set(0, -0.2, -dims.z * 2 + 0.1);
     tooth.rotation.x = Math.PI;
     group.add(tooth);
+  } else if (weapon.type === "grappler") {
+    // Fork pair out front with a jaw plate hinged above them.
+    const reach = Math.max(1.0, dims.z * 3);
+    for (const side of [-1, 1]) {
+      const fork = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.1, reach), accent);
+      fork.position.set(side * 0.34, -0.04, -reach / 2);
+      group.add(fork);
+    }
+    const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, reach * 0.7), dark);
+    jaw.position.set(0, 0.42, -reach * 0.45);
+    group.add(jaw);
+  } else if (weapon.type === "hammer") {
+    // Truss arm out to a cylindrical head, hinged at the pivot.
+    const reach = Math.max(0.8, dims.y * 2);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.12, reach), dark);
+    arm.position.z = -reach / 2;
+    group.add(arm);
+    const head = cylinderAcross(0.22, 0.3, accent, "x");
+    head.position.z = -reach;
+    group.add(head);
+  } else if (weapon.type === "lifterDisc" || weapon.type === "lifter") {
+    // Lifter beam with fork prongs, plus the disc that rides on it (lifterDisc
+    // only — a plain lifter is the same arm with nothing bolted to it).
+    const reach = Math.max(1.0, dims.z * 4);
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.14, reach), dark);
+    beam.position.z = -reach / 2;
+    group.add(beam);
+    for (const side of [-1, 1]) {
+      const prong = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.08, 0.5), accent);
+      prong.position.set(side * 0.28, -0.06, -reach - 0.2);
+      group.add(prong);
+    }
+    if (weapon.disc) {
+      const disc = cylinderAcross(weapon.disc.radius ?? 0.42, 0.07, accent, "x");
+      disc.position.set(0, 0.25, -reach * 0.55);
+      group.add(disc);
+    }
   } else if (weapon.type === "hammerSaw") {
     const sawCenter = weapon.tuning?.sawCenter || { x: 0, y: 0, z: -0.9 };
     const armVec = new THREE.Vector3(
@@ -143,6 +211,42 @@ function placeholderWeapon(spec) {
   return group;
 }
 
+/**
+ * A single tubular arm inside a weapon group, from `bar.from` to `bar.to` in
+ * BODY-local feet, mirrored to both sides by `bar.x`. Positioned in the pivot
+ * group's frame, so it swings with the weapon it belongs to.
+ */
+function buildWeaponArm(weaponPivot, bar, spec) {
+  const material = new THREE.MeshStandardMaterial({
+    color: bar.color || spec.accentDark || "#2a2d33",
+    metalness: 0.85,
+    roughness: 0.35,
+  });
+  const from = new THREE.Vector3(bar.x, bar.from.y, bar.from.z);
+  const to = new THREE.Vector3(bar.x, bar.to.y, bar.to.z);
+  const span = new THREE.Vector3().subVectors(to, from);
+  // shape: "box" is the bracket a tubular arm hinges IN, rather than the arm
+  // itself — Duck's carrier bars land in a machined block between the wheels,
+  // and a bare tube ending in mid-air reads as unattached.
+  const mesh = new THREE.Mesh(
+    bar.shape === "box"
+      ? new THREE.BoxGeometry(bar.width ?? 0.16, bar.height ?? 0.22, span.length())
+      : new THREE.CylinderGeometry(bar.radius ?? 0.06, bar.radius ?? 0.06, span.length(), 12),
+    material,
+  );
+  mesh.name = bar.shape === "box" ? "weaponMount" : "weaponArm";
+  // CylinderGeometry runs along +Y and BoxGeometry's length is on +Z; aim
+  // whichever axis is the long one down the span.
+  mesh.quaternion.setFromUnitVectors(
+    bar.shape === "box" ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0),
+    span.clone().normalize(),
+  );
+  mesh.position.copy(from).addScaledVector(span, 0.5);
+  weaponPivot.updateMatrixWorld(true);
+  weaponPivot.attach(mesh);
+  return mesh;
+}
+
 function placeholderWheels(spec) {
   const material = new THREE.MeshStandardMaterial({ color: "#181a1d", metalness: 0.2, roughness: 0.85 });
   return (spec.wheelAnchors || []).map((anchor, index) => {
@@ -160,28 +264,94 @@ function placeholderWheels(spec) {
 
 // --- GLB helpers ------------------------------------------------------------
 
-async function tryLoadScene(path) {
+// onProgress(fraction|null) reports download progress: a 0..1 fraction while
+// the response reports a total, null when it does not (chunked/gzipped
+// responses have no usable content-length, which is the common case over
+// HTTP). Callers use null to switch to an indeterminate indicator.
+async function tryLoadScene(path, onProgress) {
   try {
-    const gltf = await loader.loadAsync(path);
+    const gltf = await loader.loadAsync(path, (event) => {
+      if (typeof onProgress !== "function") return;
+      onProgress(event?.lengthComputable && event.total > 0 ? event.loaded / event.total : null);
+    });
     return gltf?.scene || null;
   } catch {
     return null; // Missing/broken GLB: every part falls back to placeholders.
   }
 }
 
+// Bounds over the geometry a mesh actually DRAWS, not over its whole position
+// buffer. glb-carve moves triangles between parts and leaves the donor's
+// vertices in place, so a deleted stand-off leg still sits in the buffer at its
+// old height — and Box3.setFromObject, which reads positions and ignores the
+// index, would keep resting the model on geometry nobody can see. Endgame came
+// out of the carve floating 0.46ft off the floor for exactly that reason.
+//
+// The local box is cached on the geometry (once per model, not per call) and
+// the world box expands by its eight transformed corners. For the axis-aligned
+// yaw/roll every bot in the catalog uses that is exact; for an arbitrary angle
+// it is the same AABB-of-rotated-AABB three.js already returns, so it is never
+// worse than what it replaces.
+const scratchCorner = new THREE.Vector3();
+function drawnLocalBox(geometry) {
+  if (geometry.userData.__drawnBox) return geometry.userData.__drawnBox;
+  const box = new THREE.Box3();
+  const pos = geometry.attributes.position;
+  const index = geometry.index;
+  if (pos) {
+    const count = index ? index.count : pos.count;
+    for (let i = 0; i < count; i += 1) {
+      scratchCorner.fromBufferAttribute(pos, index ? index.getX(i) : i);
+      box.expandByPoint(scratchCorner);
+    }
+  }
+  geometry.userData.__drawnBox = box;
+  return box;
+}
+
+function drawnBox(object, target = new THREE.Box3()) {
+  target.makeEmpty();
+  object.updateWorldMatrix(true, true);
+  object.traverse((node) => {
+    if (!node.isMesh || !node.geometry) return;
+    const local = drawnLocalBox(node.geometry);
+    if (local.isEmpty()) return;
+    for (let i = 0; i < 8; i += 1) {
+      scratchCorner.set(
+        i & 1 ? local.max.x : local.min.x,
+        i & 2 ? local.max.y : local.min.y,
+        i & 4 ? local.max.z : local.min.z,
+      ).applyMatrix4(node.matrixWorld);
+      target.expandByPoint(scratchCorner);
+    }
+  });
+  return target;
+}
+
 // Tripo GLBs are ~1-unit normalized and face +X in authoring space; the game
 // convention is feet with forward -Z (see catalog header). Rather than baking
-// transforms into the files, normalize at load: yaw by spec.modelYaw, scale to
-// the catalog footprint (spec.modelScale overrides), and rest the wheels on
-// y=0. Runs BEFORE part extraction so detach() bakes it into every part.
+// transforms into the files, normalize at load: yaw by spec.modelYaw, roll by
+// spec.modelRoll, scale to the catalog footprint (spec.modelScale overrides),
+// and rest the wheels on y=0. Runs BEFORE part extraction so detach() bakes it
+// into every part.
+//
+// modelRoll is applied on the WRAPPER, i.e. about the game-space forward axis
+// AFTER the yaw, so `Math.PI` means "this model came out of Tripo upside down"
+// no matter which way it was facing. Beware the false positive: Copperhead read
+// as upside down for a long time and was not — scan whiskers under its belly
+// reached below the wheels, so it grounded on a filament with the tyres in the
+// air, and a roll landed them by accident with the deck underneath. Carve stray
+// geometry BEFORE judging orientation; nothing in
+// the segmentation pass looks at which way is up.
 function normalizeScene(scene, spec) {
   if (!scene) return null;
   const wrapper = new THREE.Group();
   wrapper.name = "modelNormalized";
   wrapper.add(scene);
   scene.rotation.y = spec.modelYaw ?? 0;
+  wrapper.rotation.z = spec.modelRoll ?? 0;
   wrapper.updateMatrixWorld(true);
-  const bbox = new THREE.Box3().setFromObject(wrapper);
+  const bbox = drawnBox(wrapper);
   if (bbox.isEmpty()) return wrapper;
   const size = new THREE.Vector3();
   bbox.getSize(size);
@@ -189,18 +359,45 @@ function normalizeScene(scene, spec) {
   const scale = spec.modelScale ?? footprintScale;
   wrapper.scale.setScalar(scale);
   wrapper.updateMatrixWorld(true);
-  const grounded = new THREE.Box3().setFromObject(wrapper);
+  const grounded = drawnBox(wrapper);
   wrapper.position.y = -grounded.min.y;
   // Center the footprint on the origin (Tripo models are near-centered but
   // weapon overhangs skew the bbox; recenter on the body when present).
-  const bodyNode = wrapper.getObjectByName("modelBody");
-  const centerBox = bodyNode ? new THREE.Box3().setFromObject(bodyNode) : grounded;
+  // Recentre on modelBody, because a weapon baked mid-stroke drags the whole
+  // bbox off to one side. spec.modelCenterOn names a different node for the one
+  // machine where the body is NOT the thing that defines the footprint:
+  // Gigabyte is a full-body shell spinner, so its modelBody is the passive
+  // self-righting pole, and that pole arcs sideways far enough to shove the
+  // spinning dome nearly half a foot off the chassis origin.
+  const centerName = spec.modelCenterOn ?? "modelBody";
+  const bodyNode = wrapper.getObjectByName(centerName);
+  const centerBox = bodyNode ? drawnBox(bodyNode) : grounded;
   const center = new THREE.Vector3();
   centerBox.getCenter(center);
   wrapper.position.x -= center.x;
   wrapper.position.z -= center.z;
   wrapper.updateMatrixWorld(true);
   return wrapper;
+}
+
+// Match a visual wheel to the suspension probe under it. Both are in game
+// space by the time this runs (normalizeScene has applied yaw/scale), so plain
+// XZ distance is the whole story. Bots with more probes than wheels (HUGE runs
+// four probes inside two tyres) resolve to one of the probes on that side,
+// which report the same speed anyway.
+function nearestAnchorIndex(spec, center, fallback) {
+  const anchors = spec.wheelAnchors || [];
+  if (!anchors.length) return fallback;
+  let best = fallback < anchors.length ? fallback : 0;
+  let bestDistance = Infinity;
+  anchors.forEach((anchor, index) => {
+    const distance = (anchor.x - center.x) ** 2 + (anchor.z - center.z) ** 2;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = index;
+    }
+  });
+  return best;
 }
 
 function detach(node) {
@@ -223,7 +420,8 @@ function detach(node) {
  */
 export function weaponVisualAngle(visual, spec, state) {
   const type = spec.weapon?.type;
-  if (type === "flipper" || type === "hammerSaw" || type === "crusher") {
+  if (type === "flipper" || type === "hammerSaw" || type === "sawArms" || type === "crusher"
+    || type === "hammer" || type === "lifter" || type === "lifterDisc" || type === "grappler") {
     const stroke = THREE.MathUtils.clamp(state.weaponAngle ?? 0, 0, 1);
     if (visual.weaponIsPlaceholder) return stroke * (spec.weapon.throwAngle ?? 0.9);
     // GLB arms are baked in one pose (angle 0). restAngle poses the arm at
@@ -231,7 +429,8 @@ export function weaponVisualAngle(visual, spec, state) {
     // pose": bronco is baked FIRED (rest -x, fire 0), sawblaze/quantum are
     // baked at REST (rest 0, fire -x chops/clamps down).
     const rest = spec.weapon.restAngle ?? 0;
-    const fired = spec.weapon.fireAngle ?? 0;
+    // Grapplers name their top-of-travel liftAngle; it is the same thing.
+    const fired = spec.weapon.fireAngle ?? spec.weapon.liftAngle ?? 0;
     return rest + stroke * (fired - rest);
   }
   return state.weaponAngle ?? 0;
@@ -241,8 +440,8 @@ export function weaponVisualAngle(visual, spec, state) {
  * @param {import('./catalog.js').BotSpec} spec
  * @returns {Promise<{ group: THREE.Group, parts: { body: THREE.Object3D, weapon: THREE.Group|null, wheels: THREE.Object3D[] } }>}
  */
-export async function loadBotModel(spec) {
-  const scene = normalizeScene(await tryLoadScene(spec.modelPath), spec);
+export async function loadBotModel(spec, { onProgress } = {}) {
+  const scene = normalizeScene(await tryLoadScene(spec.modelPath, onProgress), spec);
 
   const group = new THREE.Group();
   group.name = `bot-${spec.id}`;
@@ -257,6 +456,7 @@ export async function loadBotModel(spec) {
   let weaponPivot = null;
   let usedGlbWeapon = false;
   let weaponSub = null;
+  const weaponSubs = [];
   if (spec.weapon) {
     weaponPivot = new THREE.Group();
     weaponPivot.name = "weaponPivot";
@@ -272,7 +472,14 @@ export async function loadBotModel(spec) {
       const pivotLocal = glbWeapon.userData?.pivotLocal;
       const center = new THREE.Vector3();
       let havePivot = false;
-      if (Array.isArray(pivotLocal) && glbWeapon.parent) {
+      // ...unless the catalog says the GLB's is wrong. Duck's plow rides on two
+      // long carrier bars back to a hinge between the axles; segmentation never
+      // saw the bars, so the pivot it wrote is at the plow itself and the scoop
+      // hinges on its own lip instead of swinging on an arm.
+      if (spec.weapon.pivotFromCatalog) {
+        center.set(pivot.x, pivot.y, pivot.z);
+        havePivot = true;
+      } else if (Array.isArray(pivotLocal) && glbWeapon.parent) {
         glbWeapon.parent.updateWorldMatrix(true, false);
         center.fromArray(pivotLocal).applyMatrix4(glbWeapon.parent.matrixWorld);
         havePivot = true;
@@ -288,27 +495,64 @@ export async function loadBotModel(spec) {
       pivot.z = center.z;
       weaponPivot.position.set(pivot.x, pivot.y, pivot.z);
       weaponPivot.attach(glbWeapon); // preserves the part's world placement
+      // Structure the scan could not see. Some mechanisms are mostly air —
+      // Duck's plow hangs off two thin bars — and photogrammetry resolves them
+      // as nothing at all, which leaves the moving part floating unattached to
+      // the hinge it turns about. They are simple enough to state as numbers.
+      for (const bar of spec.weapon.arms || []) {
+        // attach: "body" pins the part to the chassis instead of the moving
+        // group. A hydraulic ram belongs to the frame — it PUSHES the arm, it
+        // does not ride on it, and swinging it rigidly with the jaw reads as a
+        // strut welded to the wrong end.
+        buildWeaponArm(bar.attach === "body" ? group : weaponPivot, bar, spec);
+      }
       // Nested sub-spinner (modelWeaponSub-*, e.g. sawblaze's saw disc):
       // wrapped in its own pivot at its bbox center INSIDE the weapon group,
       // so it swings with the arm and spins locally.
-      let subNode = null;
+      //
+      // There can be MORE THAN ONE. A weapon with two rotors that do not share
+      // an axle needs a pivot each, because one group can only turn about one
+      // axis: Dragon King's saw blades lean 6.9 degrees apart in opposite
+      // directions, and spinning both about a single horizontal axle is the
+      // wobble you would get from bending the axle rather than the arms.
+      // parts.weaponSub stays the FIRST of them for every caller that assumes
+      // one (Claw Viper's jaw, the flame nozzle); parts.weaponSubs is the list.
+      const subNodes = [];
       glbWeapon.traverse((child) => {
-        if (!subNode && child.name?.startsWith("modelWeaponSub-")) subNode = child;
+        if (child.name?.startsWith("modelWeaponSub-")) subNodes.push(child);
       });
-      if (subNode) {
-        const parent = subNode.parent;
-        const subBox = new THREE.Box3().setFromObject(subNode);
+      for (const subNode of subNodes) {
         const subCenter = new THREE.Vector3();
-        if (!subBox.isEmpty()) subBox.getCenter(subCenter);
+        // A hinged jaw (clawviper) turns about its knuckle, not its middle, so
+        // the part map's pivotOverride wins when the partitioner baked one.
+        // Without it (sawblaze's disc) the bbox center is the axle.
+        const subPivotLocal = subNode.userData?.pivotLocal;
+        if (Array.isArray(subPivotLocal) && subNode.parent) {
+          subNode.parent.updateWorldMatrix(true, false);
+          subCenter.fromArray(subPivotLocal).applyMatrix4(subNode.parent.matrixWorld);
+        } else {
+          const subBox = new THREE.Box3().setFromObject(subNode);
+          if (!subBox.isEmpty()) subBox.getCenter(subCenter);
+        }
         const subPivot = new THREE.Group();
-        subPivot.name = "weaponSubPivot";
-        parent.add(subPivot);
-        // Box3 center is world-space; bring it into the parent's frame.
-        parent.updateWorldMatrix(true, false);
-        subPivot.position.copy(parent.worldToLocal(subCenter.clone()));
+        // Named after the GLB group so the animator can look up a per-blade
+        // axis: "modelWeaponSub-sawLeft" -> "sawLeft".
+        subPivot.name = `weaponSubPivot-${subNode.name.slice("modelWeaponSub-".length)}`;
+        // Parent to the WEAPON PIVOT, not to the sub node's GLB parent. The
+        // integrator spins this group about spec.weapon.axis, which is a game
+        // -space axis; nodes inside the GLB hierarchy still carry the
+        // normalization yaw, so under the GLB parent that axis lands rotated
+        // (sawblaze's disc span about vertical instead of in its own plane).
+        // weaponPivot is a plain group in game space, and the disc is bolted
+        // to the arm anyway, so it correctly swings with the arm from here.
+        weaponPivot.add(subPivot);
+        // Box3 center is world-space; bring it into the pivot's frame.
+        weaponPivot.updateWorldMatrix(true, false);
+        subPivot.position.copy(weaponPivot.worldToLocal(subCenter.clone()));
         subPivot.attach(subNode);
-        weaponSub = subPivot;
+        weaponSubs.push(subPivot);
       }
+      weaponSub = weaponSubs[0] ?? null;
     } else {
       weaponPivot.position.set(pivot.x, pivot.y, pivot.z);
       const placeholder = placeholderWeapon(spec);
@@ -334,15 +578,24 @@ export async function loadBotModel(spec) {
       pivot.name = `wheelPivot-${i}`;
       pivot.position.copy(center);
       pivot.attach(wheel);
+      // Which suspension probe drives this wheel: nearest catalog anchor, NOT
+      // the node's ordinal. modelWheel-N numbering follows the GLB's part map,
+      // which has no reason to agree with wheelAnchors order — on HUGE it is
+      // reversed, so the left stick spun the right wheel.
+      pivot.userData.spinIndex = nearestAnchorIndex(spec, center, i);
       wheels.push(pivot);
     }
   }
-  if (wheels.length === 0) wheels.push(...placeholderWheels(spec).map((wheel, i) => {
+  // hideWheels: the bot's real wheels are enclosed by its shell and never
+  // segmented out (Beta), so the procedural fallback would push cylinders
+  // through the bodywork. The suspension still runs off wheelAnchors.
+  if (wheels.length === 0 && !spec.hideWheels) wheels.push(...placeholderWheels(spec).map((wheel, i) => {
     const pivot = new THREE.Group();
     pivot.name = `wheelPivot-${i}`;
     pivot.position.copy(wheel.position);
     wheel.position.set(0, 0, 0);
     pivot.add(wheel);
+    pivot.userData.spinIndex = i; // placeholders are built from the anchors
     return pivot;
   }));
   wheels.forEach((wheel) => group.add(wheel));
@@ -358,11 +611,27 @@ export async function loadBotModel(spec) {
     });
     for (const node of auxNodes) {
       const name = node.name.slice("modelAux-".length);
+      // An aux group that HINGES turns about a real axle, not about the bottom
+      // of its own bounding box: Tantrum's punch arms pivot on the boss at
+      // their base, three feet behind and half a foot above where the bbox
+      // anchor put them, and anchoring them wrong swung the whole arm through
+      // the deck. Same authored extras the weapon path reads, transformed
+      // through the normalization while the node is still under it.
+      const pivotLocal = node.userData?.pivotLocal;
+      const anchorAt = new THREE.Vector3();
+      let haveAnchor = false;
+      if (Array.isArray(pivotLocal) && node.parent) {
+        node.parent.updateWorldMatrix(true, false);
+        anchorAt.fromArray(pivotLocal).applyMatrix4(node.parent.matrixWorld);
+        haveAnchor = true;
+      }
       detach(node);
       const bbox = new THREE.Box3().setFromObject(node);
       const anchor = new THREE.Group();
       anchor.name = `auxAnchor-${name}`;
-      if (!bbox.isEmpty()) {
+      if (haveAnchor) {
+        anchor.position.copy(anchorAt);
+      } else if (!bbox.isEmpty()) {
         const center = new THREE.Vector3();
         bbox.getCenter(center);
         anchor.position.set(center.x, bbox.min.y, center.z);
@@ -373,10 +642,12 @@ export async function loadBotModel(spec) {
     }
   }
 
+
+  repaintScanned(group, spec);
   markShadows(group);
   return {
     group,
-    parts: { body, weapon: weaponPivot, wheels, aux, weaponSub },
+    parts: { body, weapon: weaponPivot, wheels, aux, weaponSub, weaponSubs },
     weaponIsPlaceholder: Boolean(spec.weapon) && !usedGlbWeapon,
   };
 }

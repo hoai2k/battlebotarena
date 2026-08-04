@@ -4,14 +4,38 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BattleBot Arena</title>
-    <link rel="icon" type="image/png" href="../favicon.png" />
-    <link rel="apple-touch-icon" href="../favicon.png" />
     <link rel="stylesheet" href="./styles/base.css" />
     <link rel="stylesheet" href="./styles/screens.css" />
     <link rel="stylesheet" href="./styles/hud.css" />
   </head>
   <body data-screen="title">
     <canvas id="scene"></canvas>
+
+    <!-- Boot gate: covers the blank first paint while the module graph
+         (three.js + Rapier, several MB) downloads and parses. Torn down by
+         the boot script at the bottom whether main.js succeeds or falls
+         back to preview mode. -->
+    <div id="boot-loader" class="loader-overlay is-open" role="status" aria-live="polite">
+      <div class="loader-panel">
+        <span class="loader-spinner" aria-hidden="true"></span>
+        <span class="loader-title">BATTLEBOT ARENA</span>
+        <span class="loader-detail">Warming up the pit&hellip;</span>
+        <span class="loader-bar loader-bar-indeterminate" aria-hidden="true"><i></i></span>
+      </div>
+    </div>
+
+    <!-- Shared progress overlay for anything the player has to wait on
+         (bot models are 10-17MB each, plus the physics engine). Driven by
+         src/ui/loader.js. -->
+    <div id="asset-loader" class="loader-overlay" hidden role="status" aria-live="polite">
+      <div class="loader-panel">
+        <span class="loader-spinner" aria-hidden="true"></span>
+        <span id="asset-loader-title" class="loader-title">LOADING</span>
+        <span id="asset-loader-detail" class="loader-detail"></span>
+        <span id="asset-loader-bar" class="loader-bar"><i id="asset-loader-fill"></i></span>
+        <span id="asset-loader-pct" class="loader-pct"></span>
+      </div>
+    </div>
     <button id="btn-fullscreen" type="button" title="Fullscreen" aria-label="Toggle fullscreen"
       style="position:fixed;top:14px;right:14px;z-index:60;width:40px;height:40px;background:rgba(10,12,16,0.72);border:1px solid rgba(255,255,255,0.22);color:#fff;font:700 18px/1 system-ui;cursor:pointer;border-radius:4px;">⛶</button>
     <div id="app">
@@ -57,10 +81,19 @@
       </section>
 
       <!-- ============================================= BOT SELECT -->
-      <section id="screen-botSelect" class="screen screen-select" data-screen-name="botSelect" aria-hidden="true">
+      <!-- Hangar layout: each chosen bot renders live in its pod's 3D window
+           (engine/botPreview.js draws into #preview-canvas behind the DOM;
+           the pod view areas are transparent scissor rects into it). -->
+      <!-- data-nav-wrap-down: coming off the bottom of the roster, wrap to
+           FIGHT rather than to whatever geometry says is topmost. Ignored while
+           FIGHT is disabled, so before both bots are picked it wraps to the top
+           of the screen as usual. -->
+      <section id="screen-botSelect" class="screen screen-select" data-screen-name="botSelect"
+               data-nav-wrap-down="#btn-fight" aria-hidden="true">
         <div class="screen-backdrop"></div>
+        <canvas id="preview-canvas" aria-hidden="true"></canvas>
         <header class="select-head">
-          <button id="btn-select-back" class="btn btn-sm" type="button"><span>&#9668; TITLE</span></button>
+          <button id="btn-select-back" class="btn btn-sm" type="button"><span>&#9668; EXIT</span></button>
           <h2 id="sel-step" class="select-step">STEP 1 — CHOOSE YOUR BOT</h2>
           <div class="difficulty" role="group" aria-label="AI difficulty">
             <span class="difficulty-label">AI LEVEL</span>
@@ -71,17 +104,54 @@
             </span>
           </div>
         </header>
-        <div class="vs-strip">
-          <button id="slot-player" class="vs-slot vs-slot-player is-armed" type="button" data-role="YOU">
-            <span class="vs-slot-body"></span>
-          </button>
-          <div class="vs-mid">
-            <span class="vs-label">VS</span>
-            <button id="btn-fight" class="btn btn-primary btn-xl" type="button" disabled><span>FIGHT</span></button>
+        <div class="select-stage">
+          <div id="pod-player" class="preview-pod pod-player is-armed">
+            <!-- data-nav-*: stepping across the stage stops at FIGHT rather
+                 than jumping pod to pod (see gamepadNav's hintedNext). -->
+            <button id="slot-player" class="pod-plate" type="button" data-role="YOU" data-nav-right="#btn-fight">
+              <span class="pod-plate-body"></span>
+            </button>
+            <div id="pod-view-player" class="pod-view">
+              <!-- The baked stand-in, shown while the real model downloads. Sized
+                   and placed by engine/posters.js; empty until a bot is staged. -->
+              <img id="pod-poster-player" class="pod-poster" alt="" hidden draggable="false" />
+              <span class="pod-empty">PICK<br />YOUR BOT</span>
+              <span class="pod-loading loader-spinner" hidden></span>
+            </div>
+            <div class="pod-foot">
+              <span class="pod-badge"></span>
+              <span class="pod-stats"></span>
+              <span id="pod-controls-player" class="pod-controls"></span>
+            </div>
           </div>
-          <button id="slot-rival" class="vs-slot vs-slot-rival" type="button" data-role="RIVAL">
-            <span class="vs-slot-body"></span>
-          </button>
+          <div class="select-mid">
+            <span class="vs-label">VS</span>
+            <button id="btn-fight" class="btn btn-primary btn-xl" type="button" disabled
+                    data-nav-left="#slot-player" data-nav-right="#slot-rival"><span>FIGHT</span></button>
+            <div class="pod-controls-hint">
+              R-STICK ORBIT &middot; LT ZOOM<br />
+              RT / RB / LB / LT RUN THE WEAPONS<br />
+              MOUSE DRAG &middot; WHEEL ZOOM
+            </div>
+          </div>
+          <div id="pod-rival" class="preview-pod pod-rival">
+            <button id="slot-rival" class="pod-plate" type="button" data-role="RIVAL" data-nav-left="#btn-fight">
+              <span class="pod-plate-body"></span>
+            </button>
+            <div id="pod-view-rival" class="pod-view">
+              <!-- The baked stand-in, shown while the real model downloads. Sized
+                   and placed by engine/posters.js; empty until a bot is staged. -->
+              <img id="pod-poster-rival" class="pod-poster" alt="" hidden draggable="false" />
+              <span class="pod-empty">PICK THE<br />OPPONENT</span>
+              <span class="pod-random-glyph" aria-hidden="true">?</span>
+              <span class="pod-loading loader-spinner" hidden></span>
+            </div>
+            <div class="pod-foot">
+              <span class="pod-badge"></span>
+              <span class="pod-stats"></span>
+              <span id="pod-controls-rival" class="pod-controls"></span>
+            </div>
+          </div>
         </div>
         <div id="bot-grid" class="bot-grid" role="listbox" aria-label="Bot roster"></div>
       </section>
@@ -190,8 +260,15 @@
       // Boot: main.js (integrator-owned) wires renderer + sim + game + UI.
       // If it is missing or fails to load, fall back to UI preview mode so the
       // screens stay verifiable — createUI with a stub bus and logged actions.
+      const boot = document.getElementById("boot-loader");
+      const closeBoot = () => {
+        if (!boot) return;
+        boot.classList.remove("is-open");
+        setTimeout(() => boot.remove(), 400);
+      };
       try {
         await import("./src/main.js");
+        closeBoot();
       } catch (err) {
         console.warn("[BBA2] main.js unavailable — starting UI preview mode.", err);
         const [{ createUI }, { createEventBus }] = await Promise.all([
@@ -204,6 +281,7 @@
           onAction: (action) => console.log("[BBA2 preview] action:", action),
         });
         window.__bba2Preview = { ui, bus };
+        closeBoot();
       }
     </script>
   </body>

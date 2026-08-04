@@ -1,0 +1,45 @@
+[
+  {
+    "_comment": "Make Glitch bilaterally symmetric. Tripo resolved one side of the wedge further out than the other, so the arrowhead was lopsided: the plate ran from x -0.620 to +0.469 about a centreline that is at neither the bounding-box centre (-0.076) nor x=0. Three separate measurements of where the centreline SHOULD be disagreed by up to 0.15 model units, and picking wrong does visible damage, so the plane was chosen by eye in debug/glitch-mirror.html against the reference photo: turn the model +2.00 degrees about its own centre, then mirror about x = -0.142 keeping the +X half. The two numbers are not independent - the yaw decides which raw geometry lands on each side of the plane - which is why the tool applies them in this order and so does this file.",
+    "_order": "Every rotate runs before every mirror. glb-carve applies ops in file order on one in-memory document, and the mirror plane is only meaningful once the yaw is baked.",
+    "part": 0, "mode": "rotate", "axis": 1, "angle": 0.0349066, "pivot": [-0.075, 0.0, 0.067]
+  },
+  { "part": 1, "mode": "rotate", "axis": 1, "angle": 0.0349066, "pivot": [-0.075, 0.0, 0.067] },
+  { "part": 2, "mode": "rotate", "axis": 1, "angle": 0.0349066, "pivot": [-0.075, 0.0, 0.067] },
+  { "part": 3, "mode": "rotate", "axis": 1, "angle": 0.0349066, "pivot": [-0.075, 0.0, 0.067] },
+  { "part": 4, "mode": "rotate", "axis": 1, "angle": 0.0349066, "pivot": [-0.075, 0.0, 0.067] },
+  { "part": 5, "mode": "rotate", "axis": 1, "angle": 0.0349066, "pivot": [-0.075, 0.0, 0.067] },
+  { "part": 6, "mode": "rotate", "axis": 1, "angle": 0.0349066, "pivot": [-0.075, 0.0, 0.067] },
+  { "part": 7, "mode": "rotate", "axis": 1, "angle": 0.0349066, "pivot": [-0.075, 0.0, 0.067] },
+  { "part": 8, "mode": "rotate", "axis": 1, "angle": 0.0349066, "pivot": [-0.075, 0.0, 0.067] },
+  { "part": 9, "mode": "rotate", "axis": 1, "angle": 0.0349066, "pivot": [-0.075, 0.0, 0.067] },
+  { "part": 10, "mode": "rotate", "axis": 1, "angle": 0.0349066, "pivot": [-0.075, 0.0, 0.067] },
+  { "part": 11, "mode": "rotate", "axis": 1, "angle": 0.0349066, "pivot": [-0.075, 0.0, 0.067] },
+  { "part": 12, "mode": "rotate", "axis": 1, "angle": 0.0349066, "pivot": [-0.075, 0.0, 0.067] },
+
+  {
+    "_comment": "Parts 0-5 lie ENTIRELY on the discarded side (their highest x is -0.155, still short of the plane at -0.142), so a mirror op on them would keep zero triangles and throw. They are the left-hand wheel pod, its motor can, the left rear blade and three specks - all of which the segmenter cut out on that side only. Their opposite numbers were never cut out at all: the right-hand pod and blade are still buried in parts 10 and 7, so the mirror below regenerates them. Deleting these is what the preview showed, because clipping to the kept half is exactly a delete.",
+    "part": 0, "mode": "drop"
+  },
+  { "part": 1, "mode": "drop" },
+  { "part": 2, "mode": "drop" },
+  { "part": 3, "mode": "drop" },
+  { "part": 4, "mode": "drop" },
+  { "part": 5, "mode": "drop" },
+
+  {
+    "_comment": "Slide the drum onto the centreline BEFORE mirroring it, or the mirror shortens it. The drum runs x -0.3050 to -0.0262, so its centre is at -0.1656 and the plane at -0.142 cuts it off-centre: keeping the + side would leave 0.139 to reflect and a drum 0.223 long instead of 0.279, a fifth of the weapon gone. Offset by +0.0236 first and the plane lands on its own axis, so the reflection restores full length and squares the drum on the machine at the same time - which matters more here than anywhere else on the bot, because this is the part that spins. A node offset, not new vertices: the geometry was never wrong, only its place. Its ends still tuck inside the bearing blocks (part 9 and the mirror of it) exactly as they do in the reference photo.",
+    "node": "tripo_part_6", "mode": "transform", "offset": [0.0236, 0, 0]
+  },
+
+  {
+    "_comment": "The mirror itself. Parts 8, 9 and 12 sit wholly on the kept side, so for them this is a duplication onto the other side rather than a repair - which is right: 12 is the right-hand pod's top plate and 9 is the drum's right bearing block, and both need a partner. The weapon pivot moves with the drum - see glitch-drum-axle.json, re-measured after this runs.",
+    "part": 6, "mode": "mirror", "axis": 0, "plane": -0.142, "keep": "+"
+  },
+  { "part": 7, "mode": "mirror", "axis": 0, "plane": -0.142, "keep": "+" },
+  { "part": 8, "mode": "mirror", "axis": 0, "plane": -0.142, "keep": "+" },
+  { "part": 9, "mode": "mirror", "axis": 0, "plane": -0.142, "keep": "+" },
+  { "part": 10, "mode": "mirror", "axis": 0, "plane": -0.142, "keep": "+" },
+  { "part": 11, "mode": "mirror", "axis": 0, "plane": -0.142, "keep": "+" },
+  { "part": 12, "mode": "mirror", "axis": 0, "plane": -0.142, "keep": "+" }
+]

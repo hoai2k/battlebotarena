@@ -1,0 +1,6 @@
+[
+  { "_comment": "Runs AFTER glitch-mirror.json, and has to be re-run whenever that changes, because the mirror moves the drum. Three passes got here: the part map guessed Glitch's drum axle as a clean transverse [1,0,0]; a covariance fit over the drum's own vertices put it at [0.4483, 0.0567, -0.8921]; glitch-square.json baked that 27-degree skew out of the model and left [0.9984, 0.0567, 0.0003]; glitch-mirror.json then made the drum symmetric about x = -0.142, and a shape symmetric about a plane perpendicular to X cannot carry an axle tilted out of that plane, so the residual 3.25-degree y-tilt is gone and this one is exactly transverse. The point is a best-fit axle through the drum, measured in game space by rig-inspect --axle and converted back with --toglb 0,0.440,-0.240. Its x lands on -0.142, the mirror plane itself, which is the check that the two repairs agree. The loader spins the mesh about extras.weaponAxis through extras.pivotLocal, so a wrong value here is a drum that wobbles instead of spinning.",
+    "mode": "pivot", "node": "modelWeapon",
+    "pivotLocal": [-0.142, 0.023, 0.1474],
+    "weaponAxis": [1, 0, 0] }
+]

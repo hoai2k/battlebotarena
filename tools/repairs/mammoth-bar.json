@@ -1,0 +1,14 @@
+[
+ {
+  "_comment": "Mammoth's bar was not spinning — only its hub was. Segmentation fused the trunk into the truss and modelWeapon ended up holding just the centre casting (parts 28/29/902, swept radius 0.831), while the two big arms that ARE the bar stayed filed under modelBody. The catalog even documented the consequence: weapon.radius was set to a tuned 2.022 with a note that 'the visual disc is smaller than the hitbox', because the picture showed a spinning hub while the sim swung a 2ft bar. These are the two arms: part 23 reaches UP and slightly aft (game y 3.938..6.066, z -1.055..0.214) and part 30 DOWN and forward (y 0.631..3.025, z -2.441..-0.718), i.e. opposite each other about the axle at (-0.020, 3.317, -0.912). Both are narrow and centred in x (|x| < 0.62), which is what a part rotating about the X axis has to be — the sweep is in the Y-Z plane, so anything wide in x could not be on the rotor.",
+  "mode": "reparent",
+  "part": 23,
+  "parent": "modelWeapon"
+ },
+ {
+  "_comment": "The opposite arm.",
+  "mode": "reparent",
+  "part": 30,
+  "parent": "modelWeapon"
+ }
+]

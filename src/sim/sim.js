@@ -7,6 +7,7 @@ import { SPAWNS } from "./arenaSpec.js";
 import { createVehicle, completeInput } from "./vehicle.js";
 import { createWeapon } from "./weapons.js";
 import { createHazards } from "./hazards.js";
+import { createWedges } from "./wedges.js";
 import { createContactRouter } from "./contacts.js";
 import * as m from "./math.js";
 
@@ -35,6 +36,7 @@ export async function createSim({ bots, emit }) {
   );
   const hazards = createHazards({ world, meta, emit, getVehicle: (i) => vehicles[i] });
   const contacts = createContactRouter({ world, meta, emit });
+  const wedges = createWedges({ world, meta, vehicles });
 
   let paused = false;
   let accumulator = 0;
@@ -46,6 +48,18 @@ export async function createSim({ bots, emit }) {
       position: m.clone(body.translation()),
       quaternion: m.qClone(body.rotation()),
       weaponAngle: weapons[i].getAngle(),
+      weaponSubAngle: weapons[i].getSubAngle?.() ?? 0,
+      // 0..1 along a sliding weapon's track (Tantrum's drum carriage).
+      weaponTrack: weapons[i].getTrack?.() ?? 0,
+      // Named aux mechanisms (Dragon King's jaw and its rotating track pods).
+      // The jaw follows the aux button; the pods are driven by the sim itself,
+      // because pod rotation is how this machine self-rights and asking the
+      // player for a fourth button to stand back up is not a mechanic.
+      weaponAuxAngle: weapons[i].getAuxAngle?.() ?? 0,
+      // How far the chassis has reared up, 0..1. Named for the node the
+      // RENDERER puts it on: the pods are counter-rotated by it so they stay
+      // flat while the body swings over them.
+      auxPodAngle: vehicles[i].podAngle?.() ?? 0,
       weaponRatio: weapons[i].getRatio(),
       wheelSpin: vehicles[i].getWheelSpin(),
       probeCompression: vehicles[i].probeCompression(),
@@ -63,10 +77,23 @@ export async function createSim({ bots, emit }) {
     for (let i = 0; i < weapons.length; i++) {
       weapons[i].update(FIXED_DT, inputs[i].weapon, {
         foe: vehicles[1 - i],
+        // Weapons that can act ON another weapon (a rotor clash, a hammer coming
+        // down on a spinning shell) need the other machine's mechanism, not just
+        // its body.
+        foeWeapon: weapons[1 - i],
         simTime,
         world,
+        // Spinner gyro and the lifter's disc toggle both need more than the
+        // weapon button, so the whole input rides along.
+        input: inputs[i],
       });
     }
+    // Wedges act on the contacts the last step produced, before this one.
+    wedges.update(FIXED_DT);
+    // Motion as it stands NOW, before the solver spends it. Contact events are
+    // drained after the step, by which point a head-on has already been resolved
+    // and the closing speed that made it a hit no longer exists anywhere.
+    contacts.capture(vehicles.map((v) => v.body));
     world.step(eventQueue);
     contacts.process(eventQueue, simTime);
     simTime += FIXED_DT;
@@ -105,6 +132,10 @@ export async function createSim({ bots, emit }) {
         position: m.lerpV3(prev[i].position, curr[i].position, t),
         quaternion: m.qNlerp(prev[i].quaternion, curr[i].quaternion, t),
         weaponAngle: m.lerp(prev[i].weaponAngle, curr[i].weaponAngle, t),
+        weaponSubAngle: m.lerp(prev[i].weaponSubAngle, curr[i].weaponSubAngle, t),
+        weaponTrack: m.lerp(prev[i].weaponTrack, curr[i].weaponTrack, t),
+        weaponAuxAngle: m.lerp(prev[i].weaponAuxAngle, curr[i].weaponAuxAngle, t),
+        auxPodAngle: m.lerp(prev[i].auxPodAngle, curr[i].auxPodAngle, t),
         weaponRatio: m.lerp(prev[i].weaponRatio, curr[i].weaponRatio, t),
         wheelSpin: curr[i].wheelSpin.map((s, w) => m.lerp(prev[i].wheelSpin[w], s, t)),
         probeCompression: curr[i].probeCompression.slice(),

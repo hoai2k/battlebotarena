@@ -1,0 +1,15 @@
+{
+  "weapon": [12, 13, 14, 16],
+  "weaponSub": {
+    "name": "saws",
+    "parts": [10, 11],
+    "pivotOverride": [0, 0.24, -0.1]
+  },
+  "wheels": [],
+  "weaponAxis": [1, 0, 0],
+  "pivotOverride": [0, 0.05, -0.12],
+  "aux": {
+    "jaw":  { "parts": [1, 0], "axis": [1, 0, 0], "pivotOverride": [0, 0.0, 0.12] },
+    "pods": { "parts": [6, 7], "axis": [1, 0, 0], "pivotOverride": [0, -0.05, -0.03] }
+  }
+}

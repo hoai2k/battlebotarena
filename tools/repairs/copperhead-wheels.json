@@ -1,0 +1,25 @@
+[
+ {
+  "_comment": "Copperhead's tyres floated. MEASURED through the loader: the tyre bottoms sat at game y 0.2156 while the bottom pan (part 13) reached y 0.000, so the machine rested on its belly and its wheels hung 2.6in clear of the floor — the reference photo has it the other way round, chassis slung between two big tyres with only the fork skids reaching down. The scan mounted the wheels high: tyre centres at y 0.721 against a body mid-height of 0.557. Dropping them 0.26ft puts the tyre bottoms 0.044ft BELOW the pan, so grounding lands on the tyres and they prop the rest of the machine up slightly, and it walks the tyre centres to 0.461, much nearer the chassis centreline the photo shows. Game -> GLB on y is 0.3077 units per foot (measured with rig-inspect --toglb), so 0.26ft is 0.08 GLB units.",
+  "mode": "transform",
+  "node": "tripo_part_0",
+  "offset": [0, -0.08, 0]
+ },
+ {
+  "_comment": "The other tyre, same drop.",
+  "mode": "transform",
+  "node": "tripo_part_37",
+  "offset": [0, -0.08, 0]
+ },
+ {
+  "_comment": "A wheel turns about its GROUP's pivotLocal, not about its own geometry, so the two pivots have to come down with the tyres or the tyres orbit a point 0.26ft above their own axles — a wobble far uglier than the float. Both pivots were at y 0.16002/0.16004 and lose the same 0.08.",
+  "mode": "pivot",
+  "node": "modelWheel-0",
+  "pivotLocal": [0.008781726006418467, 0.08002506762742996, 0.3950364589691162]
+ },
+ {
+  "mode": "pivot",
+  "node": "modelWheel-1",
+  "pivotLocal": [0.013943533413112164, 0.0800358486175537, -0.3865139037370682]
+ }
+]

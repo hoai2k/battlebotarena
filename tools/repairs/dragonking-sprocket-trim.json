@@ -1,0 +1,12 @@
+[
+  {
+    "_comment": "Take the pod's INNER structure back out of the two rear sprockets. dragonking-sprockets.json cut a cylinder the full width of each pod, which is right for the three wheels whose bore is hollow — those plugs came out as clean discs — and wrong for the rear pair: on that end the cylinder also swallowed the axle tube and the drive housing that run inboard from the wheel, so the part that turns is a wheel with a foot-long lump of chassis welded to it, and what you see rotating is the lump. The front plugs stop at |x| 0.25 by themselves, because inside that radius the pod is hollow between its two faces; the rear ones ran on to |x| 0.07, the inboard skin.",
+    "_split": "|x| = 0.245, the gap the front wheels already leave. Outboard of it is the wheel; inboard is frame. The frame is EXTRACTED rather than deleted - it is real geometry that belongs on the robot, it just has to stop turning - and it lands in modelAux-pods with the pods, which is where the rest of the chassis-side track hardware lives.",
+    "part": 61, "mode": "extract", "newPart": 62, "parent": "modelAux-pods",
+    "region": { "type": "box", "min": [-1, -1, -1], "max": [0.245, 1, 1] }
+  },
+  {
+    "part": 71, "mode": "extract", "newPart": 72, "parent": "modelAux-pods",
+    "region": { "type": "box", "min": [-0.245, -1, -1], "max": [1, 1, 1] }
+  }
+]

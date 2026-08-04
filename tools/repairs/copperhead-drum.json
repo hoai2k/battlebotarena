@@ -1,0 +1,3 @@
+[{ "part": 13, "mode": "extract", "newPart": 901,
+   "region": { "type": "cylinder", "axis": 2, "center": [0.29, 0.10, -0.01],
+               "radius": 0.125, "halfLength": 0.27 } }]

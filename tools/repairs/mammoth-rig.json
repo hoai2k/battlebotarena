@@ -1,0 +1,29 @@
+[
+ {
+  "part": 23,
+  "mode": "extract",
+  "newPart": 902,
+  "parent": "modelWeapon",
+  "region": {
+   "type": "cylinder",
+   "axis": 0,
+   "center": [
+    -0.02,
+    0.041,
+    -0.152
+   ],
+   "radius": 0.14,
+   "halfLength": 0.16
+  }
+ },
+ {
+  "mode": "reparent",
+  "part": 14,
+  "parent": "modelBody"
+ },
+ {
+  "mode": "reparent",
+  "part": 16,
+  "parent": "modelBody"
+ }
+]

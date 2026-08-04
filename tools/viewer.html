@@ -32,8 +32,38 @@ renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x14161a);
+// Same environment the game reflects, so a material judged here is judged the
+// way it will look in the arena. Metal has no diffuse term — without this a
+// polished part renders black and the viewer lies about it.
+{
+  const c = document.createElement("canvas");
+  c.width = 64; c.height = 128;
+  const g = c.getContext("2d");
+  const sky = g.createLinearGradient(0, 0, 0, c.height);
+  sky.addColorStop(0.0, "#9fb6d8"); sky.addColorStop(0.45, "#54607a");
+  sky.addColorStop(0.52, "#2a2f38"); sky.addColorStop(1.0, "#14120f");
+  g.fillStyle = sky; g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = "rgba(255, 246, 226, 0.85)"; g.fillRect(0, c.height * 0.40, c.width, c.height * 0.045);
+  g.fillStyle = "rgba(190, 214, 255, 0.35)"; g.fillRect(0, c.height * 0.30, c.width, c.height * 0.02);
+  const tex = new THREE.CanvasTexture(c);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  scene.environment = pmrem.fromEquirectangular(tex).texture;
+  scene.environmentIntensity = 0.8;
+  pmrem.dispose(); tex.dispose();
+}
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.01, 100);
-camera.position.set(1.4, 0.9, 1.4);
+// &cam=az,el,dist in degrees/units, so a headless screenshot can look at the
+// bot from somewhere other than the one fixed three-quarter view. Orbiting by
+// hand is not available to a probe.
+const camArg = (params.get("cam") || "").split(",").map(Number);
+if (camArg.length === 3 && camArg.every((v) => Number.isFinite(v))) {
+  const [az, el, dist] = camArg;
+  const a = (az * Math.PI) / 180;
+  const e = (el * Math.PI) / 180;
+  camera.position.set(Math.cos(e) * Math.sin(a) * dist, Math.sin(e) * dist, Math.cos(e) * Math.cos(a) * dist);
+} else camera.position.set(1.4, 0.9, 1.4);
 const controls = new OrbitControls(camera, renderer.domElement);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x334, 2.2));
 const key = new THREE.DirectionalLight(0xffffff, 2.5);
@@ -44,15 +74,36 @@ scene.add(new THREE.GridHelper(2, 20, 0x333333, 0x222222));
 const hud = document.querySelector("#hud");
 window.__viewer = { scene, camera, controls, THREE }; // debug hook
 const partsMode = params.get("parts") === "1"; // rainbow-tint raw tripo_part_N nodes
+// A part is not always ONE node. `mirror` and `clone` in glb-carve.mjs add a
+// second node under the same name, and GLTFLoader makes scene-graph names
+// unique by appending _1, _2 — so a strict /^tripo_part_(\d+)$/ silently
+// matched the original half of a repaired part and none of its copies, which
+// is exactly backwards for a viewer whose job is checking those repairs.
+// \d+ is greedy, so tripo_part_10 still reads as part 10, not part 1 copy 0.
+const PART_NAME = /^tripo_part_(\d+)(?:_\d+)?$/;
+// &only=19,20 shows just those parts, &hide=5 shows everything but. "Which part
+// is that bit?" is otherwise a guessing game against a table of bounding boxes,
+// and the answer decides whether a carve deletes the right geometry.
+const onlyParts = (params.get("only") || "").split(",").filter(Boolean).map(Number);
+const hideParts = (params.get("hide") || "").split(",").filter(Boolean).map(Number);
 new GLTFLoader().load(src, (gltf) => {
   scene.add(gltf.scene);
+  if (onlyParts.length || hideParts.length) {
+    gltf.scene.traverse((object) => {
+      const match = PART_NAME.exec(object.name || "");
+      if (!match) return;
+      const index = Number(match[1]);
+      if (onlyParts.length) object.visible = onlyParts.includes(index);
+      if (hideParts.includes(index)) object.visible = false;
+    });
+  }
   const lines = [`${src}`];
   if (partsMode) {
     const palette = [0xe6194b, 0x3cb44b, 0xffe119, 0x4363d8, 0xf58231, 0x911eb4, 0x46f0f0, 0xf032e6,
       0xbcf60c, 0xfabebe, 0x008080, 0xe6beff, 0x9a6324, 0xfffac8, 0x800000, 0xaaffc3,
       0x808000, 0xffd8b1, 0x000075, 0x808080, 0xffffff, 0xff4500, 0x7fff00, 0x1e90ff];
     gltf.scene.traverse((object) => {
-      const match = /^tripo_part_(\d+)$/.exec(object.name || "");
+      const match = PART_NAME.exec(object.name || "");
       if (!match) return;
       const index = Number(match[1]);
       const color = palette[index % palette.length];

@@ -1,0 +1,9 @@
+[
+  {
+    "_comment": "Put Dragon King's pod group on the axle it actually turns about. modelAux-pods carried pivotLocal [0, -0.05, -0.03], and -0.03 is the pods' BOUNDING BOX centre (they run z -0.291..0.223) - the fallback answer, not a measurement. The height was right; the fore-aft was the middle of the pod, a third of its length ahead of the axle. It matters twice over: the renderer counter-rotates this group by however far the chassis has reared so the pods stay flat, and about the wrong point that cancellation leaves them skating forward while the body comes up.",
+    "_measured": "Kasa circle fit, model space. The cross bar between the pods is two cylinders (parts 2 and 4) and they fit at z 0.1418 and 0.1410, y -0.0511 and -0.0500. The rear sprockets, fit independently off each pod's own silhouette, come out at z 0.1443/0.1441, y -0.0481. Four fits of two different things agreeing to 0.003 is what says the bar IS the rear axle rather than a bumper that happens to be back there. z 0.1428 and y -0.0495 are their means.",
+    "node": "modelAux-pods",
+    "mode": "pivot",
+    "pivotLocal": [0, -0.0495, 0.1428]
+  }
+]

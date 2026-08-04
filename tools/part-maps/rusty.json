@@ -1,0 +1,6 @@
+{
+  "weapon": [2, 22, 12],
+  "wheels": [],
+  "weaponAxis": [0, 0, -1],
+  "pivotOverride": [0.28, 0.05, 0]
+}

@@ -180,6 +180,42 @@
 .screen-select {
   padding: clamp(12px, 2vh, 26px) clamp(16px, 3vw, 40px);
   gap: clamp(10px, 1.6vh, 18px);
+  /* This screen NEVER scrolls. Everything you need in order to choose has to be
+     on it at once: scrolling meant picking a bot from the bottom row updated a
+     pod you could not see, which reads as nothing happening, and it took a pile
+     of scroll-into-view rules to paper over. The grid is a fixed cost — it is
+     the whole roster and every card has to stay reachable — so the STAGE is
+     what flexes, taking whatever is left over. That also gets the viewers as
+     big as this screen can make them for free, which is what the fixed 56vh
+     heights were reaching for and what made it overflow.
+
+     `auto` rather than `hidden` is a safety valve, not a plan: below about
+     560px of viewport a pod cannot be drawn at a usable size AND leave room for
+     three rows of roster, and a scrollbar there is far better than clipping the
+     FIGHT button out of reach. At every size anyone plays at, there is nothing
+     to scroll. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* The live showcase canvas is FIXED to the viewport, not to the scrolling
+   content: the previewer positions its viewports by measuring each pod against
+   the canvas rect every frame, so a pod that scrolls simply scissors smaller.
+   The header stays put over it while the grid scrolls beneath. */
+#preview-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.screen-select > .select-head,
+.screen-select > .select-stage,
+.screen-select > .bot-grid {
+  position: relative;
+  z-index: 1;
 }
 
 .select-head {
@@ -187,6 +223,7 @@
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 16px;
+  flex: 0 0 auto; /* the screen scrolls; nothing in it may be squeezed */
 }
 
 .select-head > :last-child {
@@ -261,19 +298,45 @@
   text-shadow: none;
 }
 
-/* ------------------------------------------------------------- versus strip */
+/* ------------------------------------------------------- showcase stage
+   Two pods flank the VS column. A pod is: claim plate (button) on top, the
+   3D view window in the middle (transparent — the canvas draws behind it),
+   and a foot row with weapon badge, stat pips and the TEST WEAPON trigger. */
 
-.vs-strip {
+/* The stage takes everything the header and the roster do not. There is no
+   fixed height and no size classes any more: a vh figure is a guess about how
+   tall the grid will be, and every guess that was too generous overflowed a
+   screen that must not scroll. `flex: 1 1 auto` with `min-height: 0` is the
+   same intent stated as a constraint instead — as big as it can be, never
+   bigger than fits. The floor is there so a very short window still shows a
+   usable window rather than a sliver. */
+.select-stage {
+  flex: 1 1 auto;
+  /* A flat number, not a vh: this is "the least a pod can be and still be a
+     pod" — plate, a window you can see a bot in, and the foot row. Expressed as
+     a fraction of the viewport it collapses on a short window and the roster
+     draws straight over the pods instead of pushing them. */
+  min-height: 240px;
   display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: clamp(14px, 2.2vw, 34px);
   align-items: stretch;
-  gap: clamp(12px, 2vw, 28px);
 }
 
-.vs-slot {
+.preview-pod {
+  --accent: var(--muted);
   position: relative;
   display: flex;
-  min-height: 92px;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+
+.pod-plate {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 58px;
   padding: 0;
   border: 1px solid var(--line);
   background:
@@ -285,15 +348,19 @@
   clip-path: polygon(
     var(--cut) 0,
     100% 0,
-    100% calc(100% - var(--cut)),
-    calc(100% - var(--cut)) 100%,
+    100% calc(100% - 10px),
+    calc(100% - 10px) 100%,
     0 100%,
     0 var(--cut)
   );
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
-.vs-slot::before {
+.preview-pod.is-filled .pod-plate {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.pod-plate::before {
   content: attr(data-role);
   position: absolute;
   top: 0;
@@ -307,123 +374,330 @@
   z-index: 1;
 }
 
-.vs-slot-player::before {
+.pod-player .pod-plate::before {
   left: var(--cut);
   --role-color: linear-gradient(180deg, var(--red-hot), var(--red));
   color: #fff;
 }
 
-.vs-slot-rival::before {
+.pod-rival .pod-plate::before {
   right: var(--cut);
   --role-color: linear-gradient(180deg, var(--yellow), var(--amber));
   clip-path: polygon(8px 0, 100% 0, 100% 100%, 0 100%);
 }
 
-.vs-slot.is-armed {
-  border-color: var(--line-strong);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
-    0 0 26px rgba(255, 210, 61, 0.14);
-}
-
-.vs-slot.is-armed::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border: 1px dashed rgba(255, 210, 61, 0.4);
-  pointer-events: none;
-  animation: armedPulse 1.6s ease-in-out infinite;
-}
-
-@keyframes armedPulse {
-  50% {
-    border-color: rgba(255, 210, 61, 0.08);
-  }
-}
-
-.vs-slot-body {
+.pod-plate-body {
   display: flex;
-  align-items: center;
-  gap: 14px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
   width: 100%;
-  padding: 20px 18px 12px;
+  min-width: 0;
+  padding: 19px 18px 8px;
 }
 
-.vs-slot-rival .vs-slot-body {
-  flex-direction: row-reverse;
+.pod-rival .pod-plate-body {
+  align-items: flex-end;
   text-align: right;
 }
 
-.vs-slot-empty {
-  width: 100%;
-  font-family: var(--font-display);
-  font-size: 1rem;
-  letter-spacing: 0.2em;
-  line-height: 1.4;
-  color: rgba(147, 160, 177, 0.55);
-  text-transform: uppercase;
-  text-align: center;
-}
-
-.vs-slot-img {
-  flex: 0 0 auto;
-  width: 76px;
-  height: 58px;
-  overflow: hidden;
-  background: radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.1), transparent 70%), #0c0e12;
-  border: 1px solid var(--line);
-  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
-}
-
-.vs-slot-img img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.vs-slot-random {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-display);
-  font-size: 2rem;
-  color: var(--yellow);
-  background: var(--hazard);
-  text-shadow: 0 0 8px #000, 0 0 3px #000;
-}
-
-.vs-slot-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-}
-
-.vs-slot-name {
+.pod-name {
   font-family: var(--font-display);
   font-weight: 400;
-  font-size: 1.25rem;
+  font-size: clamp(1.1rem, 1.8vw, 1.45rem);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--accent, var(--white));
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
 }
 
-.vs-slot-tag {
+.pod-tag {
   font-size: 0.72rem;
   letter-spacing: 0.06em;
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
-.vs-mid {
+.pod-plate-empty {
+  width: 100%;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  letter-spacing: 0.3em;
+  color: rgba(147, 160, 177, 0.5);
+  text-transform: uppercase;
+  text-align: center;
+}
+
+/* The 3D window. Transparent by design — the showcase canvas renders exactly
+   this rect from behind. Chrome is edges only: hairline + corner brackets. */
+.pod-view {
+  position: relative;
+  flex: 1;
+  min-height: 84px; /* compact stage still has to leave a usable window */
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  touch-action: none;
+  cursor: grab;
+}
+
+.pod-view.is-orbiting {
+  cursor: grabbing;
+}
+
+.pod-view::before,
+.pod-view::after {
+  content: "";
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  pointer-events: none;
+}
+
+.pod-view::before {
+  top: -1px;
+  left: -1px;
+  border-right: 0;
+  border-bottom: 0;
+}
+
+.pod-view::after {
+  bottom: -1px;
+  right: -1px;
+  border-left: 0;
+  border-top: 0;
+}
+
+.preview-pod.is-armed .pod-view {
+  border-color: rgba(255, 210, 61, 0.35);
+  outline: 1px dashed rgba(255, 210, 61, 0.4);
+  outline-offset: -7px;
+  animation: armedPulse 1.6s ease-in-out infinite;
+}
+
+/* A FILLED pod gets the same dashed treatment on both sides, in its own bot's
+   accent. Previously only the armed pod was dashed, so once you had picked,
+   your bay went solid while the rival's stayed dashed and the two sides read
+   as different kinds of thing rather than as the same thing twice. */
+.preview-pod.is-filled:not(.is-armed) .pod-view {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  outline: 1px dashed color-mix(in srgb, var(--accent) 75%, transparent);
+  outline-offset: -7px;
+}
+
+@keyframes armedPulse {
+  50% {
+    outline-color: rgba(255, 210, 61, 0.08);
+  }
+}
+
+/* Browsing: this bay is showing the bot under the cursor, which is NOT the same
+   claim as one you have pressed A on. It keeps the armed dashes so it still
+   reads as an open bay, and its plate and pips are held back so the difference
+   between "what you are looking at" and "what you have taken" is visible
+   without having to read either. Claiming it is what brings them to full. */
+.preview-pod.is-preview .pod-plate,
+.preview-pod.is-preview .pod-stats,
+.preview-pod.is-preview .pod-badge {
+  opacity: 0.62;
+}
+
+.preview-pod.is-preview .pod-plate {
+  filter: saturate(0.65);
+}
+
+.preview-pod .pod-plate,
+.preview-pod .pod-stats,
+.preview-pod .pod-badge {
+  transition:
+    opacity 0.18s ease,
+    filter 0.18s ease;
+}
+
+/* The baked stand-in (engine/posters.js). A centred SQUARE, because the bay's
+   camera fits the model's bounding sphere against the tighter of its two fov
+   angles — so the picture is correctly framed at any pod size as long as it is
+   laid into the largest square that fits. Sizing it in CSS rather than in JS
+   keeps it right through the stage's own resize without a frame of lag. */
+.pod-poster {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  height: 100%;
+  width: auto;
+  aspect-ratio: 1;
+  max-width: 100%;
+  max-height: 100%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.pod-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: clamp(1rem, 1.9vw, 1.55rem);
+  letter-spacing: 0.24em;
+  line-height: 1.6;
+  text-align: center;
+  text-transform: uppercase;
+  color: rgba(147, 160, 177, 0.4);
+  pointer-events: none;
+}
+
+.preview-pod.is-filled .pod-empty {
+  display: none;
+}
+
+/* Mystery opponent: the box stays sealed, so the window shows the "?" flag
+   instead of a model. */
+.pod-random-glyph {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: clamp(4rem, 9vw, 8rem);
+  color: var(--yellow);
+  text-shadow: 0 0 34px rgba(255, 210, 61, 0.45), 0 4px 0 rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.preview-pod.is-random .pod-random-glyph {
+  display: flex;
+}
+
+.pod-loading {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: -23px 0 0 -23px;
+  pointer-events: none;
+}
+
+.pod-foot {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 2px 0;
+}
+
+.pod-rival .pod-foot {
+  flex-direction: row-reverse;
+}
+
+.pod-badge {
+  /* Shrinkable, unlike the stats: a long badge ("DRUM + PUNCH ARMS") is the
+     one thing in the foot that can give way, and unshrinkable it overlapped
+     the ARM pips. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 3px 10px 2px;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  color: #0d0f13;
+  background: var(--accent);
+  clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+}
+
+.pod-badge:empty {
+  display: none;
+}
+
+/* One row, never wrapped: a wrapped row put PWR beside SPD with ARM alone
+   underneath, which reads as a different set of stats. Slimmer pips than the
+   roster cards buy the room. */
+.pod-stats {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  gap: 12px;
+}
+
+.pod-stats .pip {
+  width: 11px;
+}
+
+.pod-stats .stat {
+  gap: 5px;
+}
+
+.pod-stats .stat-label {
+  width: 26px;
+}
+
+/* Up to three weapon channels, matching the pad: primary is RT, secondary is
+   RB, aux is LB (Tantrum's punch arms, which are a third machine).
+   Each gets a readiness meter — with a LATCHING weapon (every spinner) the
+   button alone cannot show that the rotor is still winding up, and the
+   spin-up is the thing the practice viewer exists to teach. */
+.pod-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  margin-left: auto;
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  line-height: 1.5;
+  color: var(--white);
+}
+
+.pod-rival .pod-controls {
+  margin-left: 0;
+  margin-right: auto;
+  align-items: flex-start;
+}
+
+/* The channel (RT / RB / LB / LT) is the part the player needs to find on the
+   pad, so it carries the accent; the mechanism name is what it does. */
+.pod-control {
+  white-space: nowrap;
+  opacity: 0.82;
+}
+
+.pod-control > b {
+  color: var(--accent, var(--amber));
+  font-weight: 600;
+}
+
+.pod-control > i {
+  font-style: normal;
+  opacity: 0.6;
+}
+
+.select-mid {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 20px;
+  padding: 0 clamp(4px, 1vw, 14px);
+}
+
+.pod-controls-hint {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  line-height: 2;
+  text-align: center;
+  text-transform: uppercase;
+  color: rgba(147, 160, 177, 0.55);
 }
 
 .vs-label {
@@ -438,17 +712,54 @@
   filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.5));
 }
 
-/* ---------------------------------------------------------------- bot grid */
+/* ---------------------------------------------------------------- bot grid
+   The full roster, laid out as a grid that reflows to the viewport. The screen
+   scrolls when it has to; the pods above shrink to keep that rare. */
 
 .bot-grid {
+  --card-min: clamp(104px, 11vw, 150px);
   display: grid;
-  flex: 1;
-  min-height: 0;
-  grid-template-columns: repeat(4, 1fr);
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
-  gap: clamp(8px, 1.2vw, 14px);
-  overflow-y: auto;
-  padding: 2px 2px 8px;
+  flex: 0 0 auto;
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-min), 1fr));
+  gap: clamp(8px, 1vw, 13px);
+  padding: 4px 2px 10px;
+}
+
+/* Once a bot is CLAIMED the roster stops being the main event and pays for the
+   bay. Narrower cards mean more per row and one row fewer, and since the stage
+   simply takes whatever is left (see .select-stage) that row goes straight into
+   the viewers — about 120px of it. The badge goes too: at this width it is a
+   truncated word, and the pod beside it now says the same thing in full.
+   Browsing deliberately does NOT do this; the cursor is still in the grid, and
+   resizing it under the cursor is the screen moving while you read it. */
+.screen-select.is-showcase .bot-grid {
+  --card-min: clamp(58px, 5vw, 74px);
+  gap: clamp(6px, 0.7vw, 9px);
+}
+
+.screen-select.is-showcase .bot-card-badge {
+  display: none;
+}
+
+.screen-select.is-showcase .bot-card-name {
+  margin-top: 4px;
+  margin-bottom: 2px;
+  font-size: 0.66rem;
+}
+
+/* The roster's cost is ROWS, not columns, so on a short viewport the cards get
+   narrower — more per row, fewer rows, and the whole roster stays in one view
+   instead of pushing the pods off the top. 1366x768 goes 4 rows -> 2. */
+@media (max-height: 860px) {
+  .bot-grid {
+    --card-min: clamp(92px, 7.5vw, 116px);
+  }
+}
+
+@media (max-height: 720px) {
+  .bot-grid {
+    --card-min: clamp(84px, 6.5vw, 104px);
+  }
 }
 
 .bot-card {
@@ -457,7 +768,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 0 0 10px;
+  padding: 0 0 8px;
   border: 1px solid var(--line);
   background:
     var(--carbon),
@@ -538,13 +849,13 @@
 .bot-card.is-player::after,
 .bot-card.is-rival::after {
   position: absolute;
-  top: 8px;
+  top: 6px;
   right: 0;
   z-index: 2;
-  padding: 4px 12px 3px;
+  padding: 3px 8px 2px;
   font-family: var(--font-display);
-  font-size: 0.68rem;
-  letter-spacing: 0.22em;
+  font-size: 0.56rem;
+  letter-spacing: 0.18em;
   clip-path: polygon(8px 0, 100% 0, 100% 100%, 0 100%);
 }
 
@@ -567,8 +878,9 @@
 .bot-card-img {
   position: relative;
   display: block;
-  flex: 1 1 auto;
-  min-height: 56px;
+  flex: 0 0 auto;
+  aspect-ratio: 4 / 3;
+  min-height: 0;
   overflow: hidden;
   background:
     radial-gradient(ellipse at 50% 42%, rgba(255, 255, 255, 0.14), transparent 68%),
@@ -597,36 +909,37 @@
 }
 
 .bot-card-name {
-  margin: 8px 12px 0;
+  margin: 6px 9px 0;
   font-family: var(--font-display);
-  font-size: clamp(0.95rem, 1.5vw, 1.2rem);
-  letter-spacing: 0.06em;
+  font-size: 0.8rem;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   transform: skewX(var(--skew));
   transform-origin: left bottom;
   color: var(--white);
   text-shadow: 0 2px 0 rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .bot-card-badge {
   align-self: flex-start;
-  margin: 5px 12px 0;
-  padding: 3px 10px 2px;
-  font-size: 0.6rem;
+  max-width: calc(100% - 18px);
+  margin: 4px 9px 0;
+  padding: 2px 8px 2px;
+  font-size: 0.5rem;
   font-weight: 800;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.14em;
   color: #0d0f13;
   background: var(--accent);
-  clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+  clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.bot-card-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin: 8px 12px 0;
-}
-
+/* Stat pips (SPD/PWR/ARM) — rendered in the pod foot for the chosen bot. */
 .stat {
   display: flex;
   align-items: center;
@@ -665,25 +978,7 @@
   background: linear-gradient(180deg, var(--yellow), #c98a10);
 }
 
-/* Random opponent — full-width strip under the roster. */
-.bot-card-random {
-  grid-column: 1 / -1;
-  flex-direction: row;
-  align-items: center;
-  gap: 16px;
-  min-height: 58px;
-  padding: 0 20px 0 0;
-}
-
-.bot-card-random .bot-card-img {
-  flex: 0 0 auto;
-  align-self: stretch;
-  width: clamp(90px, 12vw, 150px);
-  min-height: 0;
-  border-bottom: 0;
-  border-right: 1px solid var(--line);
-}
-
+/* Random opponent — one more compact card at the end of the dock. */
 .bot-card-random .random-glyph {
   position: absolute;
   inset: 0;
@@ -691,23 +986,12 @@
   align-items: center;
   justify-content: center;
   font-family: var(--font-display);
-  font-size: 2.2rem;
+  font-size: 2rem;
   color: var(--yellow);
   text-shadow: 0 0 18px rgba(255, 210, 61, 0.5), 0 3px 0 rgba(0, 0, 0, 0.6);
   background:
     repeating-linear-gradient(-45deg, rgba(255, 210, 61, 0.14) 0 14px, transparent 14px 28px),
     #0d0f13;
-}
-
-.bot-card-random .bot-card-name,
-.bot-card-random .bot-card-badge,
-.bot-card-random .bot-card-stats {
-  margin: 0;
-}
-
-.bot-card-random .bot-card-stats {
-  margin-left: auto;
-  text-align: right;
 }
 
 .random-note {
@@ -829,7 +1113,7 @@
 /* =============================================================== RESPONSIVE */
 
 @media (max-width: 1100px) {
-  .vs-slot-tag {
+  .pod-tag {
     display: none;
   }
 }
@@ -837,14 +1121,6 @@
 @media (max-width: 960px) {
   .select-head {
     grid-template-columns: auto 1fr auto;
-  }
-
-  .bot-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
-
-  .bot-card-stats {
-    gap: 3px;
   }
 
   .pip {
@@ -856,9 +1132,34 @@
     font-size: 1.3rem;
   }
 
-  .vs-slot-img {
-    width: 60px;
-    height: 46px;
+  .pod-controls-hint {
+    display: none;
+  }
+}
+
+/* Narrow: pods sit side by side, the VS column drops below them as a row. */
+@media (max-width: 880px) {
+  .select-stage {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "p1 p2"
+      "mid mid";
+    gap: clamp(10px, 2vw, 16px);
+  }
+
+  .pod-player {
+    grid-area: p1;
+  }
+
+  .pod-rival {
+    grid-area: p2;
+  }
+
+  .select-mid {
+    grid-area: mid;
+    flex-direction: row;
+    gap: 18px;
+    padding: 4px 0 0;
   }
 }
 
@@ -867,7 +1168,45 @@
     display: none;
   }
 
-  .vs-slot {
-    min-height: 74px;
+  /* The roster is a fixed cost the stage has to be paid out of, and on a short
+     window it is three rows tall whatever the cards' width, so the saving has
+     to come out of each card's HEIGHT. A wider thumbnail crop and a smaller
+     name give back about 20px a row, which is what keeps the pods at a usable
+     size here instead of the screen having to scroll. */
+  .bot-card-img {
+    aspect-ratio: 16 / 10;
   }
+
+  .bot-card-name {
+    margin-top: 4px;
+    margin-bottom: 2px;
+    font-size: 0.7rem;
+  }
+
+  .pod-plate {
+    min-height: 52px;
+  }
+
+  .pod-foot {
+    min-height: 38px;
+  }
+}
+
+/* ---------------------------------------------------- two-controller select
+   With a second pad connected both sides of the card are human picks, so the
+   AI level is meaningless and the YOU/RIVAL flags become P1/P2. */
+body.is-duo .difficulty {
+  display: none;
+}
+
+body.is-duo .bot-card.is-player::after {
+  content: "P1";
+}
+
+body.is-duo .bot-card.is-rival::after {
+  content: "P2";
+}
+
+body.is-duo .bot-card.is-player.is-rival::after {
+  content: "P1 + P2";
 }

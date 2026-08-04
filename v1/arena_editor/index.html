@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Battle Bot Arena Editor</title>
+    <link rel="stylesheet" href="./arenaEditor.css?v=wallcaps-1" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="scene"></canvas>
+      <aside class="panel">
+        <header class="brand">
+          <div>
+            <p>Battle Bot Arena</p>
+            <h1>Arena Editor</h1>
+          </div>
+          <a class="mini-button" href="../index.html">Game</a>
+        </header>
+
+        <section class="toolbar">
+          <label>
+            Create
+            <span class="inline-action">
+              <select id="create-type">
+                <option value="killSaw">Kill saw</option>
+                <option value="screw">Screw</option>
+                <option value="upperDeck">Upper deck</option>
+                <option value="pulverizer">Pulverizer</option>
+                <option value="startBox">Starting box</option>
+                <option value="logo">Logo</option>
+              </select>
+              <button id="create-object" class="mini-button" type="button">Create</button>
+            </span>
+          </label>
+
+          <label>
+            Create mirror
+            <span class="inline-action">
+              <select id="mirror-axis">
+                <option value="x">X axis</option>
+                <option value="z">Z axis</option>
+              </select>
+              <button id="mirror-object" class="mini-button" type="button" disabled>Mirror</button>
+            </span>
+          </label>
+
+          <div class="button-grid">
+            <button id="undo-change" class="mini-button" type="button" disabled>Undo</button>
+            <button id="redo-change" class="mini-button" type="button" disabled>Redo</button>
+            <button id="copy-object" class="mini-button" type="button" disabled>Copy</button>
+            <button id="delete-object" class="mini-button danger" type="button" disabled>Delete</button>
+          </div>
+
+          <button id="output-arena" class="control-button" type="button">Output Arena</button>
+        </section>
+
+        <section class="readout">
+          <dl>
+            <div>
+              <dt>Selected</dt>
+              <dd id="selected-name">None</dd>
+            </div>
+            <div>
+              <dt>Status</dt>
+              <dd id="status-text">Ready</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section id="inspector" class="inspector" hidden>
+          <label>
+            Label
+            <input id="field-label" type="text" />
+          </label>
+          <label>
+            Type
+            <select id="field-type">
+              <option value="startBox">Starting box</option>
+              <option value="logo">Logo</option>
+              <option value="killSaw">Kill saw</option>
+              <option value="screw">Screw</option>
+              <option value="upperDeck">Upper deck</option>
+              <option value="pulverizer">Pulverizer</option>
+            </select>
+          </label>
+          <div class="split-grid">
+            <label>X<input data-field="position.x" type="number" step="0.1" /></label>
+            <label>Z<input data-field="position.z" type="number" step="0.1" /></label>
+          </div>
+          <div class="split-grid">
+            <label>Width<input data-field="size.x" type="number" min="0.1" step="0.1" /></label>
+            <label>Depth<input data-field="size.z" type="number" min="0.1" step="0.1" /></label>
+          </div>
+          <label>
+            Rotation
+            <select id="field-rotation">
+              <option value="0">0 deg</option>
+              <option value="90">90 deg</option>
+              <option value="180">180 deg</option>
+              <option value="270">270 deg</option>
+            </select>
+          </label>
+          <label id="side-row">
+            Side
+            <select id="field-side">
+              <option value="player">Player</option>
+              <option value="rival">Rival</option>
+              <option value="neutral">Neutral</option>
+            </select>
+          </label>
+          <label class="switch">
+            <input id="field-visible-game" type="checkbox" />
+            <span>Visible in game</span>
+          </label>
+        </section>
+
+        <section id="arena-inspector" class="inspector">
+          <div class="split-grid">
+            <label>BattleBox width<input id="field-arena-width" type="number" min="8" max="80" step="0.5" /></label>
+            <label>BattleBox length<input id="field-arena-length" type="number" min="8" max="80" step="0.5" /></label>
+          </div>
+          <label>
+            Wall cap Y offset
+            <input id="field-cap-offset" type="number" min="-0.42" max="2.4" step="0.05" />
+          </label>
+        </section>
+
+        <section class="help">
+          <p>Shift/Ctrl-click to multi-select. Drag to move on the floor. Hold Shift to rotate, Alt to resize. Cmd/Ctrl-Z undo, Shift-Cmd/Ctrl-Z redo.</p>
+        </section>
+      </aside>
+
+      <dialog id="output-dialog">
+        <form method="dialog" class="output-card">
+          <header>
+            <h2>Arena output</h2>
+            <button class="mini-button" type="submit">Close</button>
+          </header>
+          <textarea id="output-text" spellcheck="false"></textarea>
+          <footer>
+            <button id="copy-output" class="control-button" type="button">Copy</button>
+            <button id="download-output" class="mini-button" type="button">Download</button>
+          </footer>
+        </form>
+      </dialog>
+    </div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://esm.sh/three@0.165.0",
+          "three/addons/": "https://esm.sh/three@0.165.0/examples/jsm/"
+        }
+      }
+    </script>
+    <script type="module" src="./arenaEditor.js?v=screw-mirrored-auger-1"></script>
+  </body>
+</html>

@@ -135,6 +135,25 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
   const ai = stateFor(stateKey);
   ai.t += Math.max(0, dt || 0);
 
+  // On its back, nothing else matters until it is back on its wheels. A bot
+  // that can drive inverted just carries on — the controls mirror themselves in
+  // the sim, so the AI needs no special case for those.
+  const q = selfState.quaternion || { x: 0, y: 0, z: 0, w: 1 };
+  const upY = 1 - 2 * (q.x * q.x + q.z * q.z);
+  if (upY < 0.25 && !spec?.canDriveInverted) {
+    const spinner = spec?.weapon?.type === "bar" || spec?.weapon?.type === "drum";
+    if (spinner) {
+      // Saw the sticks lock to lock with the rotor lit: the reaction walks it
+      // over. Reversing every third of a second is what actually builds the
+      // roll — holding one lock just leans on it.
+      const flip = Math.floor(ai.t * 3) % 2 === 0 ? 1 : -1;
+      return { leftDrive: flip, rightDrive: -flip, weapon: true, brake: false, sawActive: true };
+    }
+    // Stroke weapons: pulse, so each swing re-arms and kicks again.
+    const firing = Math.floor(ai.t * 1.6) % 2 === 0;
+    return { leftDrive: 0, rightDrive: 0, weapon: firing, brake: false, sawActive: firing };
+  }
+
   const selfPos = selfState.position;
   // Reaction lag: the AI steers at a low-passed foe position.
   const actualFoe = foeState.position;
@@ -204,15 +223,23 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
 
   // --- weapon-type behavior -------------------------------------------------
   const type = spec?.weapon?.type;
-  const spinner = type === "bar" || type === "drum";
+  // A shell spinner is a rotor for AI purposes too, but see below: six seconds
+  // of spin-up means it has to commit to the toggle long before contact.
+  const spinner = type === "bar" || type === "drum" || type === "shellSpinner";
   const engage = AI_ENGAGE_DISTANCE * level.range;
   const strikeRange = AI_STRIKE_DISTANCE * level.range;
   let weapon = false;
   let throttleScale = 1;
+  // Two-way arms only (Duck): the secondary channel drives the arm DOWN.
+  let lowerArm = false;
 
   if (spinner) {
     // Spin up early; hang back a touch until the weapon carries real energy.
-    weapon = distance < engage + 1.5;
+    // Gigabyte's shell takes six seconds, which is longer than most approaches
+    // last — so a bot with a long wind-up latches its rotor on and leaves it
+    // on rather than waiting to be in range, which is what its drivers do.
+    const alwaysOn = (spec.weapon.spinUpSeconds ?? 1) >= 3.5;
+    weapon = alwaysOn || distance < engage + 1.5;
     const ratio = Number.isFinite(selfState.weaponRatio) ? selfState.weaponRatio : 1;
     if (weapon && ratio < 0.7 && ai.mode === "approach" && distance < engage) throttleScale = 0.55;
     if (ratio > 0.85 && ai.mode === "strike") throttleScale = 1.1;
@@ -235,10 +262,100 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
     } else if (distance < 2.6) {
       weapon = true; // keep grinding while parked on the foe
     }
+  } else if (type === "sawArms") {
+    // Dragon King's primary is the JAW, and its channel means "held open", so
+    // the AI drives it the way a driver does: mouth open on the approach, shut
+    // the moment it arrives. Holding it open in contact is how you fail to bite.
+    weapon = distance > strikeRange * 0.85;
+    if (!weapon && distance < 2.6) throttleScale = 0.5; // stay planted on the bite
+  } else if (type === "hammer") {
+    // One heavy swing, then wait out the slow re-cock: swinging early wastes
+    // the stroke, since the head only pays off at the bottom of the arc.
+    const cycle = (spec.weapon.tuning?.strokeSeconds || 0.22)
+      + (spec.weapon.tuning?.returnSeconds || 0.9) + 0.15;
+    if (ai.mode === "strike" && distance < strikeRange * 0.8 && ai.t - ai.lastFireAt > cycle) {
+      ai.lastFireAt = ai.t;
+    }
+    weapon = ai.t - ai.lastFireAt < (spec.weapon.tuning?.strokeSeconds || 0.22);
+  } else if (type === "lifter") {
+    // Same shape as lifterDisc but there is no disc to fall back on, so the
+    // whole game is getting under them: keep the forks DOWN until contact, then
+    // hold the lift up to tip them over rather than pumping it.
+    weapon = distance < strikeRange * 0.8;
+    if (weapon && distance < 2.4) throttleScale = 0.65;
+    // A two-way arm HOLDS where it is let go, so "not lifting" is no longer the
+    // same as "arm down". Duck would otherwise raise the plow on its first
+    // approach and then drive around for the rest of the fight with it parked
+    // over its own back. Drive it down whenever we are not lifting.
+    if (spec.weapon.twoWayArm) lowerArm = !weapon;
+  } else if (type === "lifterDisc") {
+    // Get under them and hold the arm up — the lift is the point, the disc is
+    // opportunistic. Hold the arm DOWN while closing so the forks can scoop.
+    weapon = distance < strikeRange * 0.85;
+    if (weapon && distance < 2.4) throttleScale = 0.6; // stay under them
+  } else if (type === "grappler") {
+    // Bite, hoist, throw. The forks have to be DOWN for the sim to take a grip,
+    // so the lift channel stays off until the jaw has had time to shut on them.
+    if (distance < strikeRange * 0.75) ai.latchedUntil = ai.t + 3.2;
+    const latched = ai.t < ai.latchedUntil;
+    const heldFor = latched ? 3.2 - (ai.latchedUntil - ai.t) : 0;
+    weapon = latched && heldFor > 0.6 && heldFor < 2.6; // hoist, then let it drop
+    if (latched && distance < 2.6) throttleScale = 0.5; // stay planted on the carry
   }
+
+  // Disc/saw motor is a separate channel; the AI simply runs it whenever it is
+  // anywhere near the fight. Without this an AI Sawblaze never spun its saw.
+  // For the grappler the same channel is the jaw: shut it near the foe, and
+  // open it again at the top of the hoist so the throw actually releases.
+  // Free Shipping's flame is on the same channel but is short-range: burning at
+  // nothing across the arena reads as an AI that does not understand its own
+  // machine.
+  let sawActive = lowerArm;
+  if (type === "grappler") sawActive = ai.t < ai.latchedUntil && ai.latchedUntil - ai.t > 0.55;
+  else if (spec?.weapon?.track) {
+    // Tantrum's drum carriage. The shot is the RELEASE, so the AI holds the
+    // channel down while it is still closing and lets go as it arrives — the
+    // drum is then travelling forward at the moment of contact, which is the
+    // whole point of the mechanic. Outside strike range it winds back up.
+    sawActive = distance > strikeRange * 0.75;
+  } else if (spec?.weapon?.flame) sawActive = distance < (spec.weapon.flame.reach ?? 3) + 1;
+  else if (type === "hammerSaw" || type === "sawArms" || type === "lifterDisc") sawActive = distance < engage + 3;
+
+  // Tantrum's punch arms are their own channel. They pulse so the arms cycle
+  // instead of parking upright, and only in close, where a lifted arm can
+  // actually land on something.
+  // Dragon King's jaw is the enabling weapon — its saws do nothing without a
+  // grip — so it clamps and HOLDS whenever it is close enough to have one,
+  // rather than pulsing the way Tantrum's arms do.
+  // Dragon King's aux is the saw-arm TILT, not the jaw: bring the saws down
+  // once there is something under them, which on this machine means once the
+  // jaw is shut on it.
+  const auxActive = spec?.aux?.jaw
+    ? distance < strikeRange * 0.9
+    : Boolean(spec?.weapon?.fists)
+      && distance < strikeRange * 0.9
+      && Math.floor(ai.t * 2.6) % 2 === 0;
 
   const throttle = steer.throttle * level.drive * throttleScale;
   const turn = clamp(steer.turn * level.turnGain, -1, 1);
   const { leftDrive, rightDrive } = tankFrom(throttle, turn);
-  return { leftDrive, rightDrive, weapon, brake: false };
+  // An X-drive bot that only ever drove its tank pair would get the omniwheel
+  // grip penalty and none of the payoff. Circle-strafe instead: keep the nose
+  // (and therefore the weapon) on the foe with `turn`, and slide sideways to
+  // stay off its centreline. The direction flips on a slow cycle so it does not
+  // simply orbit one way into a wall.
+  if (spec?.drive?.type === "holonomic") {
+    const circling = distance < AI_ENGAGE_DISTANCE * level.range * 1.4;
+    const strafe = circling ? (Math.floor(ai.t / 2.4) % 2 === 0 ? 1 : -1) * 0.8 : 0;
+    return { leftDrive, rightDrive, strafe, spin: turn, weapon, brake: false, sawActive, auxActive };
+  }
+  // The body lift is the one thing on this machine that reaches BEHIND it, so
+  // that is when the AI uses it: a foe at the back, close, and no point trying
+  // to turn a bot this slow around first.
+  // signedAngleToDirection is 0 when the foe is dead ahead and +-pi when it is
+  // dead astern, so |angle| past a right angle IS "behind me".
+  const liftActive = Boolean(spec?.lift)
+    && Math.abs(signedAngleToDirection(selfState, dirToFoe)) > 2.1
+    && distance < strikeRange + 1.5;
+  return { leftDrive, rightDrive, weapon, brake: false, sawActive, auxActive, liftActive };
 }
