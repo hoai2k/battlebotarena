@@ -1216,6 +1216,18 @@ await test("dragon king: the saws come down in FRONT, and each turns about its o
   check(swungZ < w.sub.pivot.z - 0.5, "the blades finish forward of where they rest",
     `z ${w.sub.pivot.z.toFixed(2)} -> ${swungZ.toFixed(2)} (forward is -z)`);
 
+  // The blades are DRAWN, not scanned (assets/sawBlade.js): photogrammetry
+  // resolved a 30-tooth rim as a disc with nubs on it. What matters here is that
+  // the drawing and the sim measure the same blade — sub.radius is what decides
+  // both how big the picture is and what the saws can reach, and a blade config
+  // that overrode one without the other would put teeth where nothing cuts.
+  check(w.sub.blade, "the saws are drawn rather than scanned", "no weapon.sub.blade");
+  check(w.sub.blade.radius === undefined || w.sub.blade.radius === w.sub.radius,
+    "and the blade that is drawn is the blade the sim cuts with",
+    `drawn ${w.sub.blade.radius} vs cut ${w.sub.radius}`);
+  check(w.sub.blade.thickness > 0 && w.sub.blade.thickness < w.sub.radius,
+    "a blade is thinner than it is wide", `${w.sub.blade.thickness}ft thick, ${w.sub.radius}ft radius`);
+
   const axes = w.sub.axes;
   check(axes && Object.keys(axes).length === 2, "both blades have an axle of their own",
     `${Object.keys(axes || {}).join(", ") || "none"}`);

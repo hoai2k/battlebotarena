@@ -14,6 +14,7 @@
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { buildSawBlade } from "./sawBlade.js";
 
 // Cache parsed GLB responses: a rematch or a re-pick of the same bot would
 // otherwise re-download 10-17MB per model and sit on the loading screen again.
@@ -380,6 +381,46 @@ function normalizeScene(scene, spec) {
   return wrapper;
 }
 
+/**
+ * Swap a scanned rotor for a built saw blade.
+ *
+ * Photogrammetry is good at a machine's shape and bad at anything with a thin
+ * repeating edge: Dragon King's blades came back as discs with a ring of nubs,
+ * which is what a 30-tooth rim looks like to a scan that never resolved the
+ * gullets. The teeth are the part of a saw that reads as a saw, so this draws
+ * them instead, at the radius the catalog already measured off the scan — the
+ * same number the sim uses to decide what the blades reach, so the picture and
+ * the solid stay one object.
+ *
+ * Opt in with weapon.sub.blade; a bot without it keeps its scanned geometry.
+ */
+function replaceWithSawBlade(subPivot, subNode, spec) {
+  const cfg = spec.weapon?.sub?.blade;
+  if (!cfg) return;
+  const key = subPivot.name.slice("weaponSubPivot-".length);
+  const axis = spec.weapon.sub.axes?.[key] ?? spec.weapon.axis ?? { x: 1, y: 0, z: 0 };
+  const material = new THREE.MeshStandardMaterial({
+    color: cfg.color ?? "#b0752f",
+    metalness: cfg.metalness ?? 1,
+    roughness: cfg.roughness ?? 0.28,
+    envMapIntensity: cfg.envMapIntensity ?? 1.3,
+  });
+  subPivot.add(buildSawBlade({
+    radius: cfg.radius ?? spec.weapon.sub.radius ?? 0.7,
+    thickness: cfg.thickness ?? 0.09,
+    teeth: cfg.teeth,
+    axis,
+    material,
+  }));
+  // The scan's version goes. Detaching rather than hiding keeps it out of every
+  // bounding box measured downstream, including the ones the sprocket and band
+  // code walks. Nothing is disposed: a Tripo scan shares ONE material across
+  // every part of the robot, so disposing this mesh's material would take the
+  // rest of the machine with it, and geometry that is detached before the first
+  // render was never uploaded to the GPU in the first place.
+  subNode.removeFromParent();
+}
+
 // Match a visual wheel to the suspension probe under it. Both are in game
 // space by the time this runs (normalizeScene has applied yaw/scale), so plain
 // XZ distance is the whole story. Bots with more probes than wheels (HUGE runs
@@ -550,6 +591,7 @@ export async function loadBotModel(spec, { onProgress } = {}) {
         weaponPivot.updateWorldMatrix(true, false);
         subPivot.position.copy(weaponPivot.worldToLocal(subCenter.clone()));
         subPivot.attach(subNode);
+        replaceWithSawBlade(subPivot, subNode, spec);
         weaponSubs.push(subPivot);
       }
       weaponSub = weaponSubs[0] ?? null;
