@@ -1,9 +1,11 @@
 import * as THREE from "three";
 import { BOT_CONFIG } from "./botConfig.js";
 import { MODEL_PART_CONFIG } from "./modelPartConfig.js";
-import { fractionBoundsToBox, modelAuthoringBounds, originalAuthoringBoundsForMesh, splitConfiguredModelParts } from "./modelParts.js";
+import { fractionBoundsToBox, modelAuthoringBounds, normalizeSegmentedModel, originalAuthoringBoundsForMesh, splitConfiguredModelParts, splitSegmentedModelParts } from "./modelParts.js";
 
-export const BOT_PICKER_ORDER = ["bronco", "biteforce", "huge", "quantum", "hypershock", "minotaur", "sawblaze", "tombstone"];
+import { PORTED_BOT_IDS } from "./portedBots.js";
+
+export const BOT_PICKER_ORDER = ["bronco", "biteforce", "huge", "quantum", "hypershock", "minotaur", ...PORTED_BOT_IDS];
 
 const BRONCO_FLIPPER_LOWERED_ANGLE = -0.34;
 const BRONCO_FLIPPER_RAISED_ANGLE = 0.0;
@@ -219,6 +221,26 @@ export function buildModelViewerGroup(id, sourceModel) {
   const group = new THREE.Group();
   if (!config || !sourceModel) return group;
 
+  // A bot ported from v2 arrives segmented and pre-scaled, so the tweaker shows
+  // it the same way the game does: normalized rather than fitted to a box, and
+  // split by part name rather than by hand-drawn regions. Its colliders are
+  // authored in the same frame, so the overlays still land — there is just
+  // nothing here that needs dragging.
+  if (config.segmented) {
+    const container = new THREE.Group();
+    container.name = "modelSegmented";
+    container.add(normalizeSegmentedModel(sourceModel.clone(true), config.model));
+    group.add(container);
+    group.userData.sourceModel = container;
+    group.userData.segmentedModel = true;
+    group.userData.modelPartConfig = config;
+    const segmentedParts = splitSegmentedModelParts(container, config, spec);
+    group.userData.weapon = segmentedParts.weapon;
+    group.userData.drivetrain = segmentedParts.drivetrain;
+    group.userData.viewerParts = segmentedParts.viewerParts;
+    return group;
+  }
+
   const model = prepareLoadedModel(sourceModel, config.fit);
   group.add(model);
   group.userData.sourceModel = model;
@@ -306,6 +328,10 @@ export function isGroundingVisualMesh(mesh) {
 }
 
 export function measureVisualFloorOffset(group) {
+  // A segmented (ported) model was already grounded on its drawn geometry when
+  // it was normalized; measuring it again through the position buffer would
+  // pick up vertices a carve orphaned and lift the whole bot off the floor.
+  if (group?.userData?.segmentedModel) return 0;
   group.updateMatrixWorld(true);
   const bounds = new THREE.Box3();
   const point = new THREE.Vector3();

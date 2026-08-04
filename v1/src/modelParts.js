@@ -3,6 +3,7 @@ import * as THREE from "three";
 const DEFAULT_SPINNER_FULL_SPEED = 120;
 const DEFAULT_SPINNER_SPIN_DOWN_SECONDS = 1.1;
 const AUTHORING_BOUNDS_KEY = "battleBotAuthoringBounds";
+const ARM_WEAPON_TYPES = new Set(["flipper", "crusher", "hammer", "hammerSaw", "lifter", "lifterDisc", "grappler", "sawArms"]);
 
 function vectorToPlain(vector) {
   return { x: vector.x, y: vector.y, z: vector.z };
@@ -244,6 +245,255 @@ function mirrorWheelTopHalfVertically(data, regionBox) {
     appendVertex(i + 2);
     appendVertex(i + 1);
   }
+}
+
+// --- Segmented (v2) models --------------------------------------------------
+//
+// v1's own GLBs are one mesh, split at runtime by the fraction regions in
+// MODEL_PART_CONFIG. The models ported from v2 are already segmented into named
+// nodes (modelBody, modelWeapon, modelWheel-N, modelWeaponSub-*, modelAux-*),
+// so there is nothing to cut: the parts are picked up by name and re-hung on
+// pivots. That is what removes the hand collider/region tweaking pass for the
+// ported roster — the segmentation IS the authoring.
+
+// Bounds over the geometry the index buffer actually DRAWS. A carved part
+// leaves its donor's vertices in the position buffer, so measuring through the
+// accessors rests a model on geometry nobody can see (v2 hit this on Endgame,
+// which floated 0.46ft up on a support stand that had already been carved off).
+const scratchCorner = new THREE.Vector3();
+function drawnLocalBox(geometry) {
+  if (geometry.userData.__drawnBox) return geometry.userData.__drawnBox;
+  const box = new THREE.Box3();
+  const position = geometry.attributes?.position;
+  const index = geometry.index;
+  if (position) {
+    const count = index ? index.count : position.count;
+    for (let i = 0; i < count; i += 1) {
+      scratchCorner.fromBufferAttribute(position, index ? index.getX(i) : i);
+      box.expandByPoint(scratchCorner);
+    }
+  }
+  geometry.userData.__drawnBox = box;
+  return box;
+}
+
+export function drawnBox(object, target = new THREE.Box3()) {
+  target.makeEmpty();
+  object.updateWorldMatrix(true, true);
+  object.traverse((node) => {
+    if (!node.isMesh || !node.geometry) return;
+    const local = drawnLocalBox(node.geometry);
+    if (local.isEmpty()) return;
+    for (let i = 0; i < 8; i += 1) {
+      scratchCorner.set(
+        i & 1 ? local.max.x : local.min.x,
+        i & 2 ? local.max.y : local.min.y,
+        i & 4 ? local.max.z : local.min.z,
+      ).applyMatrix4(node.matrixWorld);
+      target.expandByPoint(scratchCorner);
+    }
+  });
+  return target;
+}
+
+// Tripo GLBs are ~1-unit normalized and face +X in authoring space; both games
+// want feet with forward -Z. Same normalization v2 runs (assets/models.js), so
+// the catalog's collider offsets, weapon pivots and arm angles — all measured
+// against THIS pose — stay valid in v1.
+export function normalizeSegmentedModel(scene, model = {}) {
+  const wrapper = new THREE.Group();
+  wrapper.name = "modelNormalized";
+  wrapper.add(scene);
+  scene.rotation.y = model.yaw ?? 0;
+  wrapper.rotation.z = model.roll ?? 0;
+  wrapper.updateMatrixWorld(true);
+  const bbox = drawnBox(wrapper);
+  if (bbox.isEmpty()) return wrapper;
+  const size = bbox.getSize(new THREE.Vector3());
+  const dims = model.bodyDims || { x: size.x, y: size.y, z: size.z };
+  const footprintScale = ((dims.x / Math.max(size.x, 0.001)) + (dims.z / Math.max(size.z, 0.001))) / 2;
+  wrapper.scale.setScalar(model.scale ?? footprintScale);
+  wrapper.updateMatrixWorld(true);
+  const grounded = drawnBox(wrapper);
+  wrapper.position.y = -grounded.min.y;
+  // Centre the footprint on the body, not on the whole model: a weapon baked
+  // mid-stroke drags the overall bbox off to one side.
+  const bodyNode = wrapper.getObjectByName(model.centerOn || "modelBody");
+  const centerBox = bodyNode ? drawnBox(bodyNode) : grounded;
+  const center = centerBox.getCenter(new THREE.Vector3());
+  wrapper.position.x -= center.x;
+  wrapper.position.z -= center.z;
+  wrapper.updateMatrixWorld(true);
+  return wrapper;
+}
+
+function detachNode(node) {
+  node.updateWorldMatrix(true, false);
+  const world = node.matrixWorld.clone();
+  node.removeFromParent();
+  world.decompose(node.position, node.quaternion, node.scale);
+  return node;
+}
+
+// The authored pivot, in game space. glb-partition writes `pivotLocal` into the
+// node's extras (a hinged arm's real axle, or a rotor's fitted axle) in raw GLB
+// space; transform it through the normalization. `pivotFromCatalog` is the
+// escape hatch for the parts where segmentation never saw the linkage that
+// carries them (Duck's plow hangs off two thin bars the scan resolved as air).
+function resolvePivot(node, root, fallback, { fromCatalog = false } = {}) {
+  const point = new THREE.Vector3(fallback?.x || 0, fallback?.y || 0, fallback?.z || 0);
+  if (fromCatalog || !node) return point;
+  const pivotLocal = node.userData?.pivotLocal;
+  if (Array.isArray(pivotLocal) && node.parent) {
+    node.parent.updateWorldMatrix(true, false);
+    return new THREE.Vector3().fromArray(pivotLocal).applyMatrix4(node.parent.matrixWorld);
+  }
+  const box = drawnBox(node);
+  if (!box.isEmpty()) return box.getCenter(new THREE.Vector3());
+  return point;
+}
+
+function spinnerWeaponState(config, spec, object, pivot) {
+  const weapon = config.weapon || {};
+  return {
+    type: weapon.type || "bar",
+    object,
+    spinAxis: weapon.spinAxis || "x",
+    axisPitch: 0,
+    currentSpeed: 0,
+    idleSpeed: 0,
+    visualSpeed: weapon.visualSpeed || DEFAULT_SPINNER_FULL_SPEED,
+    spinUpSeconds: spec.weaponSpinUpSeconds ?? 2.5,
+    spinDownSeconds: weapon.spinDownSeconds || DEFAULT_SPINNER_SPIN_DOWN_SECONDS,
+    toggle: true,
+    toggledOn: false,
+    radius: weapon.radius || 0.5,
+    shellSpinner: Boolean(weapon.shellSpinner),
+    offset: pivot.clone(),
+  };
+}
+
+function armWeaponState(config, spec, object, pivot, subs, claw) {
+  const weapon = config.weapon || {};
+  const sign = weapon.axisSign || 1;
+  const baseRotation = sign * (weapon.restAngle || 0);
+  const activeRotation = sign * (weapon.fireAngle || 0);
+  const strokeSeconds = Math.max(0.05, weapon.strokeSeconds || 0.3);
+  const returnSeconds = Math.max(0.05, weapon.returnSeconds || 0.7);
+  return {
+    type: weapon.type,
+    object,
+    arm: weapon,
+    spinAxis: "x",
+    baseRotation,
+    activeRotation,
+    // v1 damps toward a target; convert the measured stroke times into the damp
+    // rates that land the arm on its stop within that time.
+    activeSpeed: -Math.log(0.02) / strokeSeconds,
+    returnSpeed: -Math.log(0.02) / returnSeconds,
+    returnSeconds,
+    strokeSeconds,
+    stroke: 0,
+    subs,
+    claw,
+    clawAmount: 0,
+    offset: pivot.clone(),
+  };
+}
+
+export function splitSegmentedModelParts(model, config, spec) {
+  const weaponConfig = config.weapon || {};
+  const isArm = ARM_WEAPON_TYPES.has(weaponConfig.type);
+  let weapon = null;
+  const leftWheels = [];
+  const rightWheels = [];
+  const viewerWheels = [];
+
+  const weaponNode = model.getObjectByName("modelWeapon");
+  if (weaponNode) {
+    const pivot = resolvePivot(weaponNode, model, weaponConfig.pivot, { fromCatalog: weaponConfig.pivotFromCatalog });
+    detachNode(weaponNode);
+    const weaponPivot = new THREE.Group();
+    weaponPivot.name = "modelWeapon";
+    weaponPivot.userData.viewerPart = "weapon";
+    weaponPivot.position.copy(pivot);
+    model.add(weaponPivot);
+    model.updateMatrixWorld(true);
+    weaponPivot.attach(weaponNode);
+
+    // Nested rotors and hinged jaws ride the arm but turn on their own axle.
+    const subNodes = [];
+    weaponNode.traverse((child) => {
+      if (child.name?.startsWith("modelWeaponSub-")) subNodes.push(child);
+    });
+    const subs = [];
+    let claw = null;
+    for (const subNode of subNodes) {
+      const name = subNode.name.slice("modelWeaponSub-".length);
+      const subCenter = resolvePivot(subNode, model, null);
+      const subPivot = new THREE.Group();
+      subPivot.name = `modelWeaponSub-${name}`;
+      weaponPivot.add(subPivot);
+      weaponPivot.updateWorldMatrix(true, false);
+      subPivot.position.copy(weaponPivot.worldToLocal(subCenter.clone()));
+      subPivot.attach(subNode);
+      const isJaw = weaponConfig.claw && /jaw|claw/i.test(name);
+      if (isJaw && !claw) claw = { name, object: subPivot, ...weaponConfig.claw };
+      else subs.push({ name, object: subPivot, currentSpeed: 0, ...(weaponConfig.sub || {}) });
+    }
+    // Sawblaze's disc IS the weapon part: the whole arm tip spins.
+    if (!subs.length && weaponConfig.sub?.onWeaponPart) {
+      subs.push({ name: "saw", object: weaponPivot, currentSpeed: 0, ...weaponConfig.sub, spinsWeaponPivot: true });
+    }
+    weapon = isArm
+      ? armWeaponState(config, spec, weaponPivot, pivot, subs, claw)
+      : spinnerWeaponState(config, spec, weaponPivot, pivot);
+    if (isArm) weaponPivot.rotation.x = weapon.baseRotation;
+  }
+
+  for (let i = 0; i < 8; i += 1) {
+    const wheelNode = model.getObjectByName(`modelWheel-${i}`);
+    if (!wheelNode) break;
+    const wheelBox = drawnBox(wheelNode);
+    // A wheel node the segmenter left EMPTY (Mammoth ships two) would otherwise
+    // become a pivot at the origin: a wheel that draws nothing, spins nothing
+    // and drags the drivetrain's measurements to the middle of the machine.
+    if (wheelBox.isEmpty()) continue;
+    const center = wheelBox.getCenter(new THREE.Vector3());
+    detachNode(wheelNode);
+    const wheelPivot = new THREE.Group();
+    wheelPivot.name = "modelWheel";
+    wheelPivot.userData.viewerPart = "wheel";
+    wheelPivot.position.copy(center);
+    model.add(wheelPivot);
+    model.updateMatrixWorld(true);
+    wheelPivot.attach(wheelNode);
+    (center.x < 0 ? leftWheels : rightWheels).push(wheelPivot);
+    viewerWheels.push(wheelPivot);
+  }
+
+  const body = model.getObjectByName("modelBody") || null;
+  if (body) body.userData.viewerPart = "body";
+  const wheelRadius = viewerWheels.reduce((max, wheel) => {
+    const box = drawnBox(wheel);
+    if (box.isEmpty()) return max;
+    const size = box.getSize(new THREE.Vector3());
+    return Math.max(max, Math.max(size.y, size.z) * 0.5);
+  }, 0);
+  const drivetrain = viewerWheels.length
+    ? {
+      type: "tank",
+      leftWheels,
+      rightWheels,
+      wheelRadius: Math.max(0.12, wheelRadius || 0.34),
+      spinAxis: config.drivetrain?.spinAxis || "x",
+    }
+    : null;
+  return {
+    weapon,
+    drivetrain,
+    viewerParts: { body, weapon: weapon?.object || null, wheels: viewerWheels },
+  };
 }
 
 export function splitConfiguredModelParts(model, config, spec) {

@@ -32,7 +32,10 @@ export function stepPhysicsArena({
   world.integrationParameters.dt = dt;
   physics.updateWedgeStates(arena, dt);
   fighters.forEach((fighter, index) => physics.driveFighter(fighter, inputs[index] || {}, dt));
-  fighters.forEach((fighter, index) => updateWeapon?.(fighter, dt, Boolean(inputs[index]?.weapon)));
+  // The whole input reaches updateWeapon: a ported bot may drive a second
+  // mechanism (saw motor, disc, jaw) on its own channel, and only the weapon
+  // runtime knows which button that is for which machine.
+  fighters.forEach((fighter, index) => updateWeapon?.(fighter, dt, Boolean(inputs[index]?.weapon), inputs[index] || {}));
   fighters.forEach((fighter, index) => physics.applySpinnerGyro(fighter, inputs[index] || {}, dt));
   fighters.forEach((fighter, index) => afterGyro?.(fighter, index));
   fighters.forEach((fighter) => stabilizeFighter?.(fighter));

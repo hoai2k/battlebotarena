@@ -28,6 +28,18 @@ const types = {
 // Big binaries (models, music) are content-stable, so let the browser keep them.
 const noCache = new Set([".html", ".js", ".mjs", ".css"]);
 
+const parentRoot = resolve(root, "..");
+const SHARED_PARENT_PREFIXES = ["/public/", "/src/", "/music/", "/styles/", "/vendor/"];
+
+// Map a request onto the shared assets one level up, or null if it is not one
+// of those. Kept to an allowlist and re-checked after normalize so a ".." in
+// the request cannot walk out of it.
+function sharedParentPath(requested) {
+  if (!SHARED_PARENT_PREFIXES.some((prefix) => requested.startsWith(prefix))) return null;
+  const candidate = normalize(join(parentRoot, requested));
+  return candidate.startsWith(parentRoot) ? candidate : null;
+}
+
 function sendError(response, code, message) {
   if (response.headersSent) {
     response.destroy();
@@ -56,10 +68,25 @@ async function handle(request, response) {
   const path = normalize(join(root, requested));
   if (!path.startsWith(root)) return sendError(response, 403, "Forbidden");
 
-  const info = await stat(path).catch(() => null);
+  let info = await stat(path).catch(() => null);
+  let servePath = path;
+  if (!info || !info.isFile()) {
+    // Assets shared with the game one directory up: the models, reference art,
+    // music and the v2 bot catalog v1 now reads its ported roster from all live
+    // there, and this server's own root is v1. Only those trees, and only when
+    // v1 has nothing of its own at that path — the rest of the parent directory
+    // stays invisible.
+    const sharedPath = sharedParentPath(requested);
+    const sharedInfo = sharedPath ? await stat(sharedPath).catch(() => null) : null;
+    if (sharedInfo?.isFile()) {
+      info = sharedInfo;
+      servePath = sharedPath;
+    }
+  }
   if (!info || !info.isFile()) return sendError(response, 404, "Not found");
+  const path_ = servePath;
 
-  const ext = extname(path);
+  const ext = extname(path_);
   const headers = {
     "content-type": types[ext] || "application/octet-stream",
     "accept-ranges": "bytes",
@@ -95,7 +122,7 @@ async function handle(request, response) {
 
   // Stream rather than buffer: model GLBs are ~20MB each and music tracks a few
   // MB, and buffering them per request spikes memory under concurrent loads.
-  const stream = createReadStream(path, { start, end });
+  const stream = createReadStream(path_, { start, end });
   stream.on("error", () => response.destroy());
   // A client that navigates away mid-download (very common with 20MB models)
   // aborts the socket; tear the read stream down instead of leaking it.

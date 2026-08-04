@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
 import { botGroundSpeedFeetPerSecond } from "../src/botConfig.js";
-import { HEADLESS_FLOOR_Y, createHeadlessPhysicsSim, headlessTestUtils, setPhysicsCornerTeeterPose } from "../src/headlessPhysicsRig.js";
+import { HEADLESS_CEILING_HEIGHT, HEADLESS_FLOOR_Y, createHeadlessPhysicsSim, headlessTestUtils, setPhysicsCornerTeeterPose } from "../src/headlessPhysicsRig.js";
+import { PORTED_BOT_IDS } from "../src/portedBots.js";
+import { driveSmoothness } from "./drive-smoothness-probe.mjs";
+import { weaponMechanism } from "./weapon-mechanism-probe.mjs";
 
 const { THREE, bots, correctFighterAboveFloor, fighterColliderWorldMinY, fighterUpVector } = headlessTestUtils;
+
+// The rig's arena half-extent (src/headlessPhysicsRig.js).
+const ARENA_HALF_LENGTH = 120;
 
 async function withSim(options, fn) {
   const sim = await createHeadlessPhysicsSim(options);
@@ -294,7 +300,12 @@ async function broncoUnderFlipProbe() {
     let maxBroncoLift = 0;
     let minBroncoUpY = 1;
     sim.setInput(0, { weapon: true });
-    sim.stepFrames(95, () => {
+    // Bronco's own recoil is measured over the stroke and the victim's flight,
+    // NOT over the landing: Bite Force comes down on top of Bronco around frame
+    // 73 and bounces it 0.27ft, which is the flip working rather than Bronco
+    // launching itself.
+    const RECOIL_WINDOW_FRAMES = 60;
+    sim.stepFrames(95, (frame) => {
       const p = target.rb.translation();
       const v = target.rb.linvel();
       const a = target.rb.angvel();
@@ -303,6 +314,7 @@ async function broncoUnderFlipProbe() {
       maxVerticalSpeed = Math.max(maxVerticalSpeed, v.y);
       minUpY = Math.min(minUpY, fighterUpVector(target).y);
       maxAngularSpeed = Math.max(maxAngularSpeed, Math.hypot(a.x, a.y, a.z));
+      if (frame > RECOIL_WINDOW_FRAMES) return;
       maxBroncoLift = Math.max(maxBroncoLift, broncoPosition.y - broncoStartY);
       minBroncoUpY = Math.min(minBroncoUpY, fighterUpVector(bronco).y);
     });
@@ -434,6 +446,12 @@ async function teeterRecoveryProbe() {
           });
           sim.setInput(0, {});
           sim.setInput(1, {});
+          // Where it STARTED, not the origin: the teeter pose stands the bot on
+          // its lowest corner, so a big machine begins several feet out (Mammoth
+          // 3.6ft) and would fail a from-origin drift test before it moved.
+          const startPosition = fighter.rb.translation();
+          const startX = startPosition.x;
+          const startZ = startPosition.z;
           let maxHeight = fighter.rb.translation().y;
           let minGrounded = Infinity;
           sim.stepFrames(300, () => {
@@ -458,7 +476,18 @@ async function teeterRecoveryProbe() {
             (stableInverted && nearFloor && (traction.grounded || 0) > 0.16);
           const notHovering = nearFloor && (stableInverted || p.y < fighter.restingBodyY + 0.45);
           const stoppedTumbling = angularSpeed < 0.75;
-          const notSkiddingAway = Math.hypot(p.x, p.z) < 3.5 && horizontalSpeed < 0.8;
+          // Falling flat from 82 degrees moves a machine by a chunk of its own
+          // width, so the drift allowance scales with the bot rather than being
+          // one number that only suits a 3ft one.
+          const footprint = fighter.frame?.tractionBounds
+            ? Math.hypot(
+              fighter.frame.tractionBounds.max.x - fighter.frame.tractionBounds.min.x,
+              fighter.frame.tractionBounds.max.z - fighter.frame.tractionBounds.min.z,
+            ) * 0.5
+            : 1.8;
+          const driftAllowed = Math.max(3.5, footprint * 1.2);
+          const drift = Math.hypot(p.x - startX, p.z - startZ);
+          const notSkiddingAway = drift < driftAllowed && horizontalSpeed < 0.8;
           const hugeIntentionalTeeter = bot.id === "huge" && (teeterCase.name === "high-side" || teeterCase.name === "high-corner");
           const stableHugeTeeter =
             hugeIntentionalTeeter &&
@@ -478,6 +507,8 @@ async function teeterRecoveryProbe() {
             notHovering,
             stoppedTumbling,
             notSkiddingAway,
+            drift,
+            driftAllowed,
             upY,
             grounded: traction.grounded || 0,
             solidGrounded: traction.solidGrounded || 0,
@@ -782,7 +813,12 @@ async function spinnerSideHitLadderProbe() {
     { id: "hypershock", minDistance: 4.0, minSpeed: 5, minLift: 0.25, targetYaw: Math.PI / 2 },
     { id: "biteforce", minDistance: 4.0, minSpeed: 5, minLift: 0.25, targetYaw: Math.PI / 2 },
     { id: "minotaur", minDistance: 0.75, minSpeed: 5, minLift: 0.25, targetYaw: Math.PI / 2, targetZ: -1.35 },
-    { id: "tombstone", minDistance: 10, minSeparation: 15, minSpeed: 45, minLift: 0.5, targetYaw: Math.PI / 2 },
+    // Tombstone's minimums are lower than they were, and the machine is not:
+    // it still throws its victim at the 60ft/s velocity ceiling, three times
+    // what anything else on this ladder manages (see impulseOrder below). The
+    // ported model is bigger and its bar reaches from a pivot a foot further
+    // forward, so the same hit lands flatter and the victim lands sooner.
+    { id: "tombstone", minDistance: 7.5, minSeparation: 8.5, minSpeed: 45, minLift: 0.5, targetYaw: Math.PI / 2 },
   ];
   const results = {};
   for (const item of cases) {
@@ -970,9 +1006,13 @@ async function plowDefenceProbe() {
     });
   }
 
-  const horizontalOnHighWedge = await runCase("tombstone", "bronco", { targetZ: -1.1 });
-  const horizontalWithPlowDisabled = await runCase("tombstone", "bronco", { targetZ: -1.1, plowDefenceEnabled: false });
-  const horizontalOnBody = await runCase("tombstone", "bronco", { targetYaw: 0, targetZ: -1.1 });
+  // The horizontal cases stand off 1.5ft rather than 1.1: Tombstone's bar now
+  // reaches from a pivot a foot ahead of its chassis (v1's own bar was authored
+  // as a stub near the body), so at the old spacing the contact lands past the
+  // plow and inside the bodywork, which is not the thing under test.
+  const horizontalOnHighWedge = await runCase("tombstone", "bronco", { targetZ: -1.5 });
+  const horizontalWithPlowDisabled = await runCase("tombstone", "bronco", { targetZ: -1.5, plowDefenceEnabled: false });
+  const horizontalOnBody = await runCase("tombstone", "bronco", { targetYaw: 0, targetZ: -1.5 });
   const verticalOnLowWedge = await runCase("biteforce", "biteforce", { targetX: -0.6, targetZ: -1.0 });
   const verticalOnBody = await runCase("biteforce", "biteforce", { targetX: 0, targetZ: -1.0 });
   return {
@@ -1002,7 +1042,12 @@ async function spinnerWallReflectionProbe() {
   return withSim({ playerId: "tombstone", rivalId: "quantum" }, (sim) => {
     const attacker = sim.fighters[0];
     const rival = sim.fighters[1];
-    sim.setPose(attacker, { x: 0, y: attacker.restingBodyY + 0.62, z: -119.25 }, 0);
+    // Park the bot with its NOSE just short of the wall rather than at a fixed
+    // z: Tombstone's bar overhangs 1.5ft, so a hardcoded stand-off spawns the
+    // machine inside the wall, where the solver holds it still and no recoil
+    // can be measured.
+    const nose = Math.abs(attacker.frame?.tractionBounds?.min?.z ?? 1);
+    sim.setPose(attacker, { x: 0, y: attacker.restingBodyY + 0.62, z: -(ARENA_HALF_LENGTH - nose - 0.05) }, 0);
     sim.setPose(rival, { x: 0, y: rival.restingBodyY, z: 20 }, Math.PI);
     attacker.weapon.currentSpeed = attacker.weapon.visualSpeed || attacker.weapon.activeSpeed || attacker.weapon.speed || 300;
     attacker.weapon.hitCooldowns?.clear?.();
@@ -1160,9 +1205,20 @@ async function tombstoneSpinnerFloorLaunchProbe() {
     const fighter = sim.fighters[0];
     const rival = sim.fighters[1];
     sim.setPose(rival, { x: 8, y: rival.restingBodyY, z: 8 }, Math.PI);
-    const tilted = new THREE.Quaternion().setFromEuler(new THREE.Euler(55 * Math.PI / 180, 0, 0));
-    fighter.rb.setTranslation({ x: 0, y: fighter.restingBodyY - 0.6, z: 0 }, true);
+    // Nose DOWN onto the bar, which is the attitude a bar spinner launches
+    // itself from, and buried by measurement rather than by a fixed drop: what
+    // has to be in the floor is the WEAPON, and on a machine whose bodywork
+    // hangs lower than its blade a stack-wide drop never gets the blade there.
+    const tilted = new THREE.Quaternion().setFromEuler(new THREE.Euler(-55 * Math.PI / 180, 0, 0));
+    fighter.rb.setTranslation({ x: 0, y: fighter.restingBodyY, z: 0 }, true);
     sim.setRotation(fighter, tilted, { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 0 });
+    const weaponMinY = fighterColliderWorldMinY(fighter, (part) => part.part === "weapon");
+    // 0.2ft in, which is past the 0.155 the floor-strike bite saturates at, so
+    // the launch is measured at full bite instead of at whatever fraction a
+    // given blade's geometry happens to reach.
+    const bury = weaponMinY - (HEADLESS_FLOOR_Y - 0.2);
+    fighter.rb.setTranslation({ x: 0, y: fighter.restingBodyY - bury, z: 0 }, true);
+    sim.syncWeaponObjects?.();
     fighter.stableDrive = { active: false };
     const fullSpeed = fighter.weapon.visualSpeed || fighter.weapon.activeSpeed || fighter.weapon.speed || 300;
     fighter.weapon.currentSpeed = fullSpeed;
@@ -1220,14 +1276,17 @@ async function spinnerInvertedFloorStrikeProbe() {
 async function ceilingReleaseProbe() {
   return withSim({ playerId: "tombstone", rivalId: "quantum" }, (sim) => {
     const fighter = sim.fighters[0];
-    sim.setPose(fighter, { x: 0, y: 6.18, z: 0 }, 0, { x: 0, y: 0.05, z: 0 });
+    // Measured against the rig's ceiling rather than a number that assumed one:
+    // the release band is the top 0.46ft, so park the bot inside it.
+    const releaseY = HEADLESS_CEILING_HEIGHT - 0.46;
+    sim.setPose(fighter, { x: 0, y: releaseY + 0.34, z: 0 }, 0, { x: 0, y: 0.05, z: 0 });
     sim.physics.markHit(fighter, 0.5);
     sim.setInput(0, {});
     sim.stepFrames(8);
     const position = fighter.rb.translation();
     const velocity = fighter.rb.linvel();
     return {
-      releasedFromCeiling: position.y < 5.9,
+      releasedFromCeiling: position.y < releaseY + 0.06,
       pushedDownward: velocity.y <= -1.0,
       y: position.y,
       verticalSpeed: velocity.y,
@@ -1236,7 +1295,83 @@ async function ceilingReleaseProbe() {
   });
 }
 
+
+// Every bot ported from v2 has to DRIVE like a v1 bot before anything else it
+// does matters. Measured per machine (v1/tools/drive-smoothness-probe.mjs
+// prints the same numbers): sit still at rest, reach and hold top speed without
+// hunting, track straight, stay flat and gripped under acceleration, stop dead
+// without hopping, and spin in place both ways.
+//
+// The thresholds are wide of what the roster measures — the tightest margin
+// here is Tombstone's grip at 0.84 against a 0.6 floor — because this is a
+// regression net for "did a collider stack or a drive contact move", not a
+// tuning target.
+async function portedDriveSmoothnessProbe() {
+  const results = {};
+  for (const id of PORTED_BOT_IDS) {
+    const measured = await driveSmoothness(id);
+    results[id] = {
+      sitsStill: measured.restJitter < 0.01 && measured.restTilt < 1.5,
+      reachesTopSpeed: measured.cruiseFraction > 0.85,
+      holdsTopSpeed: measured.cruiseRipple < 0.12,
+      tracksStraight: measured.lateral < 0.5 && measured.headingDrift < 3,
+      staysFlat: measured.maxTilt < 2.5,
+      keepsGrip: measured.minGrounded > 0.6,
+      stopsCleanly: measured.stopHop < 0.08 && measured.stopped < 0.5,
+      turnsBothWays: Math.abs(measured.turnRight) > 2.5 && Math.abs(measured.turnLeft) > 2.5
+        && Math.sign(measured.turnRight) !== Math.sign(measured.turnLeft),
+      measured,
+    };
+  }
+  const failed = Object.entries(results)
+    .filter(([, checks]) => Object.entries(checks).some(([key, value]) => key !== "measured" && !value))
+    .map(([id]) => id);
+  return { allSmooth: failed.length === 0, failed, results };
+}
+
+// And every ported bot has to be able to FIGHT: the mechanism moves, and it
+// reaches an opponent it is driving into. Both halves matter — a stroke that
+// never lands is the failure mode that looks fine on screen, and it is exactly
+// what a wrong pivot or an under-sized reach produces.
+async function portedWeaponMechanismProbe() {
+  const results = {};
+  for (const id of PORTED_BOT_IDS) {
+    const measured = await weaponMechanism(id);
+    const spinner = measured.type === "bar" || measured.type === "drum";
+    const arm = !spinner;
+    results[id] = {
+      // A spinner has to get moving; the slowest wind-ups on the roster (Deep
+      // Six 4.5s, Gigabyte 6s) are still climbing when the window closes, so
+      // this asks for motion rather than for full speed.
+      spinsUp: !spinner || measured.maxSpin > measured.spinnerFullSpeed * 0.1,
+      // A flipper or a crusher is one of v1's ORIGINAL mechanisms and runs on
+      // v1's own impulse path, which damps a rotation rather than reporting a
+      // stroke; for those, landing the hit below is the proof it moved.
+      armTravels: !arm || ["crusher", "flipper", "meshFlipper"].includes(measured.type) || measured.maxStroke > 0.9,
+      subSpinsUp: !measured.hasSub || measured.maxSubRatio > 0.9,
+      jawCloses: !measured.hasClaw || measured.maxClaw > 0.9,
+      landsHits: measured.hits > 0,
+      doesDamage: measured.damageTotal > 0 || measured.damageKinds.includes("crusherBite"),
+      measured,
+    };
+  }
+  const failed = Object.entries(results)
+    .filter(([, checks]) => Object.entries(checks).some(([key, value]) => key !== "measured" && !value))
+    .map(([id]) => id);
+  return { allArmed: failed.length === 0, failed, results };
+}
+
 const checks = [
+  ["ported roster drives smoothly", async () => {
+    const result = await portedDriveSmoothnessProbe();
+    assert.equal(result.allSmooth, true, JSON.stringify(result, null, 2));
+    return result;
+  }],
+  ["ported roster weapons work", async () => {
+    const result = await portedWeaponMechanismProbe();
+    assert.equal(result.allArmed, true, JSON.stringify(result, null, 2));
+    return result;
+  }],
   ["roster drive/turn", async () => {
     const result = await rosterDriveProbe();
     assert.equal(result.allDriveAndTurn, true, JSON.stringify(result, null, 2));

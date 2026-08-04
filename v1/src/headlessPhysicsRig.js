@@ -3,15 +3,20 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { BOT_CONFIG } from "./botConfig.js";
 import { MODEL_PART_CONFIG } from "./modelPartConfig.js";
 import { createPhysics } from "./physics.js";
+import { isArmWeaponEngaged, isNewArmWeapon, updateArmWeaponState } from "./armWeapons.js";
 
 export const HEADLESS_FIXED_DT = 1 / 60;
 export const HEADLESS_FLOOR_Y = 0;
+export const HEADLESS_CEILING_HEIGHT = 9.45;
 const HEADLESS_SPAWN_CLEARANCE = 0;
 const HEADLESS_FLOOR_HALF_HEIGHT = 0.05;
 const HEADLESS_GRAVITY_Y = -32.174;
 const ARENA_HALF_WIDTH = 120;
 const ARENA_HALF_LENGTH = 120;
-const ARENA_CEILING_HEIGHT = 6.3;
+// The arena's real ceiling (src/arenaConfig.js). The rig used to sit at 6.3,
+// which is under Mammoth's blade tip at 6.33 — the tallest machine on the
+// roster was pinned to the roof before it could take a step.
+const ARENA_CEILING_HEIGHT = HEADLESS_CEILING_HEIGHT;
 const BRONCO_SELF_RIGHT_COOLDOWN_SECONDS = 0.42;
 const BRONCO_FLIPPER_LIFT_IMPULSE = 12.8;
 const BRONCO_FLIPPER_ROLL_TORQUE = 15.2;
@@ -262,8 +267,11 @@ function isFighterInverted(fighter) {
   return fighterUpVector(fighter).y < -0.35;
 }
 
-function fighterColliderWorldMinY(fighter) {
-  const parts = fighter.physics?.parts || botParts(fighter.spec.id);
+// Lowest world point of a fighter's colliders. `filter` narrows it to one kind
+// of part — a floor-strike probe cares where the WEAPON is, and on a machine
+// whose bodywork hangs lower than its blade the two answers differ by a foot.
+function fighterColliderWorldMinY(fighter, filter = null) {
+  const parts = (fighter.physics?.parts || botParts(fighter.spec.id)).filter((part) => !filter || filter(part));
   const visualScale = fighter.visualScale || 1;
   const p = fighter.rb.translation();
   const q = fighter.rb.rotation();
@@ -333,10 +341,33 @@ function createWeapon(spec) {
       hitCooldowns: new Map(),
     };
   }
+  // Ported arms (hammer, saw arm, lifter, grappler) run the same state machine
+  // headless that they do on screen — no visuals, but the same stroke, the same
+  // rotor spin-up and therefore the same hits.
+  if (ARM_CONFIG_TYPES.has(config.type)) {
+    const sign = config.axisSign || 1;
+    return {
+      type: config.type,
+      arm: config,
+      spinAxis: "x",
+      baseRotation: sign * (config.restAngle || 0),
+      activeRotation: sign * (config.fireAngle || 0),
+      returnSeconds: config.returnSeconds ?? spec.weaponReturnSeconds,
+      strokeSeconds: config.strokeSeconds,
+      stroke: 0,
+      strokeDelta: 0,
+      subs: config.sub ? [{ name: "sub", currentSpeed: 0, ...config.sub }] : [],
+      claw: config.claw ? { ...config.claw } : null,
+      clawAmount: 0,
+      currentSpeed: 0,
+      hitCooldowns: new Map(),
+    };
+  }
   if (config.type) {
     return {
       type: config.type,
       spinAxis: config.spinAxis || "x",
+      radius: config.radius || 0,
       visualSpeed: config.visualSpeed || config.activeSpeed || 120,
       speed: config.visualSpeed || config.activeSpeed || 120,
       idleSpeed: 0,
@@ -350,9 +381,18 @@ function createWeapon(spec) {
   return null;
 }
 
-function updateWeapon(fighter, dt, active) {
+function updateWeapon(fighter, dt, active, input = {}) {
   const weapon = fighter?.weapon;
   if (!weapon) return;
+  if (isNewArmWeapon(weapon)) {
+    updateArmWeaponState(weapon, dt, {
+      active,
+      secondary: input.weaponSecondary !== undefined ? Boolean(input.weaponSecondary) : Boolean(active),
+      strokeActive: Boolean(weapon.headlessStrokeActive),
+    });
+    weapon.lastSpeedDelta = 0;
+    return;
+  }
   if (weapon.type === "bar" || weapon.type === "drum") {
     const visualSpeed = weapon.visualSpeed || weapon.activeSpeed || weapon.speed || 0;
     const targetSpeed = active ? visualSpeed : weapon.idleSpeed || 0;
@@ -369,8 +409,11 @@ function updateWeapon(fighter, dt, active) {
   }
 }
 
+const ARM_CONFIG_TYPES = new Set(["hammer", "hammerSaw", "lifter", "lifterDisc", "grappler", "sawArms"]);
+
 function isImpulseWeapon(weapon) {
-  return weapon?.type === "flipper" || weapon?.type === "meshFlipper" || weapon?.type === "crusher";
+  return weapon?.type === "flipper" || weapon?.type === "meshFlipper" || weapon?.type === "crusher"
+    || weapon?.type === "hammer";
 }
 
 function consumeWeaponPressEdge(sim, fighter, inputActive) {
@@ -403,6 +446,11 @@ function isWeaponImpulseStrokeActive(sim, fighter, minElapsed = 0) {
 function isWeaponImpactActive(sim, fighter, inputActive) {
   const weapon = fighter?.weapon;
   if (!weapon) return inputActive;
+  if (isNewArmWeapon(weapon)) {
+    return isArmWeaponEngaged(weapon, {
+      strokeActive: isWeaponImpulseStrokeActive(sim, fighter, IMPULSE_WEAPON_IMPACT_DELAY_SECONDS),
+    });
+  }
   if (weapon.type === "bar" || weapon.type === "drum") {
     const currentSpeed = Number.isFinite(weapon.currentSpeed) ? Math.abs(weapon.currentSpeed) : 0;
     return currentSpeed > Math.max(2, (weapon.visualSpeed || weapon.activeSpeed || weapon.speed || 1) * 0.08);
@@ -472,6 +520,39 @@ function stabilizeSelfRightingFighter(sim, fighter) {
   }
 }
 
+// The rig has no renderer, but physics.js measures reach FROM THE WEAPON — a
+// spinner's hit zone, a wall strike and every ported arm all start at the
+// weapon's world position. Without an object it falls back to a point 0.7ft in
+// front of the chassis, which is nowhere near the end of Tombstone's bar or
+// Sawblaze's arm. A bare pair of Object3Ds, synced from the rigid body each
+// step, puts the measurement back where the game takes it.
+//
+// Only the ported entries carry an ABSOLUTE pivot; v1's own configs store a
+// fractional one that means nothing without the fitted model, so those bots
+// keep the old fallback and their behaviour is untouched.
+function attachHeadlessWeaponObject(weapon, botId) {
+  const config = MODEL_PART_CONFIG[botId];
+  const pivot = config?.segmented ? config.weapon?.pivot : null;
+  if (!weapon || !pivot) return weapon;
+  const body = new THREE.Object3D();
+  const object = new THREE.Object3D();
+  object.position.set(pivot.x || 0, pivot.y || 0, pivot.z || 0);
+  body.add(object);
+  weapon.bodyObject = body;
+  weapon.object = object;
+  return weapon;
+}
+
+function syncHeadlessWeaponObject(fighter) {
+  const body = fighter?.weapon?.bodyObject;
+  if (!body) return;
+  const translation = fighter.rb.translation();
+  const rotation = fighter.rb.rotation();
+  body.position.set(translation.x, translation.y, translation.z);
+  body.quaternion.set(rotation.x, rotation.y, rotation.z, rotation.w);
+  body.updateMatrixWorld(true);
+}
+
 function createFighter(sim, botId, index) {
   const spec = bots.find((bot) => bot.id === botId);
   if (!spec) throw new Error(`Unknown bot id: ${botId}`);
@@ -504,11 +585,13 @@ function createFighter(sim, botId, index) {
     },
   });
   rb.userData = { weightLbs: spec.weightLbs || 250, physicsParts: result.parts, physicsColliderBindings: result.colliderBindings || [] };
+  const weapon = createWeapon(spec);
+  attachHeadlessWeaponObject(weapon, botId);
   const fighter = {
     spec,
     rb,
     weightLbs: spec.weightLbs || 250,
-    weapon: createWeapon(spec),
+    weapon,
     weaponColliderBindings: [],
     frame,
     visualScale,
@@ -564,6 +647,7 @@ export async function createHeadlessPhysicsSim({
       const fighter = typeof indexOrFighter === "number" ? this.fighters[indexOrFighter] : indexOrFighter;
       const rotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, yaw, 0));
       setFighterBodyPose(fighter, position, { x: rotation.x, y: rotation.y, z: rotation.z, w: rotation.w }, linvel, angvel);
+      syncHeadlessWeaponObject(fighter);
       if (fighter.physics) {
         fighter.physics.wedgeUntil = 0;
         fighter.physics.wedgeTractionPenalty = 0;
@@ -574,6 +658,10 @@ export async function createHeadlessPhysicsSim({
       fighter.rb.setRotation({ x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w }, true);
       fighter.rb.setLinvel(linvel, true);
       fighter.rb.setAngvel(angvel, true);
+      syncHeadlessWeaponObject(fighter);
+    },
+    syncWeaponObjects() {
+      this.fighters.forEach((fighter) => syncHeadlessWeaponObject(fighter));
     },
     stepFrame() {
       const [player, rival] = this.fighters;
@@ -583,15 +671,28 @@ export async function createHeadlessPhysicsSim({
       this.fighters.forEach((fighter, index) => {
         const input = this.inputs[index];
         const pressed = consumeWeaponPressEdge(this, fighter, input.weapon);
-        updateWeapon(fighter, this.dt, input.weapon);
+        if (fighter.weapon) {
+          fighter.weapon.headlessStrokeActive = isWeaponImpulseStrokeActive(this, fighter);
+        }
+        updateWeapon(fighter, this.dt, input.weapon, input);
         this.physics.applySpinnerGyro(fighter, input, this.dt);
         applyBroncoSelfRighting(this, fighter, pressed);
         stabilizeSelfRightingFighter(this, fighter);
       });
+      this.fighters.forEach((fighter) => syncHeadlessWeaponObject(fighter));
       const active = this.fighters.map((fighter, index) => isWeaponImpactActive(this, fighter, this.inputs[index].weapon));
       const preStepMotion = new Map(this.fighters.map((fighter) => [fighter, captureFighterMotion(fighter)]));
       this.fighters.forEach((fighter, index) => {
-        this.physics.applyWeaponImpacts({ arena: this, attacker: fighter, active: active[index], dt: this.dt });
+        // Tests can watch what the weapon pipeline reports (damage, weapon
+        // events) by setting sim.weaponImpactCallbacks — the same callback bag
+        // main.js passes in the game.
+        this.physics.applyWeaponImpacts({
+          arena: this,
+          attacker: fighter,
+          active: active[index],
+          dt: this.dt,
+          callbacks: this.weaponImpactCallbacks || {},
+        });
       });
       this.world.integrationParameters.dt = this.dt;
       this.world.step();

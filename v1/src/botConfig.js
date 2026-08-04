@@ -18,6 +18,11 @@
 // - Impulse weapons use "flipper" or "meshFlipper"; crushers use "crusher".
 // - Wedges are collider parts with type/part "wedge"; drive traction comes from
 //   collider parts marked part: "driveContact" with side: "left" or "right".
+// Bots ported from v2 (Sawblaze and Tombstone included — v1's own entries for
+// those two pointed at GLBs that were never in the repo) are generated from the
+// v2 catalog rather than hand-written here. See portedBots.js.
+import { PORTED_BOT_CONFIG } from "./portedBots.js";
+
 export const FEET_PER_SECOND_PER_MPH = 22 / 15;
 
 export function mphToFeetPerSecond(mph) {
@@ -194,66 +199,7 @@ export const BOT_CONFIG = {
     frontYawOffset: 0,
     viewerRotation: [0, Math.PI - 0.2, 0],
   },
-  sawblaze: {
-    name: "Sawblaze",
-    short: "SB",
-    ref: "../public/reference/sawblaze.png",
-    notes: "Black and green dustpan/lifter with rear drive wheels, green overhead arm, and vertical saw blade.",
-    maxSpeed: 7.773,
-    maxBoostSpeed: 12.068,
-    driveAcceleration: 7.5,
-    turningTightness: 1.0,
-    yawDamping: 1.0,
-    weaponSpinUpSeconds: 2.4,
-    maxHp: 1000,
-    weightLbs: 250,
-    weaponWeightLbs: 30,
-    weaponMaxAngularSpeed: 880,
-    weaponRotationalInertia: 0.7,
-    weaponRotationalInertiaType: "vertical",
-    spinnerImpactCapEnabled: true,
-    spinnerImpactCap: 10,
-    spinnerImpactScale: 1,
-    spinnerGyroScale: 0.8,
-    frontYawOffset: 0,
-    viewerRotation: [0, Math.PI - 0.2, 0],
-  },
-  tombstone: {
-    name: "Tombstone",
-    short: "TS",
-    ref: "../public/reference/tombstone.png",
-    notes: "Low black two-wheel bar spinner with sloped top armor, exposed rear tires, and a long horizontal front blade.",
-    maxSpeed: 6.545,
-    maxBoostSpeed: 8.182,
-    driveAcceleration: 5.8,
-    turningTightness: 0.78,
-    yawDamping: 1.25,
-    weaponSpinUpSeconds: 3.0,
-    maxHp: 1000,
-    weightLbs: 250,
-    weaponWeightLbs: 80,
-    weaponMaxAngularSpeed: 338,
-    weaponRotationalInertia: 1.2,
-    weaponRotationalInertiaType: "horizontal",
-    spinnerReach: 2.25,
-    spinnerEnergyTransferEfficiency: 0.86,
-    spinnerTargetImpulseScale: 18.0,
-    spinnerKickbackScale: 1.45,
-    spinnerTargetLiftScale: 7.0,
-    spinnerTargetLiftVelocity: 4.5,
-    spinnerTargetLiftClearance: 0.55,
-    spinnerImpactCapEnabled: true,
-    spinnerImpactCap: 500,
-    spinnerImpactScale: 1.55,
-    spinnerGyroScale: 1.35,
-    spinnerFloorLaunchEnabled: true,
-    spinnerFloorLaunchAngleDeg: 30,
-    spinnerFloorLaunchScale: 1.15,
-    spinnerFloorLaunchCap: 180,
-    canDriveInverted: true,
-    frontYawOffset: 0,
-    viewerRotation: [0, Math.PI - 0.2, 0],
-  },
+  ...PORTED_BOT_CONFIG,
 };
 
 export const PHYSICS_ASSISTS = {

@@ -5,7 +5,15 @@ import { init as initInstant, id as instantId } from "@instantdb/core";
 import { BOT_CONFIG, PHYSICS_ASSISTS, botGroundSpeedFeetPerSecond } from "./botConfig.js?v=bot-speed-mph-1";
 import { MODEL_PART_CONFIG } from "./modelPartConfig.js?v=bronco-flipper-1";
 import { stepPhysicsArena } from "./arenaPhysicsStep.js";
-import { fractionBoundsToBox, modelAuthoringBounds, originalAuthoringBoundsForMesh, splitConfiguredModelParts } from "./modelParts.js";
+import { drawnBox, fractionBoundsToBox, modelAuthoringBounds, normalizeSegmentedModel, originalAuthoringBoundsForMesh, splitConfiguredModelParts, splitSegmentedModelParts } from "./modelParts.js";
+import {
+  armWeaponAngle,
+  isArmWeaponEngaged,
+  isHeldArmWeapon,
+  isNewArmWeapon,
+  updateArmWeaponState,
+} from "./armWeapons.js";
+import { PORTED_BOT_IDS, isPortedBot } from "./portedBots.js";
 import { createPhysics } from "./physics.js?v=bot-speed-mph-1";
 import { DEFAULT_PHYSICAL_DAMAGE_OPTIONS, applyPhysicalDamageBreak } from "./physicalDamage.js?v=game-config-1";
 import { PHYSICAL_DAMAGE_COLLIDER_CARVE, PHYSICAL_DAMAGE_FILL, PHYSICAL_DAMAGE_SYNC_NOTE } from "./physicalDamageShared.js";
@@ -206,12 +214,13 @@ const BOT_BUILDERS = {
   quantum: buildQuantum,
   hypershock: buildHypershock,
   minotaur: buildMinotaur,
-  sawblaze: buildSawblaze,
-  tombstone: buildTombstoneModel,
+  // Every bot ported from v2 builds the same way: its GLB is already segmented,
+  // so there is one builder for all of them rather than one function per bot.
+  ...Object.fromEntries(PORTED_BOT_IDS.map((id) => [id, () => buildConfiguredModelBot(id)])),
 };
 
-const BOT_PICKER_ORDER = ["bronco", "biteforce", "huge", "quantum", "hypershock", "minotaur", "sawblaze", "tombstone"];
-const GAME_HIDDEN_BOT_IDS = new Set(["sawblaze"]);
+const BOT_PICKER_ORDER = ["bronco", "biteforce", "huge", "quantum", "hypershock", "minotaur", ...PORTED_BOT_IDS];
+const GAME_HIDDEN_BOT_IDS = new Set();
 const bots = Object.entries(BOT_CONFIG).map(([id, config]) => ({
   id,
   ...config,
@@ -452,10 +461,9 @@ let hypershockModel = null;
 let hypershockModelFailed = false;
 let minotaurModel = null;
 let minotaurModelFailed = false;
-let sawblazeModel = null;
-let sawblazeModelFailed = false;
-let tombstoneModel = null;
-let tombstoneModelFailed = false;
+// Every loaded GLB, ported roster included. The named handles above stay for
+// the six bots whose viewer/builder code refers to them directly.
+const loadedModels = new Map();
 
 const keys = new Set();
 const clock = new THREE.Clock();
@@ -486,7 +494,8 @@ const PLAYER_START_ELEMENT = arenaElementById("player-start");
 const RIVAL_START_ELEMENT = arenaElementById("rival-start");
 const PLAYER_SPAWN = arenaSpawnFromElement(PLAYER_START_ELEMENT, { x: 0, y: 0.55, z: ARENA_HALF_LENGTH - 2.25, yaw: 0 });
 const RIVAL_SPAWN = arenaSpawnFromElement(RIVAL_START_ELEMENT, { x: 0, y: 0.55, z: -ARENA_HALF_LENGTH + 2.25, yaw: Math.PI });
-const MODEL_BACKED_BOTS = new Set(["biteforce", "bronco", "huge", "quantum", "hypershock", "minotaur", "sawblaze", "tombstone"]);
+const SEGMENTED_MODEL_SURFACE = { metalness: 0.28, roughness: 0.42 };
+const MODEL_BACKED_BOTS = new Set(["biteforce", "bronco", "huge", "quantum", "hypershock", "minotaur", ...PORTED_BOT_IDS]);
 const HUGE_SPINNER_BREAK_SPEED_RATIO = 0.72;
 const HUGE_SPINNER_FULL_SPEED = 145;
 const HUGE_SPINNER_SPIN_UP_SECONDS = 5;
@@ -1307,13 +1316,17 @@ function applyDamageToInput(fighter, input = {}) {
     next.throttle = 0;
     next.turn = 0;
     next.weapon = false;
+    next.weaponSecondary = false;
     return next;
   }
   if (isLeftDriveBroken(fighter)) next.leftDrive = 0;
   if (isRightDriveBroken(fighter)) next.rightDrive = 0;
   next.throttle = (next.leftDrive + next.rightDrive) * 0.5;
   next.turn = (next.leftDrive - next.rightDrive) * 0.5;
-  if (isWeaponBroken(fighter)) next.weapon = false;
+  if (isWeaponBroken(fighter)) {
+    next.weapon = false;
+    next.weaponSecondary = false;
+  }
   return next;
 }
 
@@ -1447,8 +1460,10 @@ function quantumBiteSurfacePoint(target, point, normal = null) {
   return surface;
 }
 
-function recordQuantumBiteDamage(attacker, target, point, normal, dt = 0) {
-  if (attacker?.spec?.id !== "quantum" || !target?.fighter || !damageEffectsEnabled()) return;
+// Any crusher's bite, not just Quantum's: Kraken arrived with the same jaw and
+// the same job, so the gate is on the mechanism rather than on the bot.
+function recordCrusherBiteDamage(attacker, target, point, normal, dt = 0) {
+  if (attacker?.weapon?.type !== "crusher" || !target?.fighter || !damageEffectsEnabled()) return;
   const fighter = target.fighter;
   if (!fighter?.group) return;
   const bitePoint = quantumBiteSurfacePoint(target, point, normal);
@@ -1470,9 +1485,9 @@ function recordQuantumBiteDamage(attacker, target, point, normal, dt = 0) {
   });
 }
 
-function resetQuantumBiteDamageLatch(fighter) {
+function resetCrusherBiteDamageLatch(fighter) {
   const weapon = fighter?.weapon;
-  if (fighter?.spec?.id !== "quantum" || weapon?.type !== "crusher") return;
+  if (weapon?.type !== "crusher") return;
   weapon.quantumBiteContacts?.clear?.();
 }
 
@@ -2087,15 +2102,56 @@ function prepareLoadedModel(root, fit = { width: 2.9, height: 1.45, depth: 2.9 }
   return model;
 }
 
+// Models ported from v2 arrive already segmented and already the right size:
+// normalize them exactly the way v2 does (yaw, roll, uniform scale, ground the
+// drawn geometry to y=0, centre on the body) so the catalog's colliders and
+// pivots — all measured against that pose — land where they were measured.
+//
+// The repaint matters as much as the transform. Tripo writes no
+// pbrMetallicRoughness block, so every scanned material arrives fully metallic
+// and fully rough, which renders as chalk: no diffuse term and no visible
+// specular. These are painted machines, so the baked photograph goes back on
+// the surface at v2's values.
+function prepareSegmentedModel(source, config) {
+  const model = source.clone(true);
+  model.traverse((child) => {
+    if (!child.isMesh) return;
+    child.castShadow = true;
+    child.receiveShadow = true;
+    child.geometry = child.geometry.clone();
+    if (child.material) {
+      child.material = child.material.clone();
+      if (child.material.map) {
+        child.material.metalness = SEGMENTED_MODEL_SURFACE.metalness;
+        child.material.roughness = SEGMENTED_MODEL_SURFACE.roughness;
+        child.material.needsUpdate = true;
+      }
+    }
+  });
+  // The normalized wrapper carries the model's scale and grounding offset, so
+  // nothing may be hung directly off it: a pivot placed there would be measured
+  // in the wrapper's own scaled frame. It goes inside an identity container,
+  // which makes container-local space and game space the same thing — and that
+  // is the space the catalog's pivots, angles and collider offsets are in.
+  const container = new THREE.Group();
+  container.name = "modelSegmented";
+  container.add(normalizeSegmentedModel(model, config.model));
+  return container;
+}
+
 function buildConfiguredModelBot(id) {
   const config = MODEL_PART_CONFIG[id];
   const source = modelForId(id);
   if (!config || !source) return new THREE.Group();
   const spec = bots.find((bot) => bot.id === id) || {};
   const group = new THREE.Group();
-  const model = prepareLoadedModel(source, config.fit);
-  const movingParts = splitConfiguredModelParts(model, config, spec);
+  const segmented = Boolean(config.segmented);
+  const model = segmented ? prepareSegmentedModel(source, config) : prepareLoadedModel(source, config.fit);
+  const movingParts = segmented
+    ? splitSegmentedModelParts(model, config, spec)
+    : splitConfiguredModelParts(model, config, spec);
   group.add(model);
+  group.userData.segmentedModel = segmented;
   group.userData.sourceModel = model;
   group.userData.modelPartConfig = config;
   group.userData.weapon = movingParts.weapon;
@@ -2192,14 +2248,13 @@ function makeBroncoFlipperWeapon(model) {
 }
 
 function setModelForId(id, model) {
+  loadedModels.set(id, model);
   if (id === "biteforce") biteforceModel = model;
   if (id === "bronco") broncoModel = model;
   if (id === "huge") hugeModel = model;
   if (id === "quantum") quantumModel = model;
   if (id === "hypershock") hypershockModel = model;
   if (id === "minotaur") minotaurModel = model;
-  if (id === "sawblaze") sawblazeModel = model;
-  if (id === "tombstone") tombstoneModel = model;
 }
 
 function markModelFailed(id) {
@@ -2210,8 +2265,6 @@ function markModelFailed(id) {
   if (id === "quantum") quantumModelFailed = true;
   if (id === "hypershock") hypershockModelFailed = true;
   if (id === "minotaur") minotaurModelFailed = true;
-  if (id === "sawblaze") sawblazeModelFailed = true;
-  if (id === "tombstone") tombstoneModelFailed = true;
 }
 
 function isBotModelLoading(id) {
@@ -2496,15 +2549,7 @@ function loadQuantumModel(options = {}) {
 }
 
 function modelForId(id) {
-  if (id === "biteforce") return biteforceModel;
-  if (id === "bronco") return broncoModel;
-  if (id === "huge") return hugeModel;
-  if (id === "quantum") return quantumModel;
-  if (id === "hypershock") return hypershockModel;
-  if (id === "minotaur") return minotaurModel;
-  if (id === "sawblaze") return sawblazeModel;
-  if (id === "tombstone") return tombstoneModel;
-  return null;
+  return loadedModels.get(id) || null;
 }
 
 function loadConfiguredModel(id) {
@@ -2549,14 +2594,6 @@ function buildHypershock() {
 
 function buildMinotaur() {
   return buildConfiguredModelBot("minotaur");
-}
-
-function buildSawblaze() {
-  return buildConfiguredModelBot("sawblaze");
-}
-
-function buildTombstoneModel() {
-  return buildConfiguredModelBot("tombstone");
 }
 
 function makeQuantumCrusherWeapon(model) {
@@ -3243,6 +3280,11 @@ function isGroundingVisualMesh(mesh) {
 }
 
 function measureArenaVisualFloorOffset(group) {
+  // A segmented model was grounded on its DRAWN geometry when it was
+  // normalized, so it needs no correction here — and measuring it through the
+  // position buffer would reintroduce the orphaned vertices a carve leaves
+  // behind (v2 traced Endgame hovering 0.46ft up to exactly that).
+  if (group?.userData?.segmentedModel) return 0;
   group.updateMatrixWorld(true);
   const bounds = new THREE.Box3();
   const point = new THREE.Vector3();
@@ -7073,14 +7115,40 @@ function isSpinnerBlockedByBotGeometry(fighter, targetSpeed) {
   });
 }
 
-function updateWeapon(fighter, dt, active) {
+function updateWeapon(fighter, dt, active, input = {}) {
   const weapon = fighter?.weapon;
   if (!weapon?.object) return;
   const now = performance.now() / 1000;
   weapon.damageEffectiveness = weaponDamageEffectiveness(fighter);
   stopBrokenWeapon(fighter);
   const weaponActive = isWeaponBroken(fighter) ? false : active;
-  if (weapon.type === "crusher" && !weaponActive) resetQuantumBiteDamageLatch(fighter);
+  if (weapon.type === "crusher" && !weaponActive) resetCrusherBiteDamageLatch(fighter);
+  // Mechanisms new to v1 (hammer, saw arm, lifter, grappler) run their stroke
+  // and their nested rotors through the shared arm-weapon runtime, so the game
+  // and the headless rig drive them identically.
+  if (isNewArmWeapon(weapon)) {
+    updateArmWeaponState(weapon, dt, {
+      active: weaponActive,
+      secondary: Boolean(input.weaponSecondary),
+      strokeActive: isWeaponImpulseStrokeActive(fighter),
+      broken: isWeaponBroken(fighter),
+    });
+    weapon.object.rotation.x = armWeaponAngle(weapon);
+    (weapon.subs || []).forEach((sub) => {
+      if (!sub.object) return;
+      // A saw that IS the weapon part turns about the arm's own axis; a nested
+      // rotor turns inside the arm group about its own axle.
+      if (sub.spinsWeaponPivot) sub.spinAngle = (sub.spinAngle || 0) + sub.currentSpeed * dt;
+      else sub.object.rotation.x += sub.currentSpeed * dt;
+    });
+    if (weapon.claw?.object) {
+      const open = weapon.claw.openAngle || 0;
+      const closed = weapon.claw.closedAngle || 0;
+      weapon.claw.object.rotation.x = open + (weapon.clawAmount || 0) * (closed - open);
+    }
+    weapon.lastSpeedDelta = 0;
+    return;
+  }
   if (weapon.type === "bar" || weapon.type === "drum") {
     if (weapon.toggle && weaponActive && !weapon.wasInputActive) weapon.toggledOn = !weapon.toggledOn;
     weapon.wasInputActive = weaponActive;
@@ -7155,7 +7223,9 @@ function isWeaponImpactActive(fighter, inputActive) {
 }
 
 function isImpulseWeapon(weapon) {
-  return weapon?.type === "flipper" || weapon?.type === "meshFlipper";
+  // A hammer is fired and committed like a flipper: it takes v1's stroke window
+  // and return gate, so it cannot be parked half way up.
+  return weapon?.type === "flipper" || weapon?.type === "meshFlipper" || weapon?.type === "hammer";
 }
 
 function consumeWeaponPressEdge(fighter, inputActive) {
@@ -7684,6 +7754,11 @@ function updateFighterSoundLoops(fighter, input, index) {
     weaponLoop(`fighter-${index}`, { type, ratio: spinnerSpeedRatio(fighter), position });
   } else if (type === "crusher") {
     weaponLoop(`fighter-${index}`, { type, ratio: input?.weapon && !isWeaponBroken(fighter) ? 1 : 0, position });
+  } else if (fighter.weapon?.subs?.length) {
+    // Saw discs and lifter discs are rotors too, and a saw you cannot hear is a
+    // saw the player forgets to switch on. They ride the drum loop at whatever
+    // the rotor has actually spun up to.
+    weaponLoop(`fighter-${index}`, { type: "drum", ratio: fighter.weapon.subRatio || 0, position });
   }
 }
 
@@ -8071,6 +8146,10 @@ function readControls(gamepadIndex = 0) {
   const keyboard = {
     ...completeDriveInput(keyboardTank),
     weapon: gamepadIndex === 1 ? keys.has("Enter") : keys.has("Space"),
+    // Second mechanism channel: saw motors, lifter discs, grappler jaws. Bots
+    // without one ignore it, so the control layer does not need to know which
+    // machine is which (armWeapons.js does).
+    weaponSecondary: gamepadIndex === 1 ? keys.has("ShiftRight") : keys.has("ShiftLeft"),
     boostActive: false,
     brakeActive: false,
     pausePressed: false,
@@ -8102,6 +8181,8 @@ function readControls(gamepadIndex = 0) {
   return {
     ...completeDriveInput(hasStickDrive ? gamepadDrive : gamepadIndex === 0 ? keyboard : {}),
     weapon: (pad.buttons[7]?.value || 0) > 0.2 || (gamepadIndex === 0 && keyboard.weapon),
+    weaponSecondary: Boolean(pad.buttons[5]?.pressed) || (pad.buttons[5]?.value || 0) > 0.2
+      || (gamepadIndex === 0 && keyboard.weaponSecondary),
     boostActive,
     brakeActive,
     pausePressed,
@@ -8208,9 +8289,21 @@ function computeArenaAiInput(fighter, opponentFighter, dt) {
     input = steerTowardDirection(fighter, directionToOpponent.clone().add(wallBias).normalize(), { throttle, turnGain: ai.mode === "strike" ? 1.05 : 1.35 });
   }
   const spinner = fighter.weapon?.type === "bar" || fighter.weapon?.type === "drum";
-  const weapon = spinner ? distance < AI_ENGAGE_DISTANCE + 1.5 : distance < AI_STRIKE_DISTANCE + 0.35 && ai.mode === "strike";
+  const held = isHeldArmWeapon(fighter.weapon);
+  // A held arm is worked, not fired: bring it up as soon as the opponent is
+  // close enough to be under it, and drop it again while closing so the forks
+  // are DOWN on the approach. Without that a lifter drives the whole fight
+  // with its plow parked over its own back.
+  const weapon = spinner
+    ? distance < AI_ENGAGE_DISTANCE + 1.5
+    : held
+      ? distance < AI_STRIKE_DISTANCE + 0.2
+      : distance < AI_STRIKE_DISTANCE + 0.35 && ai.mode === "strike";
+  // Saw motors and jaws run whenever the bot is fighting: they cost nothing to
+  // leave on and a saw that only spins on contact never cuts.
+  const weaponSecondary = Boolean(fighter.weapon?.subs?.length || fighter.weapon?.claw);
   fighter.aiState = { ...ai, distance, dt };
-  return completeDriveInput({ ...input, weapon });
+  return completeDriveInput({ ...input, weapon, weaponSecondary });
 }
 
 function serializableInput(input) {
@@ -8219,6 +8312,7 @@ function serializableInput(input) {
     leftDrive: Number(drive.leftDrive.toFixed(3)),
     rightDrive: Number(drive.rightDrive.toFixed(3)),
     weapon: Boolean(input?.weapon),
+    weaponSecondary: Boolean(input?.weaponSecondary),
     boostActive: Boolean(input?.boostActive),
     brakeActive: Boolean(input?.brakeActive),
   };
@@ -8226,7 +8320,7 @@ function serializableInput(input) {
 
 function inputSignature(input) {
   const payload = serializableInput(input);
-  return `${payload.leftDrive}|${payload.rightDrive}|${Number(payload.weapon)}|${Number(payload.boostActive)}|${Number(payload.brakeActive)}`;
+  return `${payload.leftDrive}|${payload.rightDrive}|${Number(payload.weapon)}|${Number(payload.weaponSecondary)}|${Number(payload.boostActive)}|${Number(payload.brakeActive)}`;
 }
 
 function pruneAcknowledgedInputs(ackSeq = 0) {
@@ -8825,6 +8919,13 @@ function updateArena(dt) {
         });
       },
       weaponActiveForImpact: (fighter, input) => {
+        // A ported arm is only dangerous once it has actually travelled — an
+        // arm at rest is bodywork, and a saw that is not turning is a bracket.
+        if (isNewArmWeapon(fighter.weapon)) {
+          return !isWeaponBroken(fighter) && isArmWeaponEngaged(fighter.weapon, {
+            strokeActive: isWeaponImpulseStrokeActive(fighter, IMPULSE_WEAPON_IMPACT_DELAY_SECONDS),
+          });
+        }
         const weaponInput = isImpulseWeapon(fighter.weapon)
           ? !isWeaponBroken(fighter) && isWeaponImpulseStrokeActive(fighter, IMPULSE_WEAPON_IMPACT_DELAY_SECONDS)
           : input.weapon;
@@ -8836,7 +8937,7 @@ function updateArena(dt) {
         // Physics-frame callback: recordBotDamage must enqueue physical breaks only.
         // Mesh selection, bounds work, preview building, and split prep belong off-frame.
         recordDamage: (event) => recordBotDamage(event.fighter, event),
-        recordQuantumBiteDamage,
+        recordQuantumBiteDamage: recordCrusherBiteDamage,
       }),
       afterStepCallbacks: {
         // Physics-frame callback: keep this path free of geometry-heavy damage work.
@@ -9126,7 +9227,7 @@ function applyWeaponImpacts(attacker, active, dt = 0) {
       attacker.rb.applyImpulse({ x: -side.x * 0.035 * weightedStrength, y: 0, z: -side.z * 0.035 * weightedStrength }, true);
       const targetRadius = Math.max(0.35, horizontalBodyRadius(target.fighter) * 0.82);
       const targetBitePoint = new THREE.Vector3(p.x, p.y + 0.28, p.z).addScaledVector(side, -targetRadius);
-      recordQuantumBiteDamage(attacker, target, targetBitePoint, side.clone().negate(), dt);
+      recordCrusherBiteDamage(attacker, target, targetBitePoint, side.clone().negate(), dt);
     } else if (isCrusher && target.prop?.breakable) {
       markFighterUnstable(attacker, 1.2);
       target.prop.jawPressure = (target.prop.jawPressure || 0) + dt;

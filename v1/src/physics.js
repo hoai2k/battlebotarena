@@ -1,4 +1,5 @@
 import { FEET_PER_SECOND_PER_MPH, botGroundSpeedFeetPerSecond } from "./botConfig.js";
+import { armHitProfile, armWeaponReach, isArmWeaponEngaged, isNewArmWeapon } from "./armWeapons.js";
 
 const DEFAULTS = {
   floorY: 0,
@@ -1013,9 +1014,14 @@ export function createPhysics({ THREE, RAPIER, now = null }) {
     drainSpinner(attacker, drainLoss, 0.03);
     markHit(attacker, 0.48);
     if (target.fighter) markHit(target.fighter, 0.55);
+    // spinnerDamageScale orders how much a spinner HURTS without touching how
+    // far it throws (that is impactScale, which moves the whole hit). It comes
+    // across with the ported entries — v2 uses it to rank the roster's damage —
+    // and defaults to 1, so v1's own bots are unchanged.
+    const damageScale = Number.isFinite(attacker.spec?.spinnerDamageScale) ? Math.max(0, attacker.spec.spinnerDamageScale) : 1;
     callbacks.recordDamage?.({
       fighter: target.fighter,
-      amount: damageImpulseMag * (1.55 + speedRatio * 0.55),
+      amount: damageImpulseMag * (1.55 + speedRatio * 0.55) * damageScale,
       point: contact.point,
       normal: new THREE.Vector3(-hitDirection.x, -hitDirection.y, -hitDirection.z),
       kind: "spinner",
@@ -1271,11 +1277,17 @@ export function createPhysics({ THREE, RAPIER, now = null }) {
     if (!state.spinnerKnockbackEnabled || !fighter?.weapon || (fighter.weapon.type !== "bar" && fighter.weapon.type !== "drum")) return false;
     const speedRatio = clamp(spinnerPhysicalSpeed(fighter) / spinnerPhysicalMaxSpeed(fighter), 0, 1.45);
     if (speedRatio < 0.32) return false;
+    // The blade reaches its own radius past the axle, so a long bar strikes the
+    // wall while its pivot is still a couple of feet clear. v1's own spinners
+    // carry no radius (their weapon geometry is region-split at runtime) and
+    // keep the pivot-distance behaviour they were tuned with; ported entries
+    // measure their swept radius in the catalog, so use it.
+    const sweep = Math.max(0, fighter.weapon.radius || 0);
     const contacts = [
-      { clearance: state.arenaHalfWidth - weaponPoint.x, side: new THREE.Vector3(1, 0, 0) },
-      { clearance: state.arenaHalfWidth + weaponPoint.x, side: new THREE.Vector3(-1, 0, 0) },
-      { clearance: state.arenaHalfLength - weaponPoint.z, side: new THREE.Vector3(0, 0, 1) },
-      { clearance: state.arenaHalfLength + weaponPoint.z, side: new THREE.Vector3(0, 0, -1) },
+      { clearance: state.arenaHalfWidth - weaponPoint.x - sweep, side: new THREE.Vector3(1, 0, 0) },
+      { clearance: state.arenaHalfWidth + weaponPoint.x - sweep, side: new THREE.Vector3(-1, 0, 0) },
+      { clearance: state.arenaHalfLength - weaponPoint.z - sweep, side: new THREE.Vector3(0, 0, 1) },
+      { clearance: state.arenaHalfLength + weaponPoint.z - sweep, side: new THREE.Vector3(0, 0, -1) },
     ];
     const contact = contacts
       .map((item) => ({ ...item, bite: clamp(1 - item.clearance / 0.55, 0, 1) }))
@@ -1588,15 +1600,197 @@ export function createPhysics({ THREE, RAPIER, now = null }) {
     return true;
   }
 
+  // Hits from the mechanisms v1 gained with the ported roster. Everything here
+  // is expressed the way v1's flipper path already speaks: velocities imparted
+  // to the target, converted to impulses through its mass, plus a pitch torque
+  // about the contact. That is what keeps a ported bot feeling like a v1 bot
+  // instead of like a second physics engine bolted on.
+  //
+  // Three shapes, from armWeapons.js:
+  //   hammer — one blow per stroke, weighted by stroke^2 so a graze near the
+  //            top of the arc is worth almost nothing, driving DOWN not up.
+  //   grind  — continuous while the arm is down and the disc is turning.
+  //   lift   — spread across the stroke: an arm that is HELD hoists rather than
+  //            throws, and carries what it has picked up while it stays up.
+  function applyArmWeaponHit(attacker, target, contact, dt, callbacks = {}) {
+    const weapon = attacker?.weapon;
+    const profile = armHitProfile(weapon);
+    if (!profile || !target?.rb) return false;
+    const effectiveness = weaponEffectiveness(attacker);
+    if (effectiveness <= 0) return false;
+    const targetMass = clamp(bodyMass(target.rb), 1, 800);
+    const attackerMass = clamp(bodyMass(attacker.rb), 1, 800);
+    const massRatio = clamp(attackerMass / targetMass, 0.78, 1.22);
+    const strength = (target.fighter ? 1 : 0.55) * effectiveness;
+    const point = new THREE.Vector3(contact.point.x, contact.point.y, contact.point.z);
+    const side = contact.side;
+    const right = contact.right;
+
+    if (profile.kind === "hammer") {
+      weapon.impulseStrokeHits ||= new Set();
+      const key = target.fighter?.spec?.id || target.prop?.kind || "target";
+      if (weapon.impulseStrokeHits.has(key)) return false;
+      const stroke = clamp(weapon.stroke || 0, 0, 1);
+      const power = stroke * stroke;
+      if (power < 0.05) return false;
+      weapon.impulseStrokeHits.add(key);
+      const vertical = (profile.liftVelocity - profile.downVelocity) * power * massRatio * strength;
+      const forwardVelocity = profile.forwardVelocity * power * massRatio * strength;
+      applyImpulseAtPoint(target.rb, {
+        x: side.x * forwardVelocity * targetMass,
+        y: vertical * targetMass,
+        z: side.z * forwardVelocity * targetMass,
+      }, point);
+      const pitchTorque = profile.pitchVelocity * targetMass * power * massRatio * strength;
+      target.rb.applyTorqueImpulse({
+        x: right.x * pitchTorque * FLIPPER_EXTRA_TORQUE_SCALE,
+        y: 0.18 * targetMass * power * strength * FLIPPER_EXTRA_TORQUE_SCALE,
+        z: right.z * pitchTorque * FLIPPER_EXTRA_TORQUE_SCALE,
+      }, true);
+      // The head stops dead on what it hits; the machine behind it does not.
+      // Beta stands on magnets for this reason, so the reaction is damped
+      // rather than free (weapon.arm.downforce is the catalog's figure).
+      const reaction = profile.recoil * (weapon.arm?.downforce ? 0.5 : 1);
+      applyImpulseAtPoint(attacker.rb, {
+        x: -side.x * forwardVelocity * attackerMass * reaction,
+        y: Math.abs(vertical) * attackerMass * reaction * 0.35,
+        z: -side.z * forwardVelocity * attackerMass * reaction,
+      }, point);
+      markHit(attacker, 0.34);
+      if (target.fighter) markHit(target.fighter, 0.7);
+      callbacks.recordWeaponEvent?.({
+        kind: "hammerHit",
+        attacker: attacker.spec?.id || null,
+        target: target.fighter?.spec?.id || target.prop?.kind || null,
+        stroke,
+        power,
+        effectiveness,
+      });
+      callbacks.recordDamage?.({
+        fighter: target.fighter,
+        amount: profile.damage * power * strength * massRatio,
+        point,
+        normal: new THREE.Vector3(-side.x, -side.y, -side.z),
+        kind: "hammer",
+        source: attacker,
+      });
+      callbacks.spawnSparks?.(point, 10);
+      return true;
+    }
+
+    if (profile.kind === "grind") {
+      const bite = clamp(weapon.subRatio ?? 0, 0, 1) * clamp(weapon.stroke || 0, 0, 1);
+      if (bite <= 0.02) return false;
+      const scale = dt * 60;
+      applyImpulseAtPoint(target.rb, {
+        x: side.x * profile.forwardVelocity * targetMass * bite * strength * scale * 0.02,
+        y: (profile.liftVelocity - profile.downVelocity) * targetMass * bite * strength * scale * 0.02,
+        z: side.z * profile.forwardVelocity * targetMass * bite * strength * scale * 0.02,
+      }, point);
+      markHit(attacker, 0.16);
+      callbacks.recordDamage?.({
+        fighter: target.fighter,
+        amount: profile.damagePerSecond * dt * bite * strength,
+        point,
+        normal: new THREE.Vector3(-side.x, -side.y, -side.z),
+        kind: "saw",
+        source: attacker,
+      });
+      weapon.grindSparkCharge = (weapon.grindSparkCharge || 0) + dt * bite * 22;
+      if (weapon.grindSparkCharge >= 1) {
+        weapon.grindSparkCharge = 0;
+        callbacks.spawnSparks?.(point, 5);
+      }
+      return true;
+    }
+
+    // profile.kind === "lift"
+    const rise = Math.max(0, weapon.strokeDelta || 0);
+    const holding = clamp(weapon.stroke || 0, 0, 1);
+    const gripping = weapon.claw ? (weapon.clawAmount || 0) > 0.5 : true;
+    let acted = false;
+    if (rise > 0 && gripping) {
+      const liftVelocity = profile.liftVelocity * rise * massRatio * strength;
+      const forwardVelocity = profile.forwardVelocity * rise * massRatio * strength;
+      applyImpulseAtPoint(target.rb, {
+        x: side.x * forwardVelocity * targetMass,
+        y: liftVelocity * targetMass,
+        z: side.z * forwardVelocity * targetMass,
+      }, point);
+      const pitchTorque = profile.pitchVelocity * targetMass * rise * massRatio * strength;
+      target.rb.applyTorqueImpulse({
+        x: right.x * pitchTorque * FLIPPER_EXTRA_TORQUE_SCALE,
+        y: 0,
+        z: right.z * pitchTorque * FLIPPER_EXTRA_TORQUE_SCALE,
+      }, true);
+      // What goes up pushes the lifter down: that is the reaction, and it is
+      // why a lifter with its arm up is easy to shove.
+      applyImpulseAtPoint(attacker.rb, {
+        x: 0,
+        y: -liftVelocity * attackerMass * profile.recoil,
+        z: 0,
+      }, point);
+      markHit(attacker, 0.2);
+      if (target.fighter) markHit(target.fighter, 0.4);
+      acted = true;
+    }
+    if (holding > 0.35) {
+      // Carry: hold part of the victim's weight while the arm is up, so a bot
+      // that has been scooped rides instead of sliding straight back off.
+      const support = clamp(holding, 0, 1) * 0.42 * strength;
+      target.rb.applyImpulse({ x: 0, y: targetMass * 32.174 * support * dt, z: 0 }, true);
+      acted = true;
+    }
+    const holdDamage = profile.damagePerSecond * holding;
+    const discDamage = profile.discDamagePerSecond * clamp(weapon.subRatio ?? 0, 0, 1);
+    const damage = (holdDamage + discDamage) * dt * strength;
+    if (damage > 0) {
+      callbacks.recordDamage?.({
+        fighter: target.fighter,
+        amount: damage,
+        point,
+        normal: new THREE.Vector3(-side.x, -side.y, -side.z),
+        kind: discDamage > holdDamage ? "saw" : "lifter",
+        source: attacker,
+      });
+      weapon.grindSparkCharge = (weapon.grindSparkCharge || 0) + dt * (discDamage > 0 ? 16 : 4);
+      if (weapon.grindSparkCharge >= 1) {
+        weapon.grindSparkCharge = 0;
+        callbacks.spawnSparks?.(point, 4);
+      }
+      acted = true;
+    }
+    if (acted) {
+      callbacks.recordWeaponEvent?.({
+        kind: "armHold",
+        attacker: attacker.spec?.id || null,
+        target: target.fighter?.spec?.id || target.prop?.kind || null,
+        stroke: holding,
+        rise,
+        gripping,
+      });
+    }
+    return acted;
+  }
+
   function applyWeaponImpacts({ arena, attacker, active, dt = state.fixedDt, callbacks = {} }) {
     if (!active || !attacker?.weapon) return;
     const isSpinner = attacker.weapon.type === "bar" || attacker.weapon.type === "drum";
     const isFlipper = attacker.weapon.type === "flipper" || attacker.weapon.type === "meshFlipper";
     const isCrusher = attacker.weapon.type === "crusher";
-    if (!isSpinner && !isFlipper && !isCrusher) return;
+    // Hammers, saw arms, lifters and grapplers: mechanisms v1 did not have
+    // before the v2 roster arrived. They reach from the arm rather than from
+    // the chassis, and each shapes its hit differently (see armWeapons.js).
+    const isArm = isNewArmWeapon(attacker.weapon);
+    if (!isSpinner && !isFlipper && !isCrusher && !isArm) return;
     const origin = attacker.rb.translation();
     const { forward, right } = yawBasis(attacker, THREE);
     const weaponPoint = new THREE.Vector3(origin.x, origin.y + 0.26, origin.z).addScaledVector(forward, isSpinner ? 0.7 : 1.25);
+    // A spinner measures from its rotor, which is where its damage comes from.
+    // An ARM does not: its hinge can sit at the back of the machine (Duck's plow
+    // swings on a pivot between the axles) while the business end is out front,
+    // so an arm keeps v1's chassis-relative measuring point — which is also the
+    // frame the ported reach numbers were derived in.
     if (isSpinner && attacker.weapon.object) attacker.weapon.object.getWorldPosition(weaponPoint);
     const targets = [
       ...arena.fighters.filter((fighter) => fighter !== attacker).map((fighter) => ({ rb: fighter.rb, fighter, kind: "bot" })),
@@ -1606,7 +1800,11 @@ export function createPhysics({ THREE, RAPIER, now = null }) {
       const p = target.rb.translation();
       const toTarget = new THREE.Vector3(p.x - weaponPoint.x, 0, p.z - weaponPoint.z);
       const distance = toTarget.length();
-      const reach = isSpinner ? Math.max(0.35, attacker.spec?.spinnerReach ?? 1.45) : 1.72;
+      const reach = isSpinner
+        ? Math.max(0.35, attacker.spec?.spinnerReach ?? 1.45)
+        : isArm
+          ? armWeaponReach(attacker.weapon, attacker.spec)
+          : 1.72;
       if (distance > reach) return;
       const side = distance > 0.001 ? toTarget.multiplyScalar(1 / distance) : forward.clone();
       const facing = side.dot(forward);
@@ -1637,6 +1835,7 @@ export function createPhysics({ THREE, RAPIER, now = null }) {
         },
       };
       if (isSpinner) applySpinnerHit(attacker, target, contact, dt, callbacks);
+      else if (isArm) applyArmWeaponHit(attacker, target, contact, dt, callbacks);
       else if (isFlipper) applyFlipperHit(attacker, target, contact, callbacks);
       else if (isCrusher && target.fighter) {
         callbacks.recordQuantumBiteDamage?.(attacker, target, contact.targetPoint || contact.point, side.clone().negate(), dt);
