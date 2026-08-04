@@ -1,0 +1,104 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"/>
+<!-- The catalog's modelPath entries are "./public/models/<id>.glb", i.e.
+     relative to the document. This page lives under /tools/, so without a base
+     they resolve to /tools/public/... and 404 — and models.js swallows a failed
+     GLB and hands back a PROCEDURAL stand-in, so the poster comes out a grey
+     box that looks like a deliberate art choice. tools/posters.mjs also checks
+     the render for it, but this is what stops it happening. -->
+<base href="/"/>
+<style>html,body{margin:0;background:transparent;}canvas{display:block;}</style>
+<script type="importmap">
+ { "imports": { "three": "/vendor/three/three.module.js", "three/addons/": "/vendor/three/addons/" } }
+</script>
+</head>
+<body>
+<!--
+  Poster baker. Renders ONE bot on the select screen's own plinth, on a
+  transparent background, and hands the PNG back through window.__poster for
+  tools/posters.mjs to write to disk. Drive it with ?bot=<id>.
+
+  It builds nothing of its own: the lights, the plinth, the start angle and the
+  camera fit all come from engine/previewStage.js, the same module the live pod
+  builds from. That is the entire point — a poster is a stand-in for the model,
+  and a stand-in that was lit or framed even slightly differently makes the
+  handover a visible jump. If you find yourself about to copy a number out of
+  botPreview.js into here, put it in previewStage.js instead.
+
+  Square, because the pod's camera fits the model's bounding SPHERE against the
+  tighter of its two fov angles. At any aspect wider than 1 that is the vertical
+  one, which is exactly what a square render is constrained by, so one square
+  picture is correct in every pod. engine/posters.js does the placing.
+-->
+<script type="module">
+import * as THREE from "three";
+import { CATALOG } from "/src/assets/catalog.js";
+import { loadBotModel } from "/src/assets/models.js";
+import {
+  PREVIEW_FOV, PLINTH_HEIGHT, START_YAW, START_PITCH,
+  addPreviewLights, buildPlinth, frameRadius, fitDistance, placeCamera,
+} from "/src/engine/previewStage.js";
+
+const PX = Number(new URLSearchParams(location.search).get("px") || 768);
+const id = new URLSearchParams(location.search).get("bot");
+
+async function bake() {
+  const spec = CATALOG[id];
+  if (!spec) throw new Error(`unknown bot id: ${id}`);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(1);
+  renderer.setSize(PX, PX, false);
+  renderer.setClearColor(0x000000, 0);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  addPreviewLights(scene, renderer, { span: 8 });
+  const { group: plinth, ringMaterial } = buildPlinth();
+  ringMaterial.color.set(spec.accent || "#888c94");
+  ringMaterial.emissive.set(spec.accent || "#888c94");
+  scene.add(plinth);
+
+  const visual = await loadBotModel(spec);
+  visual.group.position.set(0, PLINTH_HEIGHT, 0);
+  scene.add(visual.group);
+
+  const framed = frameRadius(visual.group);
+  if (!framed) throw new Error("model has no drawable geometry");
+  const camera = new THREE.PerspectiveCamera(PREVIEW_FOV, 1, 0.05, 120);
+  placeCamera(camera, {
+    x: 0,
+    yaw: START_YAW,
+    pitch: START_PITCH,
+    dist: fitDistance(framed.radius, 1),
+    targetY: framed.targetY,
+  });
+  renderer.render(scene, camera);
+
+  return {
+    png: renderer.domElement.toDataURL("image/png"),
+    px: PX,
+    yaw: START_YAW,
+    pitch: START_PITCH,
+    radius: framed.radius,
+    // Whether anything actually drew. A model that failed to parse renders an
+    // empty scene, and an empty scene is a perfectly transparent PNG — which
+    // passes an alpha check and shows the player nothing at all.
+    parts: visual.group.children.length,
+    // And whether what drew is the REAL bot. models.js swallows a failed GLB
+    // and hands back procedural blocks, which bake into a poster that looks
+    // like a deliberate art choice until you compare it with the model.
+    placeholder: Boolean(visual.weaponIsPlaceholder),
+  };
+}
+
+bake().then((r) => { window.__poster = r; })
+  .catch((e) => { window.__poster = { error: String(e?.message || e) }; });
+</script>
+</body>
+</html>

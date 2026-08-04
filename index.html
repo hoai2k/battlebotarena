@@ -112,6 +112,9 @@
               <span class="pod-plate-body"></span>
             </button>
             <div id="pod-view-player" class="pod-view">
+              <!-- The baked stand-in, shown while the real model downloads. Sized
+                   and placed by engine/posters.js; empty until a bot is staged. -->
+              <img id="pod-poster-player" class="pod-poster" alt="" hidden draggable="false" />
               <span class="pod-empty">PICK<br />YOUR BOT</span>
               <span class="pod-loading loader-spinner" hidden></span>
             </div>
@@ -136,6 +139,9 @@
               <span class="pod-plate-body"></span>
             </button>
             <div id="pod-view-rival" class="pod-view">
+              <!-- The baked stand-in, shown while the real model downloads. Sized
+                   and placed by engine/posters.js; empty until a bot is staged. -->
+              <img id="pod-poster-rival" class="pod-poster" alt="" hidden draggable="false" />
               <span class="pod-empty">PICK THE<br />OPPONENT</span>
               <span class="pod-random-glyph" aria-hidden="true">?</span>
               <span class="pod-loading loader-spinner" hidden></span>

@@ -584,6 +584,34 @@ that `syncBotVisual` caches per-model state on the `visual` object it is handed
 pass a long-lived object — `main.js` and `botPreview` do; a fresh literal per
 call silently compounds.
 
+### Bot-select posters (regenerate-me asset)
+
+The select screen stages whatever the cursor is over, and a bot's GLB is
+10-17MB. So the pod shows a baked transparent PNG of the model on its plinth
+immediately, and only builds the real thing once a choice has held still for
+`SETTLE_MS` or been claimed. Measured: scrubbing eight cards in 0.7s downloads
+**zero** GLBs and shows eight bots; only the one you stop on is fetched.
+
+`engine/previewStage.js` owns the lights, the plinth, the start angle and the
+camera fit. The live pod (`engine/botPreview.js`) and the baker
+(`tools/poster-shot.html`) both build from it and neither has a copy of any of
+it — if they ever drew the stage differently the handover from picture to model
+would be a visible jump. The placement rule needs no per-bot data because the
+fit is on a bounding SPHERE: a sphere has no orientation to get wrong, so one
+square render is correctly framed in the largest square that fits any pod.
+
+`tools/posters.mjs` refuses to write a poster that came out procedural (a GLB
+that 404s comes back as blocks, with no error anywhere), empty, opaque, or
+with nothing in shot. **Re-run it after anything that changes how a bot looks on
+the plinth** — a model repair, modelYaw/modelScale, the start angle, the plinth,
+the lights:
+
+    node server.mjs & node tools/posters.mjs [ids...]
+
+`tools/sim-tests.mjs` asserts every catalog bot has one, because a missing
+poster is invisible: the screen still works, it just goes back to a spinner over
+an empty bay.
+
 ### Model repair tools (v2/tools/)
 
 The GLBs are photogrammetry, so they carry scan artefacts the reference photos
