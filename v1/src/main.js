@@ -5,7 +5,7 @@ import { init as initInstant, id as instantId } from "@instantdb/core";
 import { BOT_CONFIG, PHYSICS_ASSISTS, botGroundSpeedFeetPerSecond } from "./botConfig.js?v=bot-speed-mph-1";
 import { MODEL_PART_CONFIG } from "./modelPartConfig.js?v=bronco-flipper-1";
 import { stepPhysicsArena } from "./arenaPhysicsStep.js";
-import { fractionBoundsToBox, modelAuthoringBounds, normalizeSegmentedModel, originalAuthoringBoundsForMesh, splitConfiguredModelParts, splitSegmentedModelParts } from "./modelParts.js";
+import { drawnBox, fractionBoundsToBox, modelAuthoringBounds, normalizeSegmentedModel, originalAuthoringBoundsForMesh, splitConfiguredModelParts, splitSegmentedModelParts } from "./modelParts.js";
 import {
   armWeaponAngle,
   isArmWeaponEngaged,
@@ -3218,6 +3218,24 @@ function setSelected(bot) {
   if (mode === "arena") buildArena();
 }
 
+// The viewer frame was sized for v1's own machines at a flat 1.35x. The ported
+// roster is not one size: Mammoth is 5.3ft wide and 6.1ft tall and at 1.35x the
+// camera sits inside its legs. Ported bots are scaled to fill the same frame
+// instead, measured off their drawn geometry; v1's six keep the numbers they
+// were framed with.
+const VIEWER_TARGET_SPAN = 4.2;
+
+function viewerScaleFor(spec, group) {
+  if (!group?.userData?.segmentedModel) return spec.id === "huge" ? 1.15 : 1.35;
+  group.scale.setScalar(1);
+  group.updateMatrixWorld(true);
+  const box = drawnBox(group);
+  if (box.isEmpty()) return 1.35;
+  const size = box.getSize(new THREE.Vector3());
+  const span = Math.max(size.x, size.y, 0.5);
+  return THREE.MathUtils.clamp(VIEWER_TARGET_SPAN / span, 0.35, 1.35);
+}
+
 async function showViewerBot() {
   const generation = bumpLoadingPriority();
   const targetId = selected.id;
@@ -3253,7 +3271,7 @@ async function showViewerBot() {
     return;
   }
   viewerBot = selected.builder();
-  viewerBot.scale.setScalar(selected.id === "huge" ? 1.15 : 1.35);
+  viewerBot.scale.setScalar(viewerScaleFor(selected, viewerBot));
   viewerBot.position.set(-1.6, 0, 0);
   viewerBot.rotation.set(...(selected.viewerRotation || [0, 0, 0]));
   viewerBot.updateMatrixWorld(true);
