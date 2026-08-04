@@ -74,6 +74,13 @@ scene.add(new THREE.GridHelper(2, 20, 0x333333, 0x222222));
 const hud = document.querySelector("#hud");
 window.__viewer = { scene, camera, controls, THREE }; // debug hook
 const partsMode = params.get("parts") === "1"; // rainbow-tint raw tripo_part_N nodes
+// A part is not always ONE node. `mirror` and `clone` in glb-carve.mjs add a
+// second node under the same name, and GLTFLoader makes scene-graph names
+// unique by appending _1, _2 — so a strict /^tripo_part_(\d+)$/ silently
+// matched the original half of a repaired part and none of its copies, which
+// is exactly backwards for a viewer whose job is checking those repairs.
+// \d+ is greedy, so tripo_part_10 still reads as part 10, not part 1 copy 0.
+const PART_NAME = /^tripo_part_(\d+)(?:_\d+)?$/;
 // &only=19,20 shows just those parts, &hide=5 shows everything but. "Which part
 // is that bit?" is otherwise a guessing game against a table of bounding boxes,
 // and the answer decides whether a carve deletes the right geometry.
@@ -83,7 +90,7 @@ new GLTFLoader().load(src, (gltf) => {
   scene.add(gltf.scene);
   if (onlyParts.length || hideParts.length) {
     gltf.scene.traverse((object) => {
-      const match = /^tripo_part_(\d+)$/.exec(object.name || "");
+      const match = PART_NAME.exec(object.name || "");
       if (!match) return;
       const index = Number(match[1]);
       if (onlyParts.length) object.visible = onlyParts.includes(index);
@@ -96,7 +103,7 @@ new GLTFLoader().load(src, (gltf) => {
       0xbcf60c, 0xfabebe, 0x008080, 0xe6beff, 0x9a6324, 0xfffac8, 0x800000, 0xaaffc3,
       0x808000, 0xffd8b1, 0x000075, 0x808080, 0xffffff, 0xff4500, 0x7fff00, 0x1e90ff];
     gltf.scene.traverse((object) => {
-      const match = /^tripo_part_(\d+)$/.exec(object.name || "");
+      const match = PART_NAME.exec(object.name || "");
       if (!match) return;
       const index = Number(match[1]);
       const color = palette[index % palette.length];

@@ -179,9 +179,6 @@ export function createPreviewWeapon(spec) {
       subOmega = alt
         ? Math.min(discMaxOmega, subOmega + up * dt)
         : Math.max(0, subOmega - down * dt);
-    } else if (w.flame) {
-      // weapons.js ramps `burning` 0..1 while lit; it drives the nozzle VFX.
-      subOmega = clamp01(subOmega + (alt ? dt / 0.25 : -dt / 0.35));
     }
   }
 
@@ -199,6 +196,13 @@ export function createPreviewWeapon(spec) {
     const fire = Boolean(input.weapon);
     const alt = Boolean(input.sawActive);
     const aux = Boolean(input.auxActive);
+    // The flame ramp belongs to NO weapon type. sim/flamethrower.js composes a
+    // flamethrower onto whatever weapon declares one, and this has to match, or
+    // a bot is only on fire in the arena. It used to live inside the lifter
+    // branch, because Free Shipping was the only bot that had one — so Kraken,
+    // a crusher, could never light its jet on the plinth: updateCrusher was not
+    // even passed the channel.
+    if (w.flame) subOmega = clamp01(subOmega + (alt ? dt / 0.25 : -dt / 0.35));
     if (SPINNER_TYPES.has(type)) updateSpinner(dt, fire, alt, aux);
     else if (type === "flipper") updateOneShot(dt, fire, tune.strokeSeconds, tune.returnSeconds);
     // A holding hammer (Rusty) runs the swing/hold/return machine, not the

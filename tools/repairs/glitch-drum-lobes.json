@@ -1,0 +1,12 @@
+[
+  {
+    "_comment": "Give Glitch's drum its second lobe. glitch-mirror.json already squared the drum ACROSS the machine (left end == right end); this is the other symmetry, the one that matters on a part that spins. An eggbeater drum is two lobes half a turn apart, and Tripo only ever saw one of them: the thick black shroud that faces the camera in the reference photo. Measured about the axle at [0.023, 0.1474] with 0deg = +z (the bot's nose) and +y up, the good lobe runs 65..178deg and reaches r=0.156; its partner should sit at 245..358 and instead the scan left ragged core there, r=0.055..0.094 - barely wider than the shaft. Standing still that reads as a lopsided drum; spinning, which is how this part is nearly always seen, it reads as a wobble.",
+    "_why_clone_and_not_mirror": "A reflection gives a MIRRORED lobe, not the opposite one - the two ends of a rotor are the same casting a half-turn apart, and a reflected copy of an asymmetric scoop leads with the wrong face. Rotation is also what keeps the drum balanced about its own axle.",
+    "_why_the_cut": "Without it the clone lands on top of the geometry it is meant to replace: the shaft is a body of revolution, so a half-turn copy of it coincides with itself and z-fights, and the old thin lobe stays buried inside the new thick one. The plane runs through the axle at 120deg - the bisector of the kept sector 30..210 - so the good lobe clears it by 35deg at the near end and 32 at the far one, and the cut falls in the thin valley either side of it rather than through anything solid. normal = [0, sin120, cos120].",
+    "part": 6,
+    "mode": "clone",
+    "axis": 0,
+    "center": [-0.142, 0.023, 0.1474],
+    "cut": { "normal": [0, 0.8660254, -0.5], "point": [-0.142, 0.023, 0.1474] }
+  }
+]

@@ -473,53 +473,97 @@ for (const op of ops) {
     // resolves only one of them, a mirror is the wrong symmetry (it gives a
     // reflected end, not the opposite one) and this is the right one. Rotation
     // preserves handedness, so unlike `mirror` the winding is left alone.
-    const node = json.nodes[nodeIndexByName(`tripo_part_${op.part}`)];
-    const primitive = json.meshes[node.mesh].primitives[0];
-    const posAccessor = primitive.attributes.POSITION;
-    const normalAccessor = primitive.attributes.NORMAL;
-    const uvAccessor = primitive.attributes.TEXCOORD_0;
-    const indices = readIndices(primitive.indices);
+    //
+    // Optional "cut": {"normal": [x,y,z], "point": [x,y,z]} clips the SOURCE to
+    // the half-space the normal points into before duplicating, so the clone
+    // REPLACES the bad sector instead of landing on top of it. Without a cut,
+    // a rotor whose hub is a body of revolution clones its own hub onto itself
+    // and z-fights; with one, the plane runs through the axle and the two
+    // halves meet edge to edge. The plane does not have to be axis-aligned,
+    // which is the whole point — a rotor's good lobe rarely straddles one.
+    //
+    // Applies to EVERY node of the part, not the first. `mirror` leaves a part
+    // as two nodes sharing one name, and a rotor that has already been squared
+    // up left-to-right is exactly the kind of part this mode is for; hitting
+    // only one of them would clone half a lobe.
     const axis = op.axis ?? 0;                       // the axis turned about
-    const translation = node.translation || [0, 0, 0];
     // Half a turn about `axis` negates the OTHER two components about centre.
     const other = [0, 1, 2].filter((i) => i !== axis);
     const centre = op.center;
     if (!Array.isArray(centre)) throw new Error(`part ${op.part}: clone needs "center"`);
-
-    const remap = new Map();
-    const position = [];
-    const normal = [];
-    const uv = [];
-    for (const vi of indices) {
-      if (remap.has(vi)) continue;
-      remap.set(vi, position.length);
-      const p = readPosition(posAccessor, vi);
-      for (const i of other) p[i] = 2 * (centre[i] - translation[i]) - p[i];
-      position.push(p);
-      if (normalAccessor !== undefined) {
-        const n = readVec(normalAccessor, vi, 3);
-        for (const i of other) n[i] = -n[i];
-        normal.push(n);
-      }
-      if (uvAccessor !== undefined) uv.push(readUV(uvAccessor, vi));
+    const cut = op.cut || null;
+    if (cut && (!Array.isArray(cut.normal) || !Array.isArray(cut.point))) {
+      throw new Error(`part ${op.part}: clone "cut" needs "normal" and "point"`);
     }
-    const cloned = [];
-    for (const vi of indices) cloned.push(remap.get(vi));
 
-    const attributes = { POSITION: appendFloatAccessor(position, 3) };
-    if (normal.length) attributes.NORMAL = appendFloatAccessor(normal, 3);
-    if (uv.length) attributes.TEXCOORD_0 = appendFloatAccessor(uv, 2);
-    const meshIndex = json.meshes.length;
-    json.meshes.push({
-      name: `tripo_mesh_part_${op.part}_clone`,
-      primitives: [{ attributes, indices: appendIndexBuffer(cloned), material: primitive.material }],
-    });
-    const newNodeIndex = json.nodes.length;
-    json.nodes.push({ name: `tripo_part_${op.part}`, mesh: meshIndex, translation: [...translation] });
-    const holder = json.nodes.find((n) => (n.children || []).includes(nodeIndexByName(`tripo_part_${op.part}`)));
-    if (holder) { holder.children.push(newNodeIndex); }
-    else json.scenes[0].nodes.push(newNodeIndex);
-    console.log(`part ${op.part} [clone]: ${cloned.length / 3} tris turned 180 about axis ${axis}`);
+    const nodeIndices = json.nodes
+      .map((n, i) => (n.name === `tripo_part_${op.part}` ? i : -1))
+      .filter((i) => i >= 0);
+    let sourceTris = 0;
+    let cloneTris = 0;
+    for (const nodeIndex of nodeIndices) {
+      const node = json.nodes[nodeIndex];
+      const primitive = json.meshes[node.mesh].primitives[0];
+      const posAccessor = primitive.attributes.POSITION;
+      const normalAccessor = primitive.attributes.NORMAL;
+      const uvAccessor = primitive.attributes.TEXCOORD_0;
+      const all = readIndices(primitive.indices);
+      const translation = node.translation || [0, 0, 0];
+
+      // Keep the triangles whose centroid is on the normal's side of the plane.
+      let indices = all;
+      if (cut) {
+        indices = [];
+        for (let t = 0; t < all.length; t += 3) {
+          let dot = 0;
+          for (let k = 0; k < 3; k += 1) {
+            const p = readPosition(posAccessor, all[t + k]);
+            for (let i = 0; i < 3; i += 1) dot += cut.normal[i] * (p[i] + translation[i] - cut.point[i]) / 3;
+          }
+          if (dot > 0) indices.push(all[t], all[t + 1], all[t + 2]);
+        }
+        if (!indices.length) throw new Error(`part ${op.part}: clone cut kept 0 triangles — check normal/point`);
+        primitive.indices = appendIndexBuffer(indices);
+      }
+
+      const remap = new Map();
+      const position = [];
+      const normal = [];
+      const uv = [];
+      for (const vi of indices) {
+        if (remap.has(vi)) continue;
+        remap.set(vi, position.length);
+        const p = readPosition(posAccessor, vi);
+        for (const i of other) p[i] = 2 * (centre[i] - translation[i]) - p[i];
+        position.push(p);
+        if (normalAccessor !== undefined) {
+          const n = readVec(normalAccessor, vi, 3);
+          for (const i of other) n[i] = -n[i];
+          normal.push(n);
+        }
+        if (uvAccessor !== undefined) uv.push(readUV(uvAccessor, vi));
+      }
+      const cloned = [];
+      for (const vi of indices) cloned.push(remap.get(vi));
+
+      const attributes = { POSITION: appendFloatAccessor(position, 3) };
+      if (normal.length) attributes.NORMAL = appendFloatAccessor(normal, 3);
+      if (uv.length) attributes.TEXCOORD_0 = appendFloatAccessor(uv, 2);
+      const meshIndex = json.meshes.length;
+      json.meshes.push({
+        name: `tripo_mesh_part_${op.part}_clone`,
+        primitives: [{ attributes, indices: appendIndexBuffer(cloned), material: primitive.material }],
+      });
+      const newNodeIndex = json.nodes.length;
+      json.nodes.push({ name: `tripo_part_${op.part}`, mesh: meshIndex, translation: [...translation] });
+      const holder = json.nodes.find((n) => (n.children || []).includes(nodeIndex));
+      if (holder) { holder.children.push(newNodeIndex); }
+      else json.scenes[0].nodes.push(newNodeIndex);
+      sourceTris += indices.length / 3;
+      cloneTris += cloned.length / 3;
+    }
+    console.log(`part ${op.part} [clone]: ${nodeIndices.length} node(s), kept ${sourceTris} tris`
+      + `${cut ? " after the cut" : ""}, turned ${cloneTris} about axis ${axis}`);
     continue;
   }
   if (op.mode === "scale") {

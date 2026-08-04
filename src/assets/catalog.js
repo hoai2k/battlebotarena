@@ -1973,7 +1973,16 @@ export const CATALOG = {
       // shape symmetric about a plane perpendicular to X cannot carry an axle
       // tilted out of that plane. It used to be off-centre AND 3.25 degrees out
       // of square, both of which were scan error rather than the machine.
-      axis: { x: -1, y: 0, z: 0 },
+      //
+      // The SIGN is the cutting direction, and this drum is UP-cutting: turning
+      // about +X carries its leading face upward, so it meets an opponent on
+      // the way up and throws them, where -X drove them into the floor. The
+      // machine argues for the first one — the wedge exists to get UNDER a bot
+      // and feed it back into the drum, and there is nothing to feed if the
+      // drum is pushing down. Only the renderer reads the sign; sim/weapons.js
+      // takes |axis| for the collider's orientation and the spinner bias key,
+      // so flipping it is a visual and design change, not a physics one.
+      axis: { x: 1, y: 0, z: 0 },
       // The wedge still extends AHEAD of the drum, which is the point of the
       // machine: Glitch gets under an opponent with the plate first and feeds
       // them back into the drum. The drum is not the leading edge.
@@ -1982,8 +1991,12 @@ export const CATALOG = {
       inertia: 1.2,
       maxOmega: 620,
       budgetCap: 360,
-      radius: 0.406, // MEASURED swept radius about the axle
-      dims: { x: 0.357, y: 0.289, z: 0.347 },
+      // Re-measured after glitch-drum-lobes.json. The drum lost 0.008ft of
+      // swept radius, which is not a change to the machine: the old figure came
+      // off a single ragged spike in the sector the scan never resolved, and
+      // that sector is now a copy of the lobe the scan DID resolve.
+      radius: 0.398, // MEASURED swept radius about the axle
+      dims: { x: 0.352, y: 0.322, z: 0.354 }, // MEASURED half-extents; only .x is read (half the drum's length along its axle)
     },
     // The nose is a WEDGE: it is the whole point of the machine, and test 16
     // requires nothing but a wedge ahead of the drum's leading edge, now

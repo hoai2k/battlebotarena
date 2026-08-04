@@ -321,7 +321,6 @@ function frame() {
     // jet is driven from render state like any other moving part rather than
     // from the input, and it keeps burning through the frames where the input
     // has already been consumed.
-    effects.faceCamera(stage.camera);
     if (!paused) {
       renderState.forEach((state, i) => {
         // __groundDrop is the shift startMatch() put into the model's CONTENTS
