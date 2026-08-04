@@ -2432,6 +2432,13 @@ export const CATALOG = {
         // from a running saw. Anything else the blades merely touch takes this
         // share of it.
         looseCutScale: 0.6,
+        // The scan resolved these as discs with a ring of nubs, which is what a
+        // 30-tooth rim looks like to photogrammetry that never found the
+        // gullets. Drawn instead (assets/sawBlade.js), at the radius above, with
+        // the kill saws' silhouette and the copper the real blades are — see the
+        // reference photo, where they are polished bronze discs, not the dull
+        // orange the scan baked.
+        blade: { thickness: 0.09, color: "#c9873c", metalness: 1, roughness: 0.22, envMapIntensity: 1.9 },
         spinUpSeconds: 1.0, damagePerSecond: 14,
       },
       tuning: { strokeSeconds: 0.4, returnSeconds: 0.7, gripReach: 2.6667 },
