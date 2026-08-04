@@ -482,9 +482,34 @@ export function createGamepadNav({
   function syncContext() {
     const key = contextKey();
     if (key === lastScreenKey) return;
-    const wasModal = lastScreenKey.split("|")[1] === "modal";
+    const [wasScreen, wasModalKey] = lastScreenKey.split("|");
+    const wasModal = wasModalKey === "modal";
     const isModal = modalOpen();
+    const sameScreen = wasScreen === activeScreenName() && !wasModal && !isModal;
     lastScreenKey = key;
+
+    // A CONTROLLER JOINING IS NOT A SCREEN CHANGE. Only the solo/duo part of
+    // the key moved, so P1 is still standing where they were — resetting here
+    // yanked their cursor back to the first card in the roster, and with it the
+    // bot in their bay, the moment someone else picked up a pad. Seed the
+    // cursor that just appeared and leave the other one alone.
+    if (sameScreen) {
+      for (let i = cursorCount(); i < MAX_CURSORS; i += 1) {
+        cursors[i] = null;
+        clearFocusClass(i);
+      }
+      // Repaint what is left. The per-player classes have to come off first:
+      // dropping back to solo otherwise leaves P1 wearing its duo ring, so the
+      // cursor stays red and dashed with nobody to tell it apart from.
+      PLAYER_FOCUS_CLASS.forEach((cls) => {
+        document.querySelectorAll(`.${cls}`).forEach((el) => el.classList.remove(cls));
+      });
+      for (let i = 0; i < cursorCount(); i += 1) {
+        if (cursors[i]) paintFocus(cursors[i], i);
+      }
+      setTimeout(() => seedCursors(), 0);
+      return;
+    }
 
     if (isModal && !wasModal) {
       modalReturnEl = /** @type {HTMLElement|null} */ (document.activeElement);

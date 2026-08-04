@@ -268,11 +268,15 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       // real claim sets this — re-emitting on screen entry must not replay it.
       claimSlot: claimed,
       duo: duoMode,
-      focusSlot: duoMode
-        ? null
-        : sel.stage === "rival" && sel.rivalBotId && sel.rivalBotId !== "random"
-          ? 1
-          : 0,
+      // WHICH BAY THE STICKS AND TRIGGERS DRIVE, solo. It follows the bay you
+      // are FILLING, not the one you have filled: choosing the opponent used to
+      // leave the controls pointing at your own machine, so the bot in the
+      // window you were looking at could not be turned or fired — the whole
+      // point of staging it there. Once both are chosen it goes back to your
+      // own bay, because that is the one you are about to drive and the pod is
+      // a practice viewer. In duo there is nothing to decide: each pad owns its
+      // own pod (botPreview.readPads).
+      focusSlot: duoMode ? null : (sel.playerBotId && sel.rivalBotId ? 0 : armedSlot(0)),
     });
   }
 
