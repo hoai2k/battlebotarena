@@ -126,6 +126,34 @@ async function withSim(specs, fn) {
   }
 }
 
+/**
+ * A match wired to a REAL event bus. Passing a stub `on` builds a match that
+ * receives nothing the sim emits and therefore reports no damage whatever
+ * happens — a green test that checks nothing.
+ */
+async function wiredMatch(specs, fn) {
+  const { createMatch } = await import("../src/game/match.js");
+  const events = [];
+  const handlers = new Map();
+  const on = (type, handler) => {
+    if (!handlers.has(type)) handlers.set(type, []);
+    handlers.get(type).push(handler);
+    return () => {};
+  };
+  const emit = (type, payload) => {
+    events.push({ type, payload });
+    (handlers.get(type) || []).forEach((handler) => handler(payload));
+  };
+  const sim = await createSim({ bots: specs, emit });
+  const match = createMatch({ sim, specs, emit, on });
+  match.start();
+  const tick = (inputs = [{}, {}]) => {
+    sim.stepFrame(1 / 60, match.filterInputs(inputs));
+    match.update(1 / 60);
+  };
+  try { return await fn({ sim, match, tick, events, busEmit: emit }); } finally { sim.dispose(); }
+}
+
 const IDLE = [{}, {}];
 
 function frames(sim, count, inputs = IDLE, onFrame = null) {
@@ -1573,37 +1601,13 @@ await test("claw viper: driving does not hurt it, holding does not hurt them", a
   const { createMatch } = await import("../src/game/match.js");
   const spec = CATALOG.clawviper;
 
-  // A real bus, so the match actually hears what the sim emits. Passing a stub
-  // `on` builds a match that receives no events and therefore reports no damage
-  // whatever happens, which is a green test that checks nothing.
-  const wired = async (specs, fn) => {
-    const events = [];
-    const handlers = new Map();
-    const on = (type, handler) => {
-      if (!handlers.has(type)) handlers.set(type, []);
-      handlers.get(type).push(handler);
-      return () => {};
-    };
-    const emit = (type, payload) => {
-      events.push({ type, payload });
-      (handlers.get(type) || []).forEach((handler) => handler(payload));
-    };
-    const sim = await createSim({ bots: specs, emit });
-    const match = createMatch({ sim, specs, emit, on });
-    match.start();
-    const tick = (inputs = [{}, {}]) => {
-      sim.stepFrame(1 / 60, match.filterInputs(inputs));
-      match.update(1 / 60);
-    };
-    try { return await fn({ sim, match, tick, events, busEmit: emit }); } finally { sim.dispose(); }
-  };
 
   // 1. Sliding along a surface is not hitting it. 250lbf of magnets keep Claw
   //    Viper's floor pan in contact the whole time it moves and its 17ft/s top
   //    speed runs right at the 14ft/s floor-slam threshold, so with the slam
   //    judged on the pair's total relative speed rather than on the speed INTO
   //    the floor, anything that nudged it over billed it for driving.
-  await wired([spec, CATALOG.bronco], ({ sim, match, tick, events, busEmit }) => {
+  await wiredMatch([spec, CATALOG.bronco], ({ sim, match, tick, events, busEmit }) => {
     sim._test.setPose(1, { x: 0, z: 40 }, 0); // far away: nothing to run into
     for (let i = 0; i < 300; i++) tick(); // out of the countdown
     check(match.getState().phase === "fight", "the match reached fight");
@@ -1635,22 +1639,6 @@ await test("claw viper: driving does not hurt it, holding does not hurt them", a
     emitImpact({ botIndex: 0, otherIndex: null, surface: "floor", point: null, relSpeed: 1, normalSpeed: 30 });
     check(match.getState().bots[0].total > slideBase, "a 30ft/s drop onto it does",
       `took ${(match.getState().bots[0].total - slideBase).toFixed(1)}%`);
-  });
-
-  // 2. Both machines pay for a ram. The router reports a bot-on-bot impact once,
-  //    under the LOWER of the two indices, so charging only that one meant every
-  //    ram was paid for by player one — including the ones they initiated — and
-  //    never by player two. Driven synthetically because a real ram barely
-  //    registers: the router reads the pair's velocities after the solver has
-  //    already resolved the contact, so a 17ft/s head-on reports about 2.7ft/s
-  //    of closing speed and lands under the damage threshold either way.
-  await wired([spec, CATALOG.bronco], ({ match, tick, busEmit }) => {
-    for (let i = 0; i < 300; i++) tick();
-    const before = match.getState().bots.map((b) => b.total);
-    busEmit(EV.IMPACT, { botIndex: 0, otherIndex: 1, surface: "bot", point: null, relSpeed: 24, normalSpeed: 24 });
-    const took = match.getState().bots.map((b, i) => b.total - before[i]);
-    check(took[0] > 0 && took[1] > 0, "a bot-on-bot impact is charged to both of them",
-      `${took[0].toFixed(1)}% and ${took[1].toFixed(1)}%`);
   });
 
   // 2. Holding a bot is not an attack. The forks are blunt; the damage comes
@@ -1699,6 +1687,135 @@ await test("claw viper: driving does not hurt it, holding does not hurt them", a
       `worst gap ${worstGap.toFixed(2)}ft against a ${spec.weapon.gripReach.toFixed(2)}ft reach`);
     check(worstSpinGap < 3.5, "and turns with the carrier instead of lolling",
       `worst angular gap ${worstSpinGap.toFixed(2)} rad/s`);
+  });
+});
+
+await test("ramming: it shoves them, it hurts them, and the back hurts most", async () => {
+  // Ramming used to be free, and the reason was one line in the wrong place.
+  // Contact force events are drained after world.step, so by the time anything
+  // read the two machines' velocities the solver had already resolved the
+  // collision and spent the closing speed: a 27ft/s head-on measured as 1.2.
+  // The approach speed is now snapshotted before the step (sim/contacts.js),
+  // and the normal comes off the force event rather than off a manifold that no
+  // longer exists by then.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const { createMatch } = await import("../src/game/match.js");
+  const attacker = CATALOG.clawviper; // the fastest bot on the roster
+  const victim = CATALOG.bronco;
+
+  const chargeInto = async (yaw) => {
+    const handlers = new Map();
+    const on = (type, handler) => {
+      if (!handlers.has(type)) handlers.set(type, []);
+      handlers.get(type).push(handler);
+      return () => {};
+    };
+    const events = [];
+    const emit = (type, payload) => {
+      events.push({ type, payload });
+      (handlers.get(type) || []).forEach((handler) => handler(payload));
+    };
+    const sim = await createSim({ bots: [attacker, victim], emit });
+    try {
+      const match = createMatch({ sim, specs: [attacker, victim], emit, on });
+      match.start();
+      const tick = (inputs = [{}, {}]) => {
+        sim.stepFrame(1 / 60, match.filterInputs(inputs));
+        match.update(1 / 60);
+      };
+      for (let i = 0; i < 300; i++) tick();
+      sim._test.setPose(0, { x: -5, z: 9 }, 0); // a clear run at it, away from the screws
+      sim._test.setPose(1, { x: -5, z: -3 }, yaw);
+      for (let i = 0; i < 10; i++) tick();
+      const before = match.getState().bots.map((b) => b.total);
+      events.length = 0;
+      let approach = 0;
+      let shoved = 0;
+      let struckAt = -1;
+      for (let i = 0; i < 120; i++) {
+        // Throttle cut the instant it lands, so `shoved` is the KNOCKBACK and not
+        // the bulldozing that follows it. The victim never moves a wheel.
+        tick([struckAt >= 0 ? {} : { leftDrive: 1, rightDrive: 1 }, {}]);
+        const hits = events.filter((e) => e.type === EV.IMPACT && e.payload.surface === "bot");
+        if (hits.length && struckAt < 0) struckAt = i;
+        for (const hit of hits) approach = Math.max(approach, hit.payload.approachSpeed);
+        if (struckAt >= 0 && i <= struckAt + 20) {
+          const v = sim._test.body(1).linvel();
+          shoved = Math.max(shoved, Math.hypot(v.x, v.z));
+        }
+      }
+      const took = match.getState().bots.map((b, k) => b.total - before[k]);
+      // The screws run down the middle of the arena; only impact damage counts.
+      const impact = [0, 1].map((k) => events
+        .filter((e) => e.type === EV.DAMAGE && e.payload.botIndex === k && e.payload.kind === "impact")
+        .reduce((sum, e) => sum + e.payload.amount, 0));
+      return { approach, shoved, took, impact };
+    } finally { sim.dispose(); }
+  };
+
+  const nose = await chargeInto(Math.PI); // victim facing the hit
+  const tail = await chargeInto(0); // victim facing away — rammed in the back
+  const flank = await chargeInto(Math.PI / 2);
+
+  check(nose.approach > 12, "a full-speed ram reports the speed it was actually doing",
+    `${nose.approach.toFixed(1)}ft/s of closing speed`);
+  check(nose.shoved > 10, "and it MOVES the bot it hits",
+    `the victim peaked at ${nose.shoved.toFixed(1)}ft/s after the attacker let go`);
+  check(nose.impact[0] > 0 && nose.impact[1] > 0, "both machines pay for it",
+    `${nose.impact[0].toFixed(1)}% and ${nose.impact[1].toFixed(1)}%`);
+  check(nose.impact[1] < 4, "a hit on the plate you built to take it is cheap",
+    `${nose.impact[1].toFixed(1)}% through the front`);
+  check(tail.impact[1] > flank.impact[1] && flank.impact[1] > nose.impact[1],
+    "and it costs more the less armour is in the way: back > side > front",
+    `front ${nose.impact[1].toFixed(1)}%, side ${flank.impact[1].toFixed(1)}%, back ${tail.impact[1].toFixed(1)}%`);
+  check(tail.impact[1] > nose.impact[1] * 2, "getting caught from behind is a real punishment",
+    `${tail.impact[1].toFixed(1)}% vs ${nose.impact[1].toFixed(1)}%`);
+
+  // Both machines charging: the hardest hit in the game, and the one the old
+  // code got most wrong. The contact manifold is queried after world.step and on
+  // exactly this frame it is routinely already gone, so the router fell back to
+  // a hardcoded straight-up normal and a 27ft/s head-on measured as 2.5. The
+  // normal now comes off the force event, which the step cannot take away.
+  await withSim([attacker, victim], (sim, events) => {
+    sim._test.setPose(0, { x: -5, z: 8 }, 0);
+    sim._test.setPose(1, { x: -5, z: -8 }, Math.PI);
+    frames(sim, 60);
+    events.length = 0;
+    let closing = 0;
+    let approach = 0;
+    for (let i = 0; i < 150; i++) {
+      const a = sim._test.body(0).linvel();
+      const b = sim._test.body(1).linvel();
+      closing = Math.max(closing, Math.hypot(a.x, a.z) + Math.hypot(b.x, b.z));
+      frames(sim, 1, [{ leftDrive: 1, rightDrive: 1 }, { leftDrive: 1, rightDrive: 1 }]);
+    }
+    for (const e of events) {
+      if (e.type === EV.IMPACT && e.payload.surface === "bot") approach = Math.max(approach, e.payload.approachSpeed);
+    }
+    check(closing > 25, "the two of them really were closing that fast", `${closing.toFixed(1)}ft/s`);
+    check(approach > closing * 0.7, "and the head-on is measured at the speed it happened",
+      `reported ${approach.toFixed(1)}ft/s against ${closing.toFixed(1)}ft/s of closing speed`);
+  });
+
+  // Ramming another robot is a thing you DO. Being thrown into the floor by a
+  // spinner is a thing that happens to you after that spinner has already been
+  // paid for its hit, and pricing both the same made the weapon's own damage the
+  // smaller half of its effect: over a full AI fight, floor and ceiling slams
+  // alone came to four times the weapon damage in the match.
+  await wiredMatch([attacker, victim], ({ match, tick, busEmit }) => {
+    for (let i = 0; i < 300; i++) tick();
+    const hit = (surface) => {
+      const before = match.getState().bots[0].total;
+      busEmit(EV.IMPACT, { botIndex: 0, otherIndex: null, surface, point: null, approachSpeed: 26 });
+      for (let i = 0; i < 40; i++) tick(); // clear the per-bot cooldown
+      return match.getState().bots[0].total - before;
+    };
+    const rammed = hit("bot");
+    const slammed = hit("floor");
+    check(rammed > 0 && slammed > 0, "both a ram and a slam are worth something",
+      `${rammed.toFixed(1)}% and ${slammed.toFixed(1)}%`);
+    check(slammed < rammed / 2, "but a slam is worth much less than a ram at the same speed",
+      `slam ${slammed.toFixed(1)}% vs ram ${rammed.toFixed(1)}%`);
   });
 });
 

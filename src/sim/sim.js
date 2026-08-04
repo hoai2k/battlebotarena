@@ -90,6 +90,10 @@ export async function createSim({ bots, emit }) {
     }
     // Wedges act on the contacts the last step produced, before this one.
     wedges.update(FIXED_DT);
+    // Motion as it stands NOW, before the solver spends it. Contact events are
+    // drained after the step, by which point a head-on has already been resolved
+    // and the closing speed that made it a hit no longer exists anywhere.
+    contacts.capture(vehicles.map((v) => v.body));
     world.step(eventQueue);
     contacts.process(eventQueue, simTime);
     simTime += FIXED_DT;

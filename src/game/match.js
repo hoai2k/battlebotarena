@@ -6,9 +6,13 @@
 //
 // Damage model (all totals are PERCENT, 0..100; KO at >=100):
 // - EV.WEAPON_HIT  -> amount = clamp(impulse * 0.028, 0.8, 15) * (heavy ? 1.25 : 1)
-// - EV.IMPACT      -> amount = clamp((relSpeed - 8) * 0.35, 0, 6), skipped
-//                     under 0.4; floor/ceiling only count above relSpeed 14
-//                     (slams); per-bot cooldown 0.2s
+// - EV.IMPACT      -> amount = clamp((approachSpeed - 8) * 0.35, 0, 6) x a
+//                     surface factor (bot 1, wall 0.55, floor/ceiling 0.3) x a
+//                     face factor (front 0.6, x0.6 again if the bot has a
+//                     wedge; side 1.0; rear 1.4), skipped under 0.4;
+//                     floor/ceiling only count above approach 18 (slams);
+//                     per-bot cooldown 0.35s. A bot-on-bot impact is charged to
+//                     BOTH machines, each on the face it was hit.
 // - EV.HAZARD_CONTACT -> continuous: killSaw 7%/s, screw 5%/s, x intensity
 //                     (applied in update() while contact events stay fresh)
 // - EV.HAZARD_LAUNCH  -> amount = clamp(impulse * 0.02, 2, 10)
@@ -43,8 +47,27 @@ const IMPACT_SPEED_THRESHOLD = 8; // ft/s
 const IMPACT_DAMAGE_PER_FPS = 0.35;
 const IMPACT_MAX = 6;
 const IMPACT_MIN = 0.4;
-const IMPACT_COOLDOWN_SECONDS = 0.2;
-const FLOOR_SLAM_SPEED = 14; // floor/ceiling hits below this are ignored
+const IMPACT_COOLDOWN_SECONDS = 0.35;
+const FLOOR_SLAM_SPEED = 18; // floor/ceiling hits below this are ignored
+
+// What was hit. Ramming another robot is a thing you DO; being thrown into the
+// floor by a spinner is a thing that happens to you AFTER that spinner has
+// already been paid for its hit, and charging both at the same rate makes the
+// weapon's own damage the smaller half of its effect. Measured over a full
+// AI-vs-AI fight, floor and ceiling slams alone were four times the weapon
+// damage in the match.
+const IMPACT_SURFACE = { bot: 1, wall: 0.55, floor: 0.3, ceiling: 0.3 };
+
+// Which FACE took the hit. Getting rammed in the back is not the same event as
+// catching one on the plate you built to catch it with, and a game where both
+// cost the same gives a driver no reason to keep their front toward the danger.
+// Applied to every impact, not only bot-on-bot: reversing into a wall should
+// cost more than nosing into one.
+const IMPACT_FACE = { front: 0.6, side: 1.0, rear: 1.4 };
+// A bot whose collider stack includes a wedge has a real armoured face there —
+// it is the shape the whole machine is built around — so its front is worth
+// more than the generic front factor.
+const WEDGE_FRONT_SCALE = 0.6;
 
 const HAZARD_RATE = { killSaw: 7, screw: 5 }; // %/s at intensity 1
 const HAZARD_FRESH_WINDOW = 0.2; // seconds a HAZARD_CONTACT keeps ticking
@@ -142,6 +165,28 @@ export function createMatch({ sim, specs, emit, on }) {
     return { zone: "body", side: null };
   }
 
+  /**
+   * front / side / rear, in the victim's own frame. Shares its geometry with
+   * zoneForContact above; kept separate because they answer different
+   * questions — that one is "which subsystem", this one is "how exposed".
+   */
+  function faceForContact(botIndex, point) {
+    const pose = poses[botIndex];
+    const spec = specs[botIndex];
+    if (!pose || !point || !spec) return 1;
+    const dx = point.x - pose.position.x;
+    const dz = point.z - pose.position.z;
+    const yaw = yawFromQuaternion(pose.quaternion);
+    const localZ = -dx * Math.sin(-yaw) + dz * Math.cos(-yaw);
+    const third = spec.bodyDims.z * 0.22;
+    if (localZ < -third) {
+      const wedged = (spec.colliders || []).some((c) => c.shape === "wedge");
+      return IMPACT_FACE.front * (wedged ? WEDGE_FRONT_SCALE : 1);
+    }
+    if (localZ > third) return IMPACT_FACE.rear;
+    return IMPACT_FACE.side;
+  }
+
   function applyDamage(botIndex, amount, kind, point) {
     if (phase !== "fight" || !(amount > 0)) return;
     const bot = damage[botIndex];
@@ -180,25 +225,31 @@ export function createMatch({ sim, specs, emit, on }) {
     applyDamage(targetIndex, base * (heavy ? HEAVY_HIT_MULTIPLIER : 1), "weapon", point);
   }));
 
-  unsubscribes.push(on(EV.IMPACT, ({ botIndex, otherIndex, surface, point, relSpeed, normalSpeed }) => {
+  unsubscribes.push(on(EV.IMPACT, ({ botIndex, otherIndex, surface, point, relSpeed, normalSpeed, approachSpeed }) => {
     if (botIndex === null || botIndex === undefined) return;
-    // Speed INTO the surface, not speed across it. Driving fast along the floor
-    // is not a slam; falling onto it is, and the two are the same number until
-    // you take the component along the contact normal. Claw Viper found this:
-    // 250lbf of magnets keep its pan on the floor and its 17fps top speed runs
-    // right at the 14fps slam threshold, so anything that nudged it over — a
-    // ramp, a bump, a shove — billed it for driving. normalSpeed falls back to
-    // relSpeed for any emitter that does not report it.
-    const speed = normalSpeed ?? relSpeed ?? 0;
+    // What the pair were CLOSING at, measured before the solver spent it — see
+    // sim/contacts.js. Not speed across the surface: driving fast along the
+    // floor is not a slam, falling onto it is, and the two are the same number
+    // until you take the component along the contact normal. Claw Viper found
+    // that half: 250lbf of magnets keep its pan on the floor and its 17fps top
+    // speed runs right at the 14fps slam threshold, so anything that nudged it
+    // over billed it for driving. Ramming found the other half — read after the
+    // step, a 27fps head-on measured as 1.2fps and cost nobody anything.
+    const speed = approachSpeed ?? normalSpeed ?? relSpeed ?? 0;
     if ((surface === "floor" || surface === "ceiling") && speed < FLOOR_SLAM_SPEED) return;
-    const amount = clamp((speed - IMPACT_SPEED_THRESHOLD) * IMPACT_DAMAGE_PER_FPS, 0, IMPACT_MAX);
-    if (amount < IMPACT_MIN) return;
+    const base = clamp((speed - IMPACT_SPEED_THRESHOLD) * IMPACT_DAMAGE_PER_FPS, 0, IMPACT_MAX)
+      * (IMPACT_SURFACE[surface] ?? IMPACT_SURFACE.wall);
+    if (base <= 0) return;
     // BOTH machines were in the collision. The router reports a bot-on-bot
     // impact once, under the LOWER of the two indices, and charging only that
     // one meant every ram in the game was paid for by player one — including
     // the rams they initiated, and never by player two.
     for (const i of otherIndex === null || otherIndex === undefined ? [botIndex] : [botIndex, otherIndex]) {
       if (fightClock - lastImpactAt[i] < IMPACT_COOLDOWN_SECONDS) continue;
+      // Same collision, different price: the two machines were hit on different
+      // faces of themselves, and that is most of what a ram is about.
+      const amount = base * faceForContact(i, point);
+      if (amount < IMPACT_MIN) continue;
       lastImpactAt[i] = fightClock;
       applyDamage(i, amount, "impact", point);
     }
