@@ -32,6 +32,7 @@
 
 import * as THREE from "three";
 import { loadBotModel } from "../assets/models.js";
+import { buildTrackParts } from "./tracks.js";
 import { syncBotVisual, updateWeaponSub } from "./botAnimation.js";
 import { createEffects, spawnBotFlame } from "./effects.js";
 import {
@@ -697,6 +698,11 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   /** Put a parsed model into its bay and hand the pod over to it. */
   function attachVisual(bay, spec, visual) {
     bay.visual = visual;
+    // The pod is where a player tries a bot out, so its track has to run here
+    // too. Idempotent on a cached visual: buildTrackBands replaces the band it
+    // already made, and buildTrackSprockets finds the pivot from last time
+    // rather than a bare mesh, so nothing is nested twice.
+    buildTrackParts(visual, spec);
     visual.group.position.set(bay.x, PLINTH_HEIGHT, 0);
     scene.add(visual.group);
     bay.weapon = createPreviewWeapon(spec);

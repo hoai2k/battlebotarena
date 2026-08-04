@@ -2315,13 +2315,32 @@ export const CATALOG = {
     // the previous version scrolled the units' own UVs, and since each unit is
     // ONE scanned mesh holding wheels, frame and band on a single atlas, that
     // moved the texture in a different direction on every triangle.
-    tracks: { parts: ["tripo_part_6", "tripo_part_7"], widthAxis: "x", tint: "#232629" },
+    // `sprockets` are the four drive wheels, cut out of the two pods by
+    // tools/repairs/dragonking-sprockets.json so they can turn inside the band
+    // they drive. Nothing inside a scanned pod could move before that: the pod
+    // is one mesh, so the yellow wheels and their bolt heads sat perfectly still
+    // under a track that was visibly running.
+    tracks: {
+      parts: ["tripo_part_6", "tripo_part_7"], widthAxis: "x", tint: "#232629",
+      sprockets: ["tripo_part_60", "tripo_part_61", "tripo_part_70", "tripo_part_71"],
+    },
+    // MEASURED to the outside of the band, by circle fit on each pod's own
+    // silhouette (0.0742 model units x 3.949). It has to BE the sprocket radius
+    // or the wheels and the track disagree: the band advances the distance
+    // travelled whatever this says, but the sprocket turns by wheelSpin, which
+    // is that distance divided by this.
+    wheelRadius: 0.293,
     weapon: {
       type: "sawArms",
       pivot: { x: 0.007, y: 0.659, z: 0.107 }, // MEASURED arm base, game space
       axis: { x: 1, y: 0, z: 0 },
       restAngle: 0, // baked arms RAISED — the stroke DROPS them, like a hammer
-      fireAngle: 1.4, // ~80 degrees down onto a held opponent
+      // NEGATIVE, because the saws come down in FRONT of him. A positive angle
+      // about +X carries the top of the arms toward +Z, which is the tail: the
+      // blades were tipping backwards over the engine deck, away from anything
+      // the jaw could be holding. The gesture is bite, then bring the saws down
+      // on what you have got, and that is forward.
+      fireAngle: -1.4, // ~80 degrees down onto a held opponent
       spinUpSeconds: 1.0,
       budgetCap: 180,
       radius: 1.291, // MEASURED swept radius of the arms about their base
@@ -2329,9 +2348,21 @@ export const CATALOG = {
       // The blades keep spinning whatever the arms are doing, so they are their
       // own nested group. They do nothing without a grip — that IS the bot.
       sub: {
-        node: "modelWeaponSub-saws",
+        node: "modelWeaponSub-sawLeft + modelWeaponSub-sawRight",
         pivot: { x: 0.007, y: 1.409, z: 0.186 }, // MEASURED, both blades share this line
         axis: { x: 1, y: 0, z: 0 },
+        // They do NOT share an axle. The blades lean 6.9 degrees off horizontal
+        // in OPPOSITE directions — a shallow V, and symmetric to 0.002, which is
+        // how you know it is the machine and not scan noise. Spun about a common
+        // horizontal axis each disc precesses instead of turning, which reads as
+        // a bent blade wobbling; each has to turn about its own normal.
+        // MEASURED by PCA over each disc's vertices (the smallest-variance axis
+        // of a disc IS its axle). They were partitioned as one group and had to
+        // be split — see tools/glb-regroup.mjs --create.
+        axes: {
+          sawLeft: { x: 0.9927, y: 0.1204, z: 0.0034 },
+          sawRight: { x: 0.9929, y: -0.1187, z: -0.0028 },
+        },
         spinUpSeconds: 1.0, damagePerSecond: 14, requiresGrip: true,
       },
       tuning: { strokeSeconds: 0.4, returnSeconds: 0.7, gripReach: 2.2 },
@@ -2344,7 +2375,25 @@ export const CATALOG = {
     // sim runs it as a real pitch servo on the chassis (sim/vehicle.js) rather
     // than as an animation, because the whole point of the gesture is that what
     // comes over the top collides with things.
-    lift: { maxAngleDeg: 90, seconds: 0.9, gain: 70, damping: 8.0, maxAccel: 150 },
+    // MEASURED rear axle. A Kasa circle fit on the two cylinders that make up
+    // the cross bar (parts 2 and 4) puts it at model y -0.050, z 0.141, and the
+    // rear sprockets, fit independently off each pod's own silhouette, come out
+    // at y -0.0481, z 0.1443. Four fits of two different things agreeing to
+    // 0.003 is what says the bar IS the axle the tracks turn on, and therefore
+    // what the body rears up about. Quoted here in game space, read back off the
+    // loaded model rather than converted by hand: the authority is the GLB's
+    // modelAux-pods pivotLocal (tools/repairs/dragonking-rear-axle.json), and
+    // the model's own normalization decides where that lands.
+    //
+    // `pivot` makes the SIM turn the chassis about this point rather than about
+    // its centre of mass — otherwise the tail swings down as the nose goes up
+    // and the axle jacks the whole robot off the floor. The pods' aux pivot is
+    // the same point, which is what makes the render's counter-rotation cancel
+    // exactly instead of leaving the pods skating forward under a rising body.
+    lift: {
+      pivot: { x: 0.003, y: 0.128, z: 1.155 },
+      maxAngleDeg: 90, seconds: 0.9, gain: 70, damping: 8.0, maxAccel: 150,
+    },
     aux: {
       // MEASURED hinge: the back-top of the skull where it meets the neck. The
       // upper snout (part 20) is what swings; the yellow lower scoop (part 19)
@@ -2354,8 +2403,14 @@ export const CATALOG = {
       jaw: { node: "modelAux-jaw", axis: { x: 1, y: 0, z: 0 },
              pivot: { x: 0, y: 0.138, z: -0.956 }, openAngle: 0.62, seconds: 0.4,
              reach: 1.9, clampForce: 260, holdStrength: 9, breakDistance: 3.2 },
+      // Holds the pods AND the cross bar they are joined by (parts 2, 3 and 4,
+      // moved here out of modelBody). The bar is the axle: it cannot be part of
+      // what swings, or rearing up carries it down through the floor and stands
+      // the robot on it. Pivot is the measured axle — the same point as
+      // lift.pivot, which is what makes the counter-rotation cancel exactly
+      // instead of leaving the pods skating forward as the body comes up.
       pods: { node: "modelAux-pods", axis: { x: 1, y: 0, z: 0 },
-              pivot: { x: 0.007, y: 0.264, z: 0.463 }, range: 2.2, seconds: 0.8,
+              pivot: { x: 0.003, y: 0.128, z: 1.155 }, range: 2.2, seconds: 0.8,
               drivesSelfRight: true },
     },
     // Re-authored for the flip: what used to be the tail leads now, so the

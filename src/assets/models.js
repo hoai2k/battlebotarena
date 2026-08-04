@@ -456,6 +456,7 @@ export async function loadBotModel(spec, { onProgress } = {}) {
   let weaponPivot = null;
   let usedGlbWeapon = false;
   let weaponSub = null;
+  const weaponSubs = [];
   if (spec.weapon) {
     weaponPivot = new THREE.Group();
     weaponPivot.name = "weaponPivot";
@@ -508,11 +509,19 @@ export async function loadBotModel(spec, { onProgress } = {}) {
       // Nested sub-spinner (modelWeaponSub-*, e.g. sawblaze's saw disc):
       // wrapped in its own pivot at its bbox center INSIDE the weapon group,
       // so it swings with the arm and spins locally.
-      let subNode = null;
+      //
+      // There can be MORE THAN ONE. A weapon with two rotors that do not share
+      // an axle needs a pivot each, because one group can only turn about one
+      // axis: Dragon King's saw blades lean 6.9 degrees apart in opposite
+      // directions, and spinning both about a single horizontal axle is the
+      // wobble you would get from bending the axle rather than the arms.
+      // parts.weaponSub stays the FIRST of them for every caller that assumes
+      // one (Claw Viper's jaw, the flame nozzle); parts.weaponSubs is the list.
+      const subNodes = [];
       glbWeapon.traverse((child) => {
-        if (!subNode && child.name?.startsWith("modelWeaponSub-")) subNode = child;
+        if (child.name?.startsWith("modelWeaponSub-")) subNodes.push(child);
       });
-      if (subNode) {
+      for (const subNode of subNodes) {
         const subCenter = new THREE.Vector3();
         // A hinged jaw (clawviper) turns about its knuckle, not its middle, so
         // the part map's pivotOverride wins when the partitioner baked one.
@@ -526,7 +535,9 @@ export async function loadBotModel(spec, { onProgress } = {}) {
           if (!subBox.isEmpty()) subBox.getCenter(subCenter);
         }
         const subPivot = new THREE.Group();
-        subPivot.name = "weaponSubPivot";
+        // Named after the GLB group so the animator can look up a per-blade
+        // axis: "modelWeaponSub-sawLeft" -> "sawLeft".
+        subPivot.name = `weaponSubPivot-${subNode.name.slice("modelWeaponSub-".length)}`;
         // Parent to the WEAPON PIVOT, not to the sub node's GLB parent. The
         // integrator spins this group about spec.weapon.axis, which is a game
         // -space axis; nodes inside the GLB hierarchy still carry the
@@ -539,8 +550,9 @@ export async function loadBotModel(spec, { onProgress } = {}) {
         weaponPivot.updateWorldMatrix(true, false);
         subPivot.position.copy(weaponPivot.worldToLocal(subCenter.clone()));
         subPivot.attach(subNode);
-        weaponSub = subPivot;
+        weaponSubs.push(subPivot);
       }
+      weaponSub = weaponSubs[0] ?? null;
     } else {
       weaponPivot.position.set(pivot.x, pivot.y, pivot.z);
       const placeholder = placeholderWeapon(spec);
@@ -635,7 +647,7 @@ export async function loadBotModel(spec, { onProgress } = {}) {
   markShadows(group);
   return {
     group,
-    parts: { body, weapon: weaponPivot, wheels, aux, weaponSub },
+    parts: { body, weapon: weaponPivot, wheels, aux, weaponSub, weaponSubs },
     weaponIsPlaceholder: Boolean(spec.weapon) && !usedGlbWeapon,
   };
 }

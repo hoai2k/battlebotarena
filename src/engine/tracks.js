@@ -233,6 +233,10 @@ function bandFor(mesh, spec) {
   });
   const band = new THREE.Mesh(geometry, material);
   band.name = `trackBand:${mesh.name}`;
+  // Idempotent: the bot-select pod caches visuals and re-attaches the same one
+  // every time a player scrolls back to it, so a second band would sit inside
+  // the first and z-fight.
+  (mesh.parent ?? mesh).getObjectByName(band.name)?.removeFromParent();
   band.castShadow = mesh.castShadow;
   (mesh.parent ?? mesh).add(band);
   band.position.copy(mesh.position);
@@ -260,16 +264,81 @@ export function buildTrackBands(visual, spec) {
 }
 
 /**
- * Advance every band by the ground distance the bot has travelled. wheelSpin is
+ * Everything a tracked bot's model needs building on top of it, stored on the
+ * visual for syncBotVisual to drive. One call because there are two callers —
+ * the arena and the bot-select pod — and a bot whose track runs in one of them
+ * and not the other is exactly the bug this hides.
+ */
+export function buildTrackParts(visual, spec) {
+  visual.trackBands = buildTrackBands(visual, spec);
+  visual.trackSprockets = buildTrackSprockets(visual, spec);
+  return visual;
+}
+
+/**
+ * Wrap every drive sprocket named by spec.tracks.sprockets in a pivot at its own
+ * centre, so it can be turned with the band. Returns the pivots.
+ *
+ * A scanned track pod is one mesh — frame, band and wheels on a single atlas —
+ * so the wheels inside it cannot turn until they are cut out into their own
+ * parts (tools/repairs/dragonking-sprockets.json). Once they are, this is what
+ * makes them go round, and the bolt heads around each sprocket are what makes
+ * the rotation readable at all: without them a yellow disc turning on its own
+ * axis is indistinguishable from one standing still.
+ *
+ * The pivot is inserted IN PLACE, under the mesh's existing parent, unlike the
+ * modelWheel-N path which re-parents to the model root. These wheels live inside
+ * an aux group that MOVES — Dragon King counter-rotates his pods so they stay
+ * flat while the chassis rears up — and a wheel hoisted out of that group would
+ * detach itself from the track it is supposed to be driving.
+ */
+export function buildTrackSprockets(visual, spec) {
+  const names = spec.tracks?.sprockets;
+  if (!names?.length) return [];
+  const pivots = [];
+  for (const name of names) {
+    const mesh = visual.group.getObjectByName(name);
+    if (!mesh?.isMesh || !mesh.parent) continue;
+    const parent = mesh.parent;
+    // Already wrapped by an earlier call (a re-attached preview visual): keep
+    // the pivot that is there rather than nesting a second one inside it.
+    if (parent.name === `sprocketPivot-${name}`) { pivots.push(parent); continue; }
+    const box = new THREE.Box3().setFromObject(mesh);
+    if (box.isEmpty()) continue;
+    const centre = new THREE.Vector3();
+    box.getCenter(centre);
+    const pivot = new THREE.Group();
+    pivot.name = `sprocketPivot-${name}`;
+    parent.add(pivot);
+    parent.updateWorldMatrix(true, false);
+    pivot.position.copy(parent.worldToLocal(centre));
+    pivot.attach(mesh); // keeps the sprocket exactly where it was drawn
+    pivots.push(pivot);
+  }
+  return pivots;
+}
+
+/**
+ * Advance every band by the ground distance the bot has travelled, and turn
+ * every sprocket by the same wheel rotation that produced it. wheelSpin is
  * accumulated wheel rotation in radians, so the band and the bot agree about
  * speed for free — including while it is being shoved backwards.
+ *
+ * Band and sprocket agree only if spec.wheelRadius IS the sprocket's radius:
+ * the band advances spin x wheelRadius feet, which is the distance travelled
+ * whatever the radius, while the sprocket turns by spin itself. Measure it.
  */
-export function scrollTrackBands(bands, spec, wheelSpin) {
-  if (!bands?.length) return;
+export function scrollTrackBands(bands, spec, wheelSpin, sprockets = null) {
+  if (!bands?.length && !sprockets?.length) return;
   const spins = wheelSpin;
   const spin = spins?.length ? spins.reduce((a, b) => a + b, 0) / spins.length : 0;
   const feet = spin * (spec.wheelRadius ?? 0.35);
-  for (const band of bands) {
+  for (const band of bands || []) {
     band.map.offset.x = -((feet / band.perimeterFt) * band.repeats) % band.repeats;
   }
+  if (!sprockets?.length) return;
+  // Negated for the same reason the road wheels are: a wheel on the +X axle
+  // rolling the bot toward -Z turns NEGATIVE about +X.
+  const axis = spec.tracks?.widthAxis ?? "x";
+  for (const pivot of sprockets) pivot.rotation[axis] = -spin;
 }

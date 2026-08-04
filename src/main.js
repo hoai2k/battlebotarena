@@ -9,7 +9,7 @@ import { createEffects, spawnBotFlame } from "./engine/effects.js";
 import { createArenaVisuals } from "./engine/arena.js";
 import { createBotPreview } from "./engine/botPreview.js";
 import { syncBotVisual, updateWeaponSub } from "./engine/botAnimation.js";
-import { buildTrackBands } from "./engine/tracks.js";
+import { buildTrackParts } from "./engine/tracks.js";
 
 // Written by the parallel build agents; wired here at integration time.
 import { createUI } from "./ui/ui.js";
@@ -158,7 +158,7 @@ async function startMatch({ playerBotId, rivalBotId, difficulty }) {
         // A tracked bot's band is built from the loaded geometry rather than
         // shipped in the GLB — see engine/tracks.js for why the scan cannot
         // provide one. Built once here; botAnimation only scrolls it.
-        visual.trackBands = buildTrackBands(visual, spec);
+        buildTrackParts(visual, spec);
         return visual;
       })
     )

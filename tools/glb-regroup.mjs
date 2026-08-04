@@ -46,8 +46,35 @@ const binStart = 20 + align4(jsonLen) + 8;
 const binLen = buf.readUInt32LE(binStart - 8);
 
 const nodeIndex = new Map(json.nodes.map((n, i) => [n.name, i]));
+const createdGroups = new Set();
 if (!REMOVE && !nodeIndex.has(target)) {
-  throw new Error(`${path} has no ${target} — groups here are: ${json.nodes.map((n) => n.name).filter((n) => n?.startsWith("model")).join(", ")}`);
+  // --create makes the group instead of refusing. A group is a node with a
+  // children list and a pivotLocal, and nothing else — see the note above about
+  // groups carrying no transform — so there is nothing to bake and no reason
+  // the only way to get one should be a re-cut from a file nobody has. The case
+  // that needs it is SPLITTING an existing group: Dragon King's two saw blades
+  // were partitioned as one modelWeaponSub, and one group can only spin about
+  // one axis, which is wrong for two blades that lean opposite ways.
+  if (!flags.includes("--create")) {
+    throw new Error(`${path} has no ${target} — groups here are: ${json.nodes.map((n) => n.name).filter((n) => n?.startsWith("model")).join(", ")}`
+      + `\n(pass --create to make it)`);
+  }
+  // modelWeaponSub-* hangs under modelWeapon, because that is where models.js
+  // looks for it; everything else is a scene root alongside modelBody.
+  const holderName = target.startsWith("modelWeaponSub-") ? "modelWeapon" : null;
+  const created = { name: target, children: [], extras: {} };
+  json.nodes.push(created);
+  nodeIndex.set(target, json.nodes.length - 1);
+  if (holderName) {
+    const holder = json.nodes[nodeIndex.get(holderName)];
+    if (!holder) throw new Error(`${path} has no ${holderName} to hang ${target} under`);
+    holder.children = holder.children || [];
+    holder.children.push(nodeIndex.get(target));
+  } else {
+    json.scenes[0].nodes.push(nodeIndex.get(target));
+  }
+  createdGroups.add(target);
+  console.log(`created ${target}${holderName ? ` under ${holderName}` : " at the scene root"}`);
 }
 const groups = json.nodes.filter((n) => n.name?.startsWith("model"));
 
@@ -88,6 +115,39 @@ for (const g of groups) {
   if (!key || !g.extras?.[key]) continue;
   const bounds = boundsOf(g);
   if (bounds) g.extras[key] = bounds;
+}
+
+// A group with no pivotLocal falls back at load time to the bbox centre of
+// whatever it holds, which is right for a disc and wrong for a hinge. Write it
+// explicitly for a group this run created, so the file says what it turns about
+// instead of leaving the answer to be re-derived.
+for (const g of groups) {
+  if (!createdGroups.has(g.name) || g.extras?.pivotLocal || !(g.children || []).length) continue;
+  const bounds = boundsOf(g);
+  if (bounds) {
+    g.extras = g.extras || {};
+    g.extras.pivotLocal = [0, 1, 2].map((i) => +((bounds.min[i] + bounds.max[i]) / 2).toFixed(4));
+    console.log(`${g.name}: pivotLocal ${JSON.stringify(g.extras.pivotLocal)}`);
+  }
+}
+
+// Splitting a group empties the one it came from. An empty group is not
+// harmless — models.js takes the FIRST modelWeaponSub-* it finds, so an empty
+// leftover can win the search and the real one never spins.
+for (const g of groups) {
+  if (g.mesh !== undefined || (g.children || []).length) continue;
+  const id = json.nodes.indexOf(g);
+  let dropped = false;
+  for (const n of json.nodes) {
+    if (!n.children?.includes(id)) continue;
+    n.children = n.children.filter((c) => c !== id);
+    dropped = true;
+  }
+  const roots = json.scenes[0].nodes;
+  if (roots.includes(id)) { json.scenes[0].nodes = roots.filter((c) => c !== id); dropped = true; }
+  // Unparented, not spliced out: node indices are positional and everything
+  // above the hole would shift. glTF draws only what the scene reaches.
+  if (dropped) console.log(`${g.name}: empty, unparented`);
 }
 
 if (!flags.includes("--write")) {

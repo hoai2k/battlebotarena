@@ -1128,6 +1128,121 @@ await test("dragon king: LT rears the body up and lets it back down", async () =
     drive({}, 150);
     check(Math.abs(pitchDeg()) < 5, "letting go brings it back down", `${pitchDeg().toFixed(1)} deg`);
   });
+
+  // WHAT it pivots ON, measured by following two body-local points through the
+  // whole gesture: the rear axle and the centre of mass. If the machine is
+  // hinged at the axle the axle stays where it is and the com swings up over it;
+  // if it is not, the axle sweeps an arc of its own and the bar at the back digs
+  // into the floor and jacks the robot up on it — which is what it used to do.
+  //
+  // Most of what holds the axle down here is the ground, not the servo: the pods
+  // are on the floor and the suspension and friction pin them. lift.pivot is
+  // still the number that DEFINES the axle — it is what the renderer's pod
+  // counter-rotation cancels about — so this is the check that it names a point
+  // the robot really turns around and not one 0.7ft away.
+  const m = await import("../src/sim/math.js");
+  const com = { x: 0, y: -0.15 * spec.bodyDims.y, z: 0.08 * spec.bodyDims.z }; // mirrors sim/vehicle.js
+  const axle = spec.lift.pivot;
+  const apart = Math.hypot(axle.y - com.y, axle.z - com.z);
+  check(apart > 0.5, "the axle and the com are far enough apart to tell apart", `${apart.toFixed(2)}ft`);
+  await withSim([spec, CATALOG.bronco], (sim) => {
+    sim._test.setPose(1, { x: 0, z: 25 }, 0);
+    sim._test.setPose(0, { x: 0, z: 0 }, 0);
+    const body = () => sim._test.body(0);
+    const worldOf = (p) => m.add(body().translation(), m.qRotate(body().rotation(), p));
+    const drive = (raw, count) => frames(sim, count, [shaper.shape(raw, spec, 0), {}]);
+    drive({}, 90);
+    const axle0 = worldOf(axle);
+    const com0 = worldOf(com);
+    drive({ weaponLift: true }, 150);
+    const axleMoved = m.length(m.sub(worldOf(axle), axle0));
+    const comMoved = m.length(m.sub(worldOf(com), com0));
+    check(comMoved > 1, "the body really did swing up", `com travelled ${comMoved.toFixed(2)}ft`);
+    check(axleMoved < comMoved / 3, "the rear axle stays put while the body swings over it",
+      `axle ${axleMoved.toFixed(2)}ft vs com ${comMoved.toFixed(2)}ft`);
+  });
+});
+
+await test("dragon king: the saws come down in FRONT, and each turns about its own axle", async () => {
+  // Two things the eye catches immediately and no physics assertion would.
+  //
+  // LB drops the saw arms. About +X a positive angle carries the top of the arms
+  // toward +Z, which is the TAIL — the blades were tipping backwards over the
+  // engine deck, away from anything the jaw could be holding. Forward is -Z, and
+  // the gesture is: bite, then bring the saws down on what you have got.
+  //
+  // And the two blades do not share an axle. They lean 6.9 degrees off horizontal
+  // in opposite directions; spun about one common axis each disc precesses rather
+  // than turns, which reads as a bent blade wobbling.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const spec = CATALOG.dragonking;
+  const w = spec.weapon;
+  check(w.fireAngle < 0, "the saw stroke swings the arms forward, not back",
+    `restAngle ${w.restAngle} -> fireAngle ${w.fireAngle}`);
+  // Where the blade ENDS UP, not just the sign: rotate its measured centre about
+  // the arm pivot by fireAngle and it has to finish ahead of where it started.
+  const blade = { y: w.sub.pivot.y - w.pivot.y, z: w.sub.pivot.z - w.pivot.z };
+  const c = Math.cos(w.fireAngle);
+  const s = Math.sin(w.fireAngle);
+  const swungZ = w.pivot.z + (blade.y * s + blade.z * c);
+  check(swungZ < w.sub.pivot.z - 0.5, "the blades finish forward of where they rest",
+    `z ${w.sub.pivot.z.toFixed(2)} -> ${swungZ.toFixed(2)} (forward is -z)`);
+
+  const axes = w.sub.axes;
+  check(axes && Object.keys(axes).length === 2, "both blades have an axle of their own",
+    `${Object.keys(axes || {}).join(", ") || "none"}`);
+  const [a, b] = Object.values(axes);
+  const dot = a.x * b.x + a.y * b.y + a.z * b.z;
+  const apartDeg = (Math.acos(Math.max(-1, Math.min(1, dot))) * 180) / Math.PI;
+  check(apartDeg > 5, "and the two axles are genuinely different lines",
+    `${apartDeg.toFixed(1)} degrees apart`);
+  for (const [name, axis] of Object.entries(axes)) {
+    const len = Math.hypot(axis.x, axis.y, axis.z);
+    check(Math.abs(len - 1) < 0.01, `${name}'s axle is a unit vector`, `|axis| = ${len.toFixed(4)}`);
+  }
+  // The names have to be the GLB group suffixes or botAnimation silently falls
+  // back to the shared weapon axis and the wobble comes straight back.
+  const { readFileSync } = await import("node:fs");
+  const glb = readFileSync(new URL(`../public${spec.modelPath.replace("./public", "")}`, import.meta.url));
+  const json = JSON.parse(glb.toString("utf8", 20, 20 + glb.readUInt32LE(12)).trim());
+  const reachable = new Set();
+  const walk = (i) => { reachable.add(json.nodes[i].name); (json.nodes[i].children || []).forEach(walk); };
+  json.scenes[0].nodes.forEach(walk);
+  for (const name of Object.keys(axes)) {
+    check(reachable.has(`modelWeaponSub-${name}`), `modelWeaponSub-${name} is in the model`,
+      `groups: ${[...reachable].filter((n) => n?.startsWith("modelWeaponSub-")).join(", ")}`);
+  }
+});
+
+await test("tracked bots: the drive sprockets are real parts that can turn", async () => {
+  // A scanned track pod is ONE mesh — frame, band and wheels on a single atlas —
+  // so nothing inside it can move. Dragon King's band has been scrolling over
+  // four yellow sprockets that were nailed in place, bolt heads and all. They
+  // are cut out into their own parts now (tools/repairs/dragonking-sprockets.json)
+  // and this is the check that they are still there and still findable by name.
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  const { readFileSync } = await import("node:fs");
+  for (const spec of Object.values(CATALOG)) {
+    const names = spec.tracks?.sprockets;
+    if (!names?.length) continue;
+    const glb = readFileSync(new URL(`../public${spec.modelPath.replace("./public", "")}`, import.meta.url));
+    const json = JSON.parse(glb.toString("utf8", 20, 20 + glb.readUInt32LE(12)).trim());
+    const reachable = new Map();
+    const walk = (i) => { reachable.set(json.nodes[i].name, json.nodes[i]); (json.nodes[i].children || []).forEach(walk); };
+    json.scenes[0].nodes.forEach(walk);
+    for (const name of names) {
+      const node = reachable.get(name);
+      check(node?.mesh !== undefined, `${spec.id}: ${name} is a drawn mesh in the model`,
+        node ? "in the scene but has no mesh" : "not reachable from the scene");
+      const tris = node ? json.accessors[json.meshes[node.mesh].primitives[0].indices].count / 3 : 0;
+      check(tris > 1000, `${spec.id}: ${name} is a whole wheel, not a sliver`, `${tris} triangles`);
+    }
+    // The band advances the distance travelled whatever wheelRadius says, but the
+    // sprocket turns by wheelSpin — which is that distance over wheelRadius. If
+    // this is not the measured sprocket radius the wheels and the track disagree.
+    check(spec.wheelRadius !== undefined, `${spec.id} states a wheel radius for its sprockets to use`,
+      `${spec.wheelRadius}`);
+  }
 });
 
 await test("dragon king: the jaw grips, tows, and the saws only cut what it holds", async () => {

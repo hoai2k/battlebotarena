@@ -1,0 +1,21 @@
+[
+  {
+    "_comment": "Cut Dragon King's four drive sprockets out of his two track pods so they can turn. Each pod is ONE scanned mesh holding the frame, the band and the wheels on a single atlas, which is why nothing inside it has ever moved: engine/tracks.js sweeps a procedural band around the pod's silhouette and scrolls that, and the yellow sprockets underneath stayed nailed in place while the track ran over them. The bolt heads around each sprocket are what makes the rotation readable, and they were the one thing standing still.",
+    "_measurements": "Kasa circle fit on each pod's silhouette, taken per angle bin so only hull points feed the fit: front wheel at y -0.0488, z -0.2127 and rear at y -0.0481, z 0.1443, both r=0.0742 to the OUTSIDE of the band. Both pods measured within 0.0004 of each other, and the rear centre agrees with the axle bar (parts 2 and 4, fit at y -0.0500, z 0.1410) to 0.003 - which is the check that matters, because that bar IS the rear axle.",
+    "_radius": "0.061, inside the band. The cylinder runs the pod's full width so the plug is the whole wheel and its hub, not a face: a face alone would shear off its own bolts. Radius is the one number here that is judged rather than measured - the sprocket's yellow rim and the band's inner edge are the same circle in the scan, and taking too much would spin a slice of track with the wheel.",
+    "part": 6, "mode": "extract", "newPart": 60, "parent": "modelAux-pods",
+    "region": { "type": "cylinder", "axis": 0, "center": [0.24, -0.0488, -0.2127], "radius": 0.061, "halfLength": 0.2 }
+  },
+  {
+    "part": 6, "mode": "extract", "newPart": 61, "parent": "modelAux-pods",
+    "region": { "type": "cylinder", "axis": 0, "center": [0.24, -0.0481, 0.1443], "radius": 0.061, "halfLength": 0.2 }
+  },
+  {
+    "part": 7, "mode": "extract", "newPart": 70, "parent": "modelAux-pods",
+    "region": { "type": "cylinder", "axis": 0, "center": [-0.243, -0.0487, -0.2127], "radius": 0.061, "halfLength": 0.2 }
+  },
+  {
+    "part": 7, "mode": "extract", "newPart": 71, "parent": "modelAux-pods",
+    "region": { "type": "cylinder", "axis": 0, "center": [-0.243, -0.0481, 0.1441], "radius": 0.061, "halfLength": 0.2 }
+  }
+]

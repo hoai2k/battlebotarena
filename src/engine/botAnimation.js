@@ -128,7 +128,7 @@ export function syncBotVisual(visual, spec, state, dt = 1 / 60) {
   // scrolled along its own length here; the track units' own textures are left
   // alone, because on a scanned pod they are one atlas shared with the wheels
   // and the frame and no offset of them means "forward".
-  scrollTrackBands(visual.trackBands, spec, state.wheelSpin);
+  scrollTrackBands(visual.trackBands, spec, state.wheelSpin, visual.trackSprockets);
   const punch = visual.parts.aux?.fists;
   if (punch && spec.weapon?.fists) {
     const f = spec.weapon.fists;
@@ -148,15 +148,26 @@ export function syncBotVisual(visual, spec, state, dt = 1 / 60) {
 // target as the arm chops rather than away from it.
 const SAW_DISC_SPEED = -67.2; // rad/s at full speed (was 42, +60%)
 export function updateWeaponSub(visual, spec, dt, active) {
-  const sub = visual.parts.weaponSub;
+  const subs = visual.parts.weaponSubs?.length
+    ? visual.parts.weaponSubs
+    : (visual.parts.weaponSub ? [visual.parts.weaponSub] : []);
   // sawArms belongs here too, and its absence is why Dragon King's blades have
   // never turned: the channel latched, the sim spun its rotor up and gated the
   // grind damage on it, and the two discs on screen sat perfectly still.
-  if (!sub || !["hammerSaw", "sawArms", "lifterDisc"].includes(spec.weapon?.type)) return;
+  if (!subs.length || !["hammerSaw", "sawArms", "lifterDisc"].includes(spec.weapon?.type)) return;
   const state = (visual.__subSpin ||= { angle: 0, speed: 0 });
   const target = active ? SAW_DISC_SPEED : 0;
   state.speed += (target - state.speed) * Math.min(1, dt * (active ? 2.2 : 1.1));
   state.angle += state.speed * dt;
-  scratchAxis.set(spec.weapon.axis.x, spec.weapon.axis.y, spec.weapon.axis.z).normalize();
-  sub.quaternion.setFromAxisAngle(scratchAxis, state.angle);
+  // Each rotor turns about ITS OWN axle. spec.weapon.sub.axes maps the GLB
+  // group's suffix to one; anything not listed falls back to the weapon axis,
+  // which is what a single-rotor weapon has always used. A blade that leans has
+  // to spin about the lean or it wobbles, and Dragon King's two lean apart.
+  const axes = spec.weapon?.sub?.axes;
+  for (const sub of subs) {
+    const key = sub.name.startsWith("weaponSubPivot-") ? sub.name.slice("weaponSubPivot-".length) : "";
+    const a = axes?.[key] ?? spec.weapon.axis;
+    scratchAxis.set(a.x, a.y, a.z).normalize();
+    sub.quaternion.setFromAxisAngle(scratchAxis, state.angle);
+  }
 }

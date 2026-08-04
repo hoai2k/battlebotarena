@@ -407,6 +407,13 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
   // angle back and botAnimation counter-rotates them, so what pivots on screen
   // is the body about the axle, which is what pivots on the real machine.
   const lift = spec.lift ?? null;
+  // Body-local, COM -> the axle the chassis swings on. Without it the torque
+  // turns the body about its CENTRE OF MASS, which is what a free rigid body
+  // does and not what a machine hinged at the back does: the tail end swings
+  // DOWN as the nose goes up, so the rear axle drives into the floor and jacks
+  // the whole robot off it. Same correction, and the same reason for it, as the
+  // yaw servo's wheelCenterOffset above.
+  const liftPivotOffset = lift?.pivot ? m.sub(lift.pivot, com) : null;
   let liftStroke = 0; // 0 down, 1 fully reared
   let liftAngle = 0; // radians of chassis pitch actually achieved
 
@@ -433,6 +440,12 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
     const rate = (wanted - liftAngle) * (lift.gain ?? 26) - pitchRate * (lift.damping ?? 5.5);
     const clamped = m.clamp(rate, -(lift.maxAccel ?? 40), lift.maxAccel ?? 40);
     body.applyTorqueImpulse(m.scale(lateral, ix * clamped * dt), true);
+    if (!liftPivotOffset) return;
+    // Hold the axle still: cancel the velocity dw x d it would otherwise pick
+    // up, and the instantaneous centre of rotation moves from the COM onto it.
+    const dw = m.scale(lateral, clamped * dt);
+    const d = m.qRotate(rot, liftPivotOffset);
+    body.applyImpulse(m.scale(m.cross(dw, d), -mass), true);
   }
 
   return {
