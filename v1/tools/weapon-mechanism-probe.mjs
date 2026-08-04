@@ -73,12 +73,20 @@ export async function weaponMechanism(id) {
       // A committed arm (hammer, flipper) has to be RELEASED to fire again, so
       // its button is pulsed; everything else is held, which is how it is
       // played.
-      const committed = weapon?.type === "hammer" || weapon?.type === "flipper" || weapon?.type === "meshFlipper";
+      const config = weapon?.arm || weapon || {};
+      const committed = !config.holdStroke
+        && (weapon?.type === "hammer" || weapon?.type === "flipper" || weapon?.type === "meshFlipper");
+      // A two-way arm spends its second channel driving the arm back DOWN, so
+      // holding both buttons holds it still — which is the mechanism working,
+      // and not what this is trying to measure.
       sim.setInput(0, {
         leftDrive: 1,
         rightDrive: 1,
         weapon: committed ? frame % 50 < 14 : true,
-        weaponSecondary: true,
+        weaponSecondary: config.twoWayArm ? false : true,
+        // The third channel, for the one machine that has something on it.
+        weaponAux: frame % 40 < 12,
+        weaponLift: true,
       });
       sim.stepFrame();
       if (weapon) {

@@ -1,5 +1,5 @@
 import { FEET_PER_SECOND_PER_MPH, botGroundSpeedFeetPerSecond } from "./botConfig.js";
-import { armHitProfile, armWeaponReach, isArmWeaponEngaged, isNewArmWeapon } from "./armWeapons.js";
+import { armHitProfile, armWeaponReach, isArmWeaponEngaged, isNewArmWeapon, stallWeapon } from "./armWeapons.js";
 
 const DEFAULTS = {
   floorY: 0,
@@ -782,6 +782,34 @@ export function createPhysics({ THREE, RAPIER, now = null }) {
     if (Math.abs(driveImpulse) > 0.001) {
       fighter.rb.applyImpulse({ x: forward.x * driveImpulse, y: 0, z: forward.z * driveImpulse }, true);
     }
+    // A machine on omniwheels (Glitch, Shatter) resolves movement along BOTH
+    // chassis axes independently of which way it is pointing, so its left stick
+    // translates and its right stick rotates. Everything else here is unchanged:
+    // this is one more velocity servo, on the sideways axis.
+    if (fighter.spec?.driveType === "holonomic") {
+      const strafeInput = clamp(input.strafe || 0, -1, 1);
+      const strafeRatio = clamp(fighter.spec?.driveStrafeRatio ?? 0.9, 0.1, 1.2);
+      const lateralSpeed = velocity.x * right.x + velocity.z * right.z;
+      const targetLateral = brakeActive ? 0 : strafeInput * maxSpeed * strafeRatio;
+      const lateralImpulse = clamp(
+        (targetLateral - lateralSpeed) * mass,
+        -Math.abs(targetLateral - lateralSpeed) * mass * driveBlend,
+        Math.abs(targetLateral - lateralSpeed) * mass * driveBlend,
+      );
+      if (Math.abs(lateralImpulse) > 0.001) {
+        fighter.rb.applyImpulse({ x: right.x * lateralImpulse, y: 0, z: right.z * lateralImpulse }, true);
+      }
+    }
+    // Tracks do not coast. The stop is commanded in full the instant the input
+    // goes, which is why neither tracked machine needs a brake — and it is what
+    // frees their brake button for a mechanism. DECELERATION ONLY: a track buys
+    // no extra acceleration and no extra grip in a turn.
+    if (fighter.spec?.driveType === "tracked" && Math.abs(requestedThrottle) < 0.08 && driveGrip > 0.02) {
+      const stopImpulse = -currentSpeed * mass * clamp(dt * 9 * driveGrip, 0, 1);
+      if (Math.abs(stopImpulse) > 0.001) {
+        fighter.rb.applyImpulse({ x: forward.x * stopImpulse, y: 0, z: forward.z * stopImpulse }, true);
+      }
+    }
     applyBrakeForwardTilt(fighter, forward, right, mass, driveGrip, dt);
     if (!posture.canNormalDrive) return;
     const angular = fighter.rb.angvel();
@@ -922,7 +950,12 @@ export function createPhysics({ THREE, RAPIER, now = null }) {
         ? 10.5
         : 7.5;
     const minImpulse = 0.2;
-    const impulseMag = capEnabled ? clamp(rawImpulseMag, minImpulse, Math.max(minImpulse, cap)) : Math.max(minImpulse, rawImpulseMag);
+    const cappedImpulseMag = capEnabled ? clamp(rawImpulseMag, minImpulse, Math.max(minImpulse, cap)) : Math.max(minImpulse, rawImpulseMag);
+    // A drum mid-fling down its carriage arrives with the carriage's momentum
+    // on top of its own. That is applied AFTER the cap on purpose: the cap is
+    // the ROTOR's stored energy, and the carriage's travel is not part of it.
+    const fling = Math.max(1, attacker.weapon?.flingScale || 1);
+    const impulseMag = cappedImpulseMag * fling;
     const plow = spinnerPlowDefence(attacker, target, contact.targetPoint || contact.point);
     const hit = spinnerHitDirection(attacker, contact, THREE);
     const hitDirection = hit.direction;
@@ -1018,6 +1051,14 @@ export function createPhysics({ THREE, RAPIER, now = null }) {
     // far it throws (that is impactScale, which moves the whole hit). It comes
     // across with the ported entries — v2 uses it to rank the roster's damage —
     // and defaults to 1, so v1's own bots are unchanged.
+    // Deep Six's own hits tumble it: the reason the biggest weapon in the game
+    // is not simply the best.
+    const ownerPitchScale = (attacker.weapon?.arm || attacker.weapon || {}).ownerPitchScale;
+    if (ownerPitchScale > 0) {
+      const { right } = yawBasis(attacker, THREE);
+      const pitch = impulseMag * ownerPitchScale * 0.02 * clamp(speedRatio, 0, 1.25);
+      attacker.rb.applyTorqueImpulse({ x: -right.x * pitch, y: 0, z: -right.z * pitch }, true);
+    }
     const damageScale = Number.isFinite(attacker.spec?.spinnerDamageScale) ? Math.max(0, attacker.spec.spinnerDamageScale) : 1;
     callbacks.recordDamage?.({
       fighter: target.fighter,
@@ -1658,8 +1699,10 @@ export function createPhysics({ THREE, RAPIER, now = null }) {
       }, point);
       markHit(attacker, 0.34);
       if (target.fighter) markHit(target.fighter, 0.7);
+      const stalled = tryOverheadStall(attacker, target, power, callbacks);
       callbacks.recordWeaponEvent?.({
         kind: "hammerHit",
+        stalledWeapon: stalled,
         attacker: attacker.spec?.id || null,
         target: target.fighter?.spec?.id || target.prop?.kind || null,
         stroke,
@@ -1773,6 +1816,269 @@ export function createPhysics({ THREE, RAPIER, now = null }) {
     return acted;
   }
 
+  // --- Mechanisms that are not the weapon -----------------------------------
+  //
+  // Fire, punch arms, magnets, a grip, a body that rears up: all of these ride
+  // some weapon rather than being one, and each is a v2 mechanism reimplemented
+  // against v1's scripted-impulse physics rather than ported line for line.
+
+  /**
+   * Is the foe within `reach` of the front of the attacker?
+   *
+   * SURFACE to surface, not centre to centre. v2 builds these zones off the
+   * chassis front; v1 works in centres, and the difference is most of a
+   * machine — Tantrum's punch arms reach 1.12ft, and two solid bots cannot get
+   * their centres closer than about 2.4ft, so a centre-to-centre test meant the
+   * fists could never touch anything at all.
+   */
+  function foeInFrontZone(attacker, target, { reach, halfWidth = 1.0, minY = -0.6, maxY = 1.6 }) {
+    const origin = attacker.rb.translation();
+    const foe = target.rb.translation();
+    const { forward, right } = yawBasis(attacker, THREE);
+    const dx = foe.x - origin.x;
+    const dz = foe.z - origin.z;
+    const ahead = dx * forward.x + dz * forward.z;
+    const beside = dx * right.x + dz * right.z;
+    const above = foe.y - origin.y;
+    if (ahead <= 0 || above <= minY || above >= maxY) return false;
+    const nose = Math.abs(attacker.frame?.tractionBounds?.min?.z ?? 1.2);
+    const foeBounds = target.fighter?.frame?.tractionBounds;
+    // Half the foe's horizontal diagonal: it does not care which way the foe is
+    // facing, which a half-length would.
+    const foeHalf = foeBounds
+      ? Math.hypot(foeBounds.max.x - foeBounds.min.x, foeBounds.max.z - foeBounds.min.z) * 0.5
+      : 1.5;
+    return (ahead - nose - foeHalf) < reach && Math.abs(beside) < halfWidth + foeHalf * 0.5;
+  }
+
+  // Fire does not push anything over, so it is damage and nothing else. Kraken's
+  // nozzle points into its own bite, which is why its flame does nothing until
+  // the jaw is already shut on someone: a finisher rather than a ranged attack.
+  function applyFlame(attacker, target, dt, callbacks) {
+    const weapon = attacker?.weapon;
+    const flame = (weapon?.arm || weapon || {}).flame;
+    if (!flame || !weapon?.flameLit || !target?.fighter) return false;
+    if ((weapon.burning || 0) < 0.35) return false;
+    if (flame.requiresGrip && !weapon.gripping) return false;
+    if (!foeInFrontZone(attacker, target, { reach: flame.reach, halfWidth: 1.1, minY: -0.6, maxY: 1.4 })) return false;
+    const point = target.rb.translation();
+    callbacks.recordDamage?.({
+      fighter: target.fighter,
+      amount: flame.damagePerSecond * dt * weaponEffectiveness(attacker),
+      point: new THREE.Vector3(point.x, point.y + 0.25, point.z),
+      normal: new THREE.Vector3(0, -1, 0),
+      kind: "flame",
+      source: attacker,
+    });
+    weapon.flameSparkCharge = (weapon.flameSparkCharge || 0) + dt * 18;
+    if (weapon.flameSparkCharge >= 1) {
+      weapon.flameSparkCharge = 0;
+      callbacks.spawnSparks?.(new THREE.Vector3(point.x, point.y + 0.3, point.z), 4);
+    }
+    return true;
+  }
+
+  // Tantrum's punch arms. One shove per punch, and only on something already
+  // pressed against the front — which is exactly the moment its drum has
+  // stalled against an opponent and needs the help.
+  function applyFists(attacker, target, callbacks) {
+    const weapon = attacker?.weapon;
+    const fists = (weapon?.arm || weapon || {}).fists;
+    if (!fists || !weapon?.fistFired || !target?.fighter) return false;
+    if (!foeInFrontZone(attacker, target, { reach: fists.reach, halfWidth: 1.0, minY: -0.3, maxY: 1.6 })) return false;
+    const { forward } = yawBasis(attacker, THREE);
+    const targetMass = clamp(bodyMass(target.rb), 1, 800);
+    const attackerMass = clamp(bodyMass(attacker.rb), 1, 800);
+    const effectiveness = weaponEffectiveness(attacker);
+    const push = fists.impulse * 0.02 * effectiveness;
+    const point = target.rb.translation();
+    applyImpulseAtPoint(target.rb, {
+      x: forward.x * push * targetMass,
+      y: push * targetMass * 0.35,
+      z: forward.z * push * targetMass,
+    }, new THREE.Vector3(point.x, point.y + 0.35, point.z));
+    fighterApplyReaction(attacker, forward, -push * attackerMass * 0.35);
+    callbacks.recordDamage?.({
+      fighter: target.fighter,
+      amount: fists.damagePerHit * effectiveness,
+      point: new THREE.Vector3(point.x, point.y + 0.35, point.z),
+      normal: new THREE.Vector3(-forward.x, 0, -forward.z),
+      kind: "fists",
+      source: attacker,
+    });
+    callbacks.spawnSparks?.(new THREE.Vector3(point.x, point.y + 0.35, point.z), 5);
+    markHit(attacker, 0.2);
+    return true;
+  }
+
+  function fighterApplyReaction(fighter, direction, magnitude) {
+    if (!magnitude) return;
+    fighter.rb.applyImpulse({ x: direction.x * magnitude, y: 0, z: direction.z * magnitude }, true);
+  }
+
+  // A grappler's forks plus a shut jaw is a HOLD: the victim is servoed onto a
+  // point in front of the arm and its tumbling is damped, so it can be carried
+  // and steered. Opening the jaw hands back the arm tip's speed, which is what
+  // makes a lift past vertical a throw.
+  function applyGrip(attacker, target, dt, callbacks) {
+    const weapon = attacker?.weapon;
+    const grip = (weapon?.arm || weapon || {}).grip;
+    if (!grip || !target?.fighter) return false;
+    const holding = (weapon.clawAmount || 0) > 0.5 && (weapon.stroke || 0) > 0.02;
+    if (!holding) {
+      // Release: whatever the arm was carrying leaves with the arm's speed.
+      if (weapon.gripHeld) {
+        const { forward } = yawBasis(attacker, THREE);
+        const throwSpeed = grip.throwScale * (weapon.stroke || 0) * 12;
+        const targetMass = clamp(bodyMass(target.rb), 1, 800);
+        applyImpulseAtPoint(target.rb, {
+          x: forward.x * throwSpeed * targetMass * 0.35,
+          y: throwSpeed * targetMass,
+          z: forward.z * throwSpeed * targetMass * 0.35,
+        }, target.rb.translation());
+        callbacks.recordWeaponEvent?.({ kind: "gripRelease", attacker: attacker.spec?.id || null, throwSpeed });
+        weapon.gripHeld = false;
+      }
+      return false;
+    }
+    if (!foeInFrontZone(attacker, target, { reach: grip.reach, halfWidth: 1.1, minY: -0.5, maxY: grip.height + 1.2 })) {
+      weapon.gripHeld = false;
+      return false;
+    }
+    weapon.gripHeld = true;
+    // Servo the victim onto the grip point, which sweeps up with the arm.
+    const origin = attacker.rb.translation();
+    const { forward } = yawBasis(attacker, THREE);
+    const hold = new THREE.Vector3(
+      origin.x + forward.x * grip.reach * 0.62,
+      origin.y + grip.height * (0.4 + (weapon.stroke || 0)),
+      origin.z + forward.z * grip.reach * 0.62,
+    );
+    const foe = target.rb.translation();
+    const toHold = new THREE.Vector3(hold.x - foe.x, hold.y - foe.y, hold.z - foe.z);
+    const targetMass = clamp(bodyMass(target.rb), 1, 800);
+    const pull = Math.min(grip.impulseCap, grip.strength * targetMass * dt);
+    if (toHold.lengthSq() > 0.0001) {
+      toHold.normalize();
+      applyImpulseAtPoint(target.rb, { x: toHold.x * pull, y: toHold.y * pull, z: toHold.z * pull }, foe);
+      // The pull is reacted back into the hinge rather than being free lift.
+      attacker.rb.applyImpulse({ x: -toHold.x * pull * 0.45, y: -Math.abs(toHold.y) * pull * 0.3, z: -toHold.z * pull * 0.45 }, true);
+    }
+    const angular = target.rb.angvel();
+    const damp = clamp(dt * grip.angularDamping, 0, 0.85);
+    target.rb.setAngvel({ x: angular.x * (1 - damp), y: angular.y * (1 - damp), z: angular.z * (1 - damp) }, true);
+    return true;
+  }
+
+  // A blow from directly above onto a rotor that IS the roof stops it dead.
+  // Only a weapon that declares it can be stopped this way; every other rotor
+  // presents an edge up there and an overhead blow glances off.
+  function tryOverheadStall(attacker, target, power, callbacks) {
+    const victim = target?.fighter?.weapon;
+    const stall = (victim?.arm || victim || {}).overheadStall;
+    if (!stall || !victim) return false;
+    if (power < (stall.minPower ?? 0.45)) return false;
+    const origin = attacker.rb.translation();
+    const foe = target.rb.translation();
+    if (Math.hypot(origin.x - foe.x, origin.z - foe.z) > (stall.radius ?? 1.5) + 1.2) return false;
+    stallWeapon(victim, nowSeconds(), stall.seconds ?? 2);
+    callbacks.recordWeaponEvent?.({
+      kind: "overheadStall",
+      attacker: attacker.spec?.id || null,
+      target: target.fighter?.spec?.id || null,
+      seconds: stall.seconds ?? 2,
+    });
+    return true;
+  }
+
+  /**
+   * Per-step mechanics that are not hits: magnets holding a hammer bot down,
+   * an arm shoving its owner back onto its wheels, a body rearing up on its
+   * track pods. Called once per fighter per step, before the world advances.
+   */
+  function applyWeaponMechanics(fighter, input = {}, dt = state.fixedDt, callbacks = {}) {
+    const weapon = fighter?.weapon;
+    if (!fighter?.rb || !weapon) return;
+    const config = weapon.arm || weapon;
+    const mass = bodyMass(fighter.rb);
+    const up = upVector(fighter, THREE);
+    const ground = fighterGroundInfo(fighter, THREE, state.floorY);
+    const grounded = (ground.grounded || 0) > 0.12 || (ground.topGrounded || 0) > 0.12;
+
+    // Beta stands on magnets. That is what stops a 24lb hammer head from
+    // throwing the machine over every time it lands.
+    if (config.downforce && grounded && up.y > 0.35) {
+      fighter.rb.applyImpulse({ x: 0, y: -config.downforce * 0.02 * mass * dt, z: 0 }, true);
+    }
+
+    // Getting off your back. Any arm that can reach the floor shoves off it:
+    // ONE impulse per stroke at the arm's business end, because rolling a flat
+    // machine over its own edge has to beat its own weight the whole way and a
+    // torque spread across the arm just rocks it.
+    const wantsSrimech = config.selfRight || weapon.type === "flipper" || weapon.type === "meshFlipper";
+    if (wantsSrimech && up.y < 0.25 && grounded) {
+      const firing = weapon.type === "flipper" || weapon.type === "meshFlipper"
+        ? Boolean(input.weapon)
+        : (weapon.stroke || 0) > 0.55;
+      const now = nowSeconds();
+      if (firing && now - (weapon.lastSrimechAt || 0) > 0.6) {
+        weapon.lastSrimechAt = now;
+        const { forward, right } = yawBasis(fighter, THREE);
+        const origin = fighter.rb.translation();
+        const reach = armWeaponReach(weapon, fighter.spec) * 0.5;
+        const point = new THREE.Vector3(origin.x + forward.x * reach, origin.y, origin.z + forward.z * reach);
+        // Derived rather than dialled: the impulse that turns the machine about
+        // its own edge, so a heavy bot and a light one both land the same way up.
+        const speed = 11.5;
+        applyImpulseAtPoint(fighter.rb, { x: 0, y: speed * mass, z: 0 }, point);
+        fighter.rb.applyTorqueImpulse({
+          x: right.x * mass * 2.2,
+          y: 0,
+          z: right.z * mass * 2.2,
+        }, true);
+        markHit(fighter, 0.5);
+        callbacks.recordWeaponEvent?.({ kind: "srimech", attacker: fighter.spec?.id || null });
+      }
+    }
+
+    // Dragon King rears its whole chassis up about the axle at the back of its
+    // pods — the only way this machine reaches a bot BEHIND it.
+    if (weapon.aux?.lift && (weapon.liftAmount || 0) > 0.01) {
+      const { right } = yawBasis(fighter, THREE);
+      const targetPitch = (weapon.aux.lift.maxAngleDeg * Math.PI / 180) * weapon.liftAmount;
+      const pitch = Math.asin(clamp(-up.z * Math.sign(1), -1, 1));
+      const error = targetPitch - Math.abs(pitch);
+      if (error > 0.02 && grounded) {
+        const torque = clamp(error * mass * 1.6, 0, mass * 3.2);
+        fighter.rb.applyTorqueImpulse({ x: right.x * torque * dt * 60 * 0.02, y: 0, z: right.z * torque * dt * 60 * 0.02 }, true);
+      }
+    }
+  }
+
+  /**
+   * Hits that come from a bot's OTHER mechanisms — fire, punch arms, a grip.
+   * Separate from applyWeaponImpacts because none of them is gated on the
+   * primary weapon being engaged: they run on their own channels, and a
+   * flamethrower that only worked while the jaw was also swinging would not be
+   * the machine it is modelled on.
+   */
+  function applyWeaponMechanismImpacts({ arena, attacker, dt = state.fixedDt, callbacks = {} }) {
+    const weapon = attacker?.weapon;
+    if (!weapon || !arena?.fighters?.length) return;
+    if (weapon.gripUntil && nowSeconds() > weapon.gripUntil && weapon.type === "crusher") weapon.gripping = false;
+    const config = weapon.arm || weapon;
+    if (!config.flame && !config.fists && !config.grip) return;
+    arena.fighters.forEach((fighter) => {
+      if (fighter === attacker || !fighter?.rb) return;
+      const target = { rb: fighter.rb, fighter, kind: "bot" };
+      if (config.flame) applyFlame(attacker, target, dt, callbacks);
+      if (config.fists) applyFists(attacker, target, callbacks);
+      if (config.grip) applyGrip(attacker, target, dt, callbacks);
+    });
+    // A punch is spent whether or not it landed.
+    weapon.fistFired = false;
+  }
+
   function applyWeaponImpacts({ arena, attacker, active, dt = state.fixedDt, callbacks = {} }) {
     if (!active || !attacker?.weapon) return;
     const isSpinner = attacker.weapon.type === "bar" || attacker.weapon.type === "drum";
@@ -1840,6 +2146,11 @@ export function createPhysics({ THREE, RAPIER, now = null }) {
       else if (isCrusher && target.fighter) {
         callbacks.recordQuantumBiteDamage?.(attacker, target, contact.targetPoint || contact.point, side.clone().negate(), dt);
         target.rb.applyImpulse({ x: side.x * 0.055, y: 0.018, z: side.z * 0.055 }, true);
+        // A crusher with its jaw shut on someone IS gripping, which is what
+        // Kraken's flamethrower waits for: the nozzle points into its own bite,
+        // so the fire is a finisher rather than a ranged attack.
+        attacker.weapon.gripping = true;
+        attacker.weapon.gripUntil = nowSeconds() + 0.25;
       } else if (isCrusher && target.prop?.breakable) {
         target.prop.jawPressure = (target.prop.jawPressure || 0) + dt * 0.75;
         target.rb.applyImpulse({ x: side.x * 0.1, y: 0.04, z: side.z * 0.1 }, true);
@@ -2212,6 +2523,8 @@ export function createPhysics({ THREE, RAPIER, now = null }) {
     driveFighter,
     updateWedgeStates,
     applyWeaponImpacts,
+    applyWeaponMechanismImpacts,
+    applyWeaponMechanics,
     applySpinnerGyro,
     afterStep,
     tractionForFighter,

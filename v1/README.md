@@ -71,10 +71,42 @@ their hits; `src/physics.js` applies them; `src/main.js` draws them.
 | `grappler` | Claw Viper, Overhaul | forks plus a jaw that shuts on them |
 | `sawArms` | Dragon King | two saws on a tilting arm |
 
-**A second mechanism channel** came with them: RB on a gamepad, left shift on the
-keyboard (right shift for player two). Saw motors, lifter discs and grappler jaws
-ride it, so a saw keeps cutting while both sticks are busy driving. A bot without
-one ignores the channel entirely.
+### And the mechanisms that are not weapons
+
+A weapon type says what a bot swings. It says nothing about the rest of what
+these machines do, and every one of these is a separate mechanism with its own
+way of failing silently, so every one of them is implemented and measured:
+
+| mechanism | bots | what it does |
+|---|---|---|
+| carriage (`track`) | Tantrum | the drum rides rails down the middle of the bot: hold the second channel to winch it back and up, release and it fires forward. Its collider goes with it, so a wound-back drum is a foot behind where it can reach anything — and because it is TRAVELLING when it arrives, its hit is boosted after the budget cap |
+| punch arms (`fists`) | Tantrum | a third mechanism on a third button, hinged on the axle across the back. Momentary, not latched — a toggle would leave the arms standing in the air |
+| flamethrower (`flame`) | Kraken, Free Shipping | a damage cone with no shove, because fire pushes nothing over. Kraken's nozzle points into its own bite and does nothing until the jaw is shut on someone: a finisher, not a ranged attack |
+| two-way arm | Duck | the plow swings a half turn, so one channel drives it up, the other down, and it HOLDS wherever it is let go |
+| held stroke | Rusty | the axe stays DOWN while the trigger is down and re-cocks when you let go, on one button — the real machine's gantry failed at re-cocking often enough to leave the head dragging |
+| grip | Claw Viper, Overhaul | jaw shut plus forks down is a hold: the victim is servoed onto a point that sweeps with the arm and its tumbling is damped, so it can be carried. Opening the jaw hands back the arm's speed, which is what makes a lift past vertical a throw |
+| latched jaw + body lift | Dragon King | four mechanisms on four buttons: the jaw latches (you have to keep hold of something while both hands drive), the saws latch, the arms tilt, and the body rears up about the axle at the back of its track pods — the only way this machine reaches a bot BEHIND it. The pods counter-rotate so they stay flat on the floor |
+| overhead stall | Gigabyte | its rotor IS its roof, so a hammer that lands square on it stops the shell dead and jams it for a beat. Only a weapon that declares it can be stopped this way |
+| own-hit pitch | Deep Six | its own hits tumble it, which is why the biggest weapon in the game is not simply the best |
+| magnets (`downforce`) | Beta | what stops a 24lb hammer head from throwing the machine over every time it lands |
+| srimech | every arm that reaches the floor | one impulse per stroke at the arm's business end. Rolling a flat 250lb machine over its own edge has to beat its own weight the whole way, so a torque spread across the arm just rocks it |
+| omniwheels | Glitch, Shatter | not tank-steered at all: the left stick translates (forward/back AND sideways), the right stick rotates, independently |
+| tracks | Rusty, Dragon King | tracks do not coast — the stop is commanded in full the instant the input goes. Deceleration only: no extra acceleration, no extra grip in a turn. It is why neither needs a brake |
+
+**Three more control channels** came with them:
+
+| channel | gamepad | keyboard (P1 / P2) | what it runs |
+|---|---|---|---|
+| weapon | RT | Space / Enter | the primary mechanism |
+| second | RB | Left Shift / Right Shift | saw motors, discs, jaws, Tantrum's carriage, the flamethrowers, Duck's plow on the way down |
+| third | LB (brake) | F / `.` | Tantrum's punch arms |
+| fourth | LT (boost) | G / `/` | Dragon King's body lift |
+
+The third and fourth take over a driving button, but only for the machines that
+have something to put there — Tantrum keeps its boost, Dragon King keeps its
+brake, and both run on drivetrains that stop themselves anyway. One function
+(`resolveWeaponControls`) decides, so nothing else has to know which bot is
+which.
 
 A grappler also does a little damage while it holds you, which v2 deliberately
 gives it none of — v2 fights can be won on the judges' cards, and v1's cannot.
@@ -85,7 +117,8 @@ gives it none of — v2 fights can be won on the judges' cards, and v1's cannot.
 npm run test:physics                        # the whole physics suite, 30 checks
 node v1/tools/ported-bot-audit.mjs          # orientation, size, rig, colliders
 node v1/tools/drive-smoothness-probe.mjs    # per-bot drive quality
-node v1/tools/weapon-mechanism-probe.mjs    # per-bot mechanism + does it land
+node v1/tools/weapon-mechanism-probe.mjs    # per-bot weapon + does it land
+node v1/tools/mechanism-probe.mjs           # carriages, fire, grips, tracks, srimechs
 node server.mjs & node v1/tools/boot-probe.mjs --arena   # the real page, per bot
 ```
 

@@ -3,7 +3,13 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { BOT_CONFIG } from "./botConfig.js";
 import { MODEL_PART_CONFIG } from "./modelPartConfig.js";
 import { createPhysics } from "./physics.js";
-import { isArmWeaponEngaged, isNewArmWeapon, updateArmWeaponState } from "./armWeapons.js";
+import {
+  isArmWeaponEngaged,
+  isNewArmWeapon,
+  resolveWeaponControls,
+  updateArmWeaponState,
+  updateWeaponMechanisms,
+} from "./armWeapons.js";
 
 export const HEADLESS_FIXED_DT = 1 / 60;
 export const HEADLESS_FLOOR_Y = 0;
@@ -349,6 +355,7 @@ function createWeapon(spec) {
     return {
       type: config.type,
       arm: config,
+      aux: MODEL_PART_CONFIG[spec.id]?.aux || null,
       spinAxis: "x",
       baseRotation: sign * (config.restAngle || 0),
       activeRotation: sign * (config.fireAngle || 0),
@@ -366,6 +373,8 @@ function createWeapon(spec) {
   if (config.type) {
     return {
       type: config.type,
+      arm: config,
+      aux: MODEL_PART_CONFIG[spec.id]?.aux || null,
       spinAxis: config.spinAxis || "x",
       radius: config.radius || 0,
       visualSpeed: config.visualSpeed || config.activeSpeed || 120,
@@ -381,13 +390,26 @@ function createWeapon(spec) {
   return null;
 }
 
-function updateWeapon(fighter, dt, active, input = {}) {
+function updateWeapon(fighter, dt, active, input = {}, now = 0) {
   const weapon = fighter?.weapon;
   if (!weapon) return;
+  // The second channel is read literally rather than defaulting to the trigger:
+  // a two-way arm spends it driving the arm back DOWN, so "secondary follows
+  // weapon" would hold Duck's plow perfectly still and look like a dead
+  // mechanism.
+  const channels = resolveWeaponControls(weapon, input);
+  const secondary = channels.secondary;
+  updateWeaponMechanisms(weapon, dt, {
+    weapon: Boolean(active),
+    secondary,
+    aux: channels.aux,
+    lift: channels.lift,
+    now,
+  });
   if (isNewArmWeapon(weapon)) {
     updateArmWeaponState(weapon, dt, {
       active,
-      secondary: input.weaponSecondary !== undefined ? Boolean(input.weaponSecondary) : Boolean(active),
+      secondary,
       strokeActive: Boolean(weapon.headlessStrokeActive),
     });
     weapon.lastSpeedDelta = 0;
@@ -395,9 +417,10 @@ function updateWeapon(fighter, dt, active, input = {}) {
   }
   if (weapon.type === "bar" || weapon.type === "drum") {
     const visualSpeed = weapon.visualSpeed || weapon.activeSpeed || weapon.speed || 0;
-    const targetSpeed = active ? visualSpeed : weapon.idleSpeed || 0;
+    // A rotor jammed by a blow from directly above cannot pull against it.
+    const targetSpeed = active && !weapon.stalled ? visualSpeed : weapon.idleSpeed || 0;
     const currentSpeed = Number.isFinite(weapon.currentSpeed) ? weapon.currentSpeed : 0;
-    const seconds = active ? weapon.spinUpSeconds : weapon.spinDownSeconds;
+    const seconds = active && !weapon.stalled ? weapon.spinUpSeconds : weapon.spinDownSeconds;
     const rate = seconds ? Math.max(1, Math.abs(visualSpeed || weapon.speed || 1)) / seconds : Infinity;
     const nextSpeed = Number.isFinite(rate)
       ? THREE.MathUtils.clamp(currentSpeed + Math.sign(targetSpeed - currentSpeed) * rate * dt, Math.min(currentSpeed, targetSpeed), Math.max(currentSpeed, targetSpeed))
@@ -674,7 +697,8 @@ export async function createHeadlessPhysicsSim({
         if (fighter.weapon) {
           fighter.weapon.headlessStrokeActive = isWeaponImpulseStrokeActive(this, fighter);
         }
-        updateWeapon(fighter, this.dt, input.weapon, input);
+        updateWeapon(fighter, this.dt, input.weapon, input, this.time);
+        this.physics.applyWeaponMechanics(fighter, input, this.dt, this.weaponImpactCallbacks || {});
         this.physics.applySpinnerGyro(fighter, input, this.dt);
         applyBroncoSelfRighting(this, fighter, pressed);
         stabilizeSelfRightingFighter(this, fighter);
@@ -690,6 +714,14 @@ export async function createHeadlessPhysicsSim({
           arena: this,
           attacker: fighter,
           active: active[index],
+          dt: this.dt,
+          callbacks: this.weaponImpactCallbacks || {},
+        });
+        // Fire, punch arms and grips are on their own channels and are not
+        // gated on the primary weapon being engaged.
+        this.physics.applyWeaponMechanismImpacts({
+          arena: this,
+          attacker: fighter,
           dt: this.dt,
           callbacks: this.weaponImpactCallbacks || {},
         });
