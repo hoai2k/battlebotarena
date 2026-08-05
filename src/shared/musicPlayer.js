@@ -1,4 +1,6 @@
-// Background music player, shared by v1 (src/main.js) and v2 (v2/src/game/music.js).
+// Background music player for v2 (driven by game/music.js). v1 keeps its own
+// copy under v1/shared/ — the two are not the same file and this one is free to
+// depend on v2's config.
 //
 // Uses HTMLAudioElement rather than WebAudio buffers: the tracks are multi-MB
 // MP3s that stream progressively, so playback starts immediately instead of
@@ -10,22 +12,20 @@
 // random within a cue, avoiding an immediate repeat, and both the menu and
 // battle cues loop.
 
+import { CONFIG } from "../config.js";
+
 const DEFAULT_TRACKS = {
   menu: ["Battle Bots Arena Anthem.mp3"],
   countdown: ["Steel Countdown.mp3", "Steel Countdown 2.mp3"],
   battle: ["Iron Circuit Rush.mp3", "Iron Circuit Rush 2.mp3", "Steel Arena.mp3", "Steel Arena 2.mp3"],
 };
 
-/** How far the music drops when the game pauses. Exported because the menu cue
- *  is set to the same level and the two must not drift: pausing is the game
- *  stepping back to let you think, and a menu is the same thing for longer. */
-export const PAUSE_DUCK = 0.25;
+/** How far the music drops when the game pauses. Re-exported from config.js so
+ *  the pause path (main.js) and the mix read one number. */
+export const PAUSE_DUCK = CONFIG.music.pauseDuck;
 
-// Per-cue level, as a fraction of the player's peak. The menu cue is BEHIND
-// something — a screen you are reading and clicking around — rather than the
-// thing you are doing, so it sits where a paused game sits. Kept as a fraction
-// so it tracks the master volume instead of having to be re-tuned alongside it.
-const DEFAULT_CUE_VOLUME = { menu: PAUSE_DUCK };
+// Per-cue level, as a fraction of the player's peak — see CONFIG.music.
+const DEFAULT_CUE_VOLUME = CONFIG.music.cueVolume;
 
 const FADE_INTERVAL_MS = 50;
 
@@ -37,7 +37,7 @@ const FADE_INTERVAL_MS = 50;
  */
 export function createMusicPlayer({
   basePath,
-  volume = 0.55,
+  volume = CONFIG.music.masterVolume,
   isEnabled = () => true,
   tracks = DEFAULT_TRACKS,
   cueVolume = DEFAULT_CUE_VOLUME,

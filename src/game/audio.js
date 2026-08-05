@@ -23,6 +23,11 @@
 
 import { EV } from "../shared/events.js";
 import { settings, onSettingChanged } from "../shared/settings.js";
+import { CONFIG } from "../config.js";
+
+/** Master level for every synthesised sound. The soundEnabled toggle is a
+ *  separate, harder gate: off is 0 whatever this says. */
+const SFX_VOLUME = CONFIG.audio.sfxVolume;
 
 let ctx = null;
 let masterGain = null;
@@ -47,7 +52,7 @@ onSettingChanged("soundEnabled", (value) => {
   if (ctx && masterGain) {
     const now = ctx.currentTime;
     masterGain.gain.cancelScheduledValues(now);
-    masterGain.gain.setTargetAtTime(enabled ? 1 : 0, now, 0.03);
+    masterGain.gain.setTargetAtTime(enabled ? SFX_VOLUME : 0, now, 0.03);
     if (enabled && ctx.state === "suspended") ctx.resume().catch(() => {});
   }
 });
@@ -85,7 +90,7 @@ function ensureContext() {
   compressor.release.value = 0.16;
   compressor.connect(ctx.destination);
   masterGain = ctx.createGain();
-  masterGain.gain.value = enabled ? 1 : 0;
+  masterGain.gain.value = enabled ? SFX_VOLUME : 0;
   masterGain.connect(compressor);
   noiseBuffer = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 1.5), ctx.sampleRate);
   const data = noiseBuffer.getChannelData(0);

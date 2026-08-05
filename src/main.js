@@ -23,6 +23,7 @@ import { createInput } from "./game/input.js";
 import { createGameAudio } from "./game/audio.js";
 import { createMusic } from "./game/music.js";
 import { PAUSE_DUCK } from "./shared/musicPlayer.js";
+import { CONFIG } from "./config.js";
 import { createWeaponInputShaper } from "./game/weaponControls.js";
 
 const bus = createEventBus();
@@ -67,7 +68,7 @@ function setPaused(value) {
   session?.sim.setPaused?.(paused);
   if (pauseOverlay) pauseOverlay.hidden = !paused;
   // Music dips instead of stopping so unpause feels seamless.
-  music.player.setDuck?.(paused ? PAUSE_DUCK : 1, 0.3);
+  music.player.setDuck?.(paused ? PAUSE_DUCK : 1, CONFIG.music.fade.pauseDuckSeconds);
   // Tell the HUD so its wall-time clock freezes/resumes with the match.
   const matchState = session?.match.getState?.();
   bus.emit(EV.MATCH, {

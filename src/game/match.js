@@ -32,11 +32,16 @@
 // opponent has moved within the last 2s.
 
 import { EV } from "../shared/events.js";
+import { CONFIG } from "../config.js";
 
-const MATCH_SECONDS = 180;
-const KILL_SAW_SECONDS_LEFT = 60;
-const COUNTDOWN_SECONDS = 3;
-const RESULTS_DELAY_SECONDS = 3;
+// Round timing lives in config.js so the HUD clock (ui/ui.js) and this one
+// cannot drift apart — they used to hold separate copies of MATCH_SECONDS.
+const {
+  matchSeconds: MATCH_SECONDS,
+  countdownSeconds: COUNTDOWN_SECONDS,
+  resultsDelaySeconds: RESULTS_DELAY_SECONDS,
+  killSawSecondsLeft: KILL_SAW_SECONDS_LEFT,
+} = CONFIG.match;
 
 const WEAPON_HIT_DAMAGE_PER_IMPULSE = 0.028;
 const WEAPON_HIT_MIN = 0.8;

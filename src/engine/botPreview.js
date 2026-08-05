@@ -42,6 +42,7 @@ import {
 import { SETTLE_MS, MODEL_CACHE, loadPosterIndex, posterMeta, posterUrl } from "./posters.js";
 import { createPreviewWeapon } from "./previewWeapon.js";
 import { createWeaponInputShaper, describeWeaponControls } from "../game/weaponControls.js";
+import { CONFIG } from "../config.js";
 
 const BAY_SPACING = 30; // ft between the two bays; far enough that neither bot ever shows in the other's window
 const STICK_DEADZONE = 0.18;
@@ -51,16 +52,16 @@ const PITCH_MIN = -0.06;
 const PITCH_MAX = 1.25;
 const ZOOM_MIN = 0.55;
 const ZOOM_MAX = 1.9;
-const AUTO_SPIN_AFTER = 2.5; // s of no camera input before the turntable drift resumes
-const AUTO_SPIN_SPEED = 0.22; // rad/s
+const AUTO_SPIN_AFTER = CONFIG.botSelect.idleSpinAfterSeconds; // s of no camera input before the turntable drift resumes
+const AUTO_SPIN_SPEED = CONFIG.botSelect.idleSpinSpeed; // rad/s
 // The claim flourish. Browsing already puts a bot in the bay, so the pod looks
 // the same the instant before you press A as the instant after — without this
 // the one moment the whole screen exists for reads as nothing happening. A full
 // turn is unmistakable at a glance and lands back exactly where it started, so
 // it costs the player nothing: whatever angle they were studying is the angle
 // they get back.
-const CLAIM_SECONDS = 0.85;
-const CLAIM_RING_FLASH = 3.4; // x the ring's resting emissive at the peak
+const CLAIM_SECONDS = CONFIG.botSelect.claimSpinSeconds;
+const CLAIM_RING_FLASH = CONFIG.botSelect.claimRingFlash; // x the ring's resting emissive at the peak
 // A click (pad A / keyboard Enter) with no pointer hold behind it still has to
 // produce a real button press, so it is replayed as a short raw pulse. On a
 // LATCHING channel one pulse is one edge, which is exactly one toggle; on a

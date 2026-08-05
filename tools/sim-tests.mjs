@@ -663,6 +663,42 @@ await test("posters: every bot has one, and no poster outlives its bot", async (
     `${orphans.join(", ")} — delete them from public/posters/`);
 });
 
+await test("config: the knobs file is a leaf, and nobody keeps a private copy", async () => {
+  // src/config.js is the file a person opens to change a volume or a round
+  // length. Two things make it worth having and both are quiet when broken.
+  //
+  // (1) It must import NOTHING. Everything imports it — ui, game, engine,
+  //     shared — so the moment it imports back the graph has a cycle, and an
+  //     ES-module cycle here shows up as a `CONFIG` that is `undefined` at
+  //     module-evaluation time in whichever file happened to load second.
+  // (2) The numbers must not be duplicated back into the modules. The round
+  //     length used to live in BOTH ui/ui.js and game/match.js, which is a HUD
+  //     clock that disagrees with the sim clock the first time one changes and
+  //     looks like a bug in the timer rather than a stale literal.
+  const fs = await import("node:fs");
+  const read = (rel) => fs.readFileSync(new URL(`../${rel}`, import.meta.url), "utf8");
+  const config = read("src/config.js");
+  const imports = [...config.matchAll(/^\s*import\s/gm)];
+  check(imports.length === 0, "config.js imports nothing (it is a leaf, so it cannot cycle)",
+    `found ${imports.length} import statement(s)`);
+
+  const { CONFIG } = await import("../src/config.js");
+  check(CONFIG?.music?.masterVolume > 0 && CONFIG?.match?.matchSeconds > 0,
+    "config.js exports the knobs the game reads");
+  check(CONFIG.music.cueVolume.menu === CONFIG.music.pauseDuck,
+    "the menu cue sits at the pause level (both read one number)",
+    `menu ${CONFIG.music.cueVolume.menu} vs pause ${CONFIG.music.pauseDuck}`);
+
+  for (const rel of ["src/ui/ui.js", "src/game/match.js"]) {
+    const src = read(rel);
+    check(/CONFIG\.match\.matchSeconds|matchSeconds:\s*MATCH_SECONDS/.test(src),
+      `${rel} takes the round length from config.js`);
+    check(!/MATCH_SECONDS\s*=\s*\d/.test(src),
+      `${rel} does not keep its own copy of the round length`,
+      "put it in src/config.js — a second copy is a clock that lies");
+  }
+});
+
 await test("models: every authored panel is still in the GLB that needs it", async () => {
   // Repairs are not all the same KIND of edit, and that is the trap. A carve
   // rewrites the GLB from a saved input; a panel is APPENDED to whatever the

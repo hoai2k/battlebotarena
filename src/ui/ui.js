@@ -14,13 +14,16 @@ import { settings, setSetting, onSettingChanged } from "../shared/settings.js";
 import { createScreens } from "./screens.js";
 import { createGamepadNav } from "./gamepadNav.js";
 import { BOT_CARDS, RANDOM_CARD, getBotCard, pickRandomBotId } from "./botCards.js";
+import { CONFIG } from "../config.js";
 
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 const ZONE_LABELS = { body: "BODY", weapon: "WEAPON", drive: "DRIVE" };
 const BREAK_LABELS = { weapon: "WEAPON OUT", drive: "DRIVE DAMAGE", body: "ARMOR BREACH" };
-const MATCH_SECONDS = 180;
+/** Shared with game/match.js via config.js — a HUD clock that disagrees with
+ *  the sim clock is a HUD that lies. */
+const MATCH_SECONDS = CONFIG.match.matchSeconds;
 
 /**
  * @param {{ bus?: { on(type:string, fn:Function): Function }, on?: Function, onAction?: (action: object) => void }} opts

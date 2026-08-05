@@ -3,8 +3,9 @@
 //
 //   THE SCREEN drives the menus. Title and bot select play the anthem, quietly
 //   — it is behind a screen you are reading and clicking around, not the thing
-//   you are doing, so shared/musicPlayer.js gives the "menu" cue a lower share
-//   of the master level than the fight gets.
+//   you are doing, so the "menu" cue gets a lower share of the master level
+//   than the fight does. Every level and fade time here comes from
+//   config.js (CONFIG.music) — tune it there, not in this file.
 //
 //   EV.MATCH drives the fight. Countdown track for the 3-2-1, battle track once
 //   fighting starts, silence at KO / time-up so the results screen lands in it.
@@ -17,6 +18,9 @@
 import { EV } from "../shared/events.js";
 import { settings, onSettingChanged } from "../shared/settings.js";
 import { createMusicPlayer } from "../shared/musicPlayer.js";
+import { CONFIG } from "../config.js";
+
+const { fade } = CONFIG.music;
 
 /** Screens the menu cue belongs under. Results is not one of them — the round
  *  ends in silence and that is the point of it. */
@@ -25,7 +29,7 @@ const MENU_SCREENS = new Set(["title", "botSelect"]);
 export function createMusic(bus) {
   const player = createMusicPlayer({
     basePath: "./public/music/",
-    volume: 0.5,
+    volume: CONFIG.music.masterVolume,
     isEnabled: () => settings.soundEnabled,
   });
 
@@ -34,9 +38,9 @@ export function createMusic(bus) {
   const unsubscribe = bus.on(EV.MATCH, (event) => {
     if (!event?.phase || event.phase === phase) return;
     phase = event.phase;
-    if (phase === "countdown") player.play("countdown", { loop: false, fadeIn: 0.2 });
-    else if (phase === "fight") player.play("battle", { loop: true, fadeIn: 0.5 });
-    else if (phase === "ko" || phase === "timeUp") player.stop({ fadeOut: 1.6 });
+    if (phase === "countdown") player.play("countdown", { loop: false, fadeIn: fade.countdownIn });
+    else if (phase === "fight") player.play("battle", { loop: true, fadeIn: fade.battleIn });
+    else if (phase === "ko" || phase === "timeUp") player.stop({ fadeOut: fade.koOut });
     else if (phase === "results" || phase === "idle") player.stop({ fadeOut: 0.5 });
   });
 
@@ -55,8 +59,8 @@ export function createMusic(bus) {
     const next = screenName();
     if (next === screen) return;
     screen = next;
-    if (MENU_SCREENS.has(next)) player.play("menu", { loop: true, fadeIn: 0.8 });
-    else if (next === "results") player.stop({ fadeOut: 0.6 });
+    if (MENU_SCREENS.has(next)) player.play("menu", { loop: true, fadeIn: fade.menuIn });
+    else if (next === "results") player.stop({ fadeOut: fade.screenOut });
     // "match" is left alone; the phase handler above owns it from here.
   }
 

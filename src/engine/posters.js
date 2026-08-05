@@ -32,18 +32,20 @@
 // Regenerate after anything that changes how a bot looks on the plinth:
 //     node server.mjs & node tools/posters.mjs
 
+import { CONFIG } from "../config.js";
+
 /** How long a browsed choice must sit still before its real model is built.
  *  Parsing a 10-17MB GLB is synchronous and janks the main thread, so the dwell
  *  is what buys "run the cursor across the roster with no lag at all": nothing
  *  is fetched and nothing is parsed for a bot you are only passing. */
-export const SETTLE_MS = 700;
+export const SETTLE_MS = CONFIG.botSelect.posterDwellMs;
 
 /** Loaded models kept per bay, most-recently-used first. Going back to a bot
  *  you have already looked at must be instant AND must not show its picture
  *  again — you have the real thing, showing a photograph of it is a downgrade.
  *  Capped because each entry is a parsed GLB sitting in GPU memory; four is
  *  enough to cover any back-and-forth a person actually does. */
-export const MODEL_CACHE = 4;
+export const MODEL_CACHE = CONFIG.botSelect.modelCache;
 
 const POSTER_DIR = "./public/posters";
 const POSTER_INDEX = `${POSTER_DIR}/posters.json`;

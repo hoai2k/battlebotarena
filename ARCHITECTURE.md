@@ -39,6 +39,7 @@ Each area has exactly one owner; do not edit files outside your area.
 | `v2/src/game/*`, `v2/src/assets/*` | GAME agent | match state, AI, input, audio, damage, model loading, bot catalog |
 | `v2/src/engine/*`, `v2/src/main.js` | integrator (Claude, later) | renderer, arena visuals, cameras, boot/wiring |
 | `v2/src/shared/*` | frozen (already written) | event types, settings store — import, don't edit |
+| `v2/src/config.js` | anyone (it is for humans) | hand-editable taste knobs — volumes, timings, feel |
 | `v2/public/models/*` | model pipeline | part-named GLBs (arrive later) |
 
 ## Layering (imports allowed →)
@@ -52,6 +53,28 @@ engine ← main wires everything; ui never imports sim or three.js
 
 `shared/` may be imported by anyone. `sim/` must run headless under node
 (no DOM, no three.js — plain math + Rapier only) so tests work.
+
+`config.js` is a leaf: it imports nothing, so anyone may import it and it can
+never make a cycle.
+
+## Tunables live in config.js — but only the ones a person would turn
+
+`src/config.js` is the file you open to make the menu music quieter, the round
+shorter, or the select-screen turntable spin slower. It holds TASTE: numbers
+somebody could reasonably want different and would know they got wrong by
+playing. Music levels and fades, the sfx master, round/countdown timing, and
+the bot-select dwell and flourish all come from there, and things that must
+agree now agree by construction — the HUD clock and the sim clock read one
+`matchSeconds`, and the menu cue and the pause duck read one level.
+
+What does NOT move there: anything MEASURED. `sim/vehicleTuning.js`,
+`sim/weaponTuning.js`, `sim/arenaSpec.js` and the per-bot rig numbers in
+`assets/catalog.js` were derived against real behaviour through
+`tools/rig-inspect.mjs` and the sim tests, and each carries the comment
+explaining the measurement. Lifting the number out of that comment loses the
+reason it is that number. Nor does `previewStage.js`'s `START_YAW`/`START_PITCH`
+— those are baked into the poster PNGs, so changing one without re-running
+`tools/posters.mjs` desynchronises the picture from the model.
 
 ## Event bus (v2/src/shared/events.js — already written, frozen)
 
