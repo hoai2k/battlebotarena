@@ -4,6 +4,7 @@ import { HEADLESS_CEILING_HEIGHT, HEADLESS_FLOOR_Y, createHeadlessPhysicsSim, he
 import { PORTED_BOT_IDS } from "../src/portedBots.js";
 import { driveSmoothness } from "./drive-smoothness-probe.mjs";
 import { weaponMechanism } from "./weapon-mechanism-probe.mjs";
+import { auditControls } from "./weapon-control-audit.mjs";
 import {
   botsWithMechanism,
   fistsReport,
@@ -11,6 +12,7 @@ import {
   gripReport,
   holonomicReport,
   srimechReport,
+  liftReport,
   trackReport,
   trackedStopReport,
   twoWayArmReport,
@@ -1428,6 +1430,21 @@ async function portedMechanismProbe() {
       record("tracked stop", id, { rolls: measured.before > 3, stopsDead: measured.stopped < 0.1 }, measured);
     }
   }
+  for (const id of botsWithMechanism("lift")) {
+    const measured = await liftReport(id);
+    record("body lift", id, {
+      // It rears — most of the way to the commanded angle, which is all a
+      // proportional servo holding against gravity can do.
+      rearsUp: measured.maxDeg > measured.wantDeg * 0.5,
+      holdsThere: measured.heldDeg > measured.wantDeg * 0.4,
+      // The BODY goes up. A torque about the centre of mass pitches the nose up
+      // by driving the tail down, which looks the same from the front.
+      liftsTheBody: measured.rose > 0.4,
+      // And the pods stay on the floor rather than being levered through it.
+      staysAboveTheFloor: measured.sank > -0.05,
+      comesBackDown: measured.settledDeg < 5,
+    }, measured);
+  }
   for (const id of botsWithMechanism("selfRight")) {
     const measured = await srimechReport(id);
     record("srimech", id, { startsInverted: measured.beforeUpY < -0.5, getsBackUp: measured.recovered }, measured);
@@ -1439,7 +1456,30 @@ async function portedMechanismProbe() {
   return { allWorking: failed.length === 0, failed, results };
 }
 
+/**
+ * Every ported bot's CONTROLS, against v2's own definition of them. A weapon
+ * that moves, lands and hurts can still be unplayable — a saw motor you have to
+ * hold down, a jaw on a button you cannot spare while driving — and none of the
+ * other probes press a button the way a player does.
+ */
+async function portedControlAudit() {
+  const results = {};
+  const failed = [];
+  for (const id of PORTED_BOT_IDS) {
+    const report = auditControls(id);
+    if (report.skipped) continue;
+    results[id] = report;
+    if (report.issues.length) failed.push(`${id}: ${report.issues.join("; ")}`);
+  }
+  return { allMatchV2: failed.length === 0, failed, results };
+}
+
 const checks = [
+  ["ported weapon controls match v2", async () => {
+    const result = await portedControlAudit();
+    assert.equal(result.allMatchV2, true, JSON.stringify(result, null, 2));
+    return result;
+  }],
   ["ported roster drives smoothly", async () => {
     const result = await portedDriveSmoothnessProbe();
     assert.equal(result.allSmooth, true, JSON.stringify(result, null, 2));

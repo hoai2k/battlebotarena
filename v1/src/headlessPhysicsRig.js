@@ -408,7 +408,8 @@ function updateWeapon(fighter, dt, active, input = {}, now = 0) {
   });
   if (isNewArmWeapon(weapon)) {
     updateArmWeaponState(weapon, dt, {
-      active,
+      // Dragon King's trigger is its JAW; its arm rides the third channel.
+      active: channels.armActive,
       secondary,
       strokeActive: Boolean(weapon.headlessStrokeActive),
     });
