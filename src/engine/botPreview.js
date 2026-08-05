@@ -126,6 +126,12 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   // Two to four bays, laid out in a line and centred on the origin. The shadow
   // camera has to span the lot.
   const bayCount = pods.length;
+  // MODEL_CACHE is a PER-BAY figure and each entry is a parsed 10-17MB GLB in
+  // GPU memory, so four bays holding four each is four times the memory two
+  // bays were sized for — and four players are allowed to be looking at the
+  // same bot, which makes duplicates of it as well. Divide the budget instead
+  // of multiplying it: two bays keep the four they had, four bays get two each.
+  const bayCache = Math.max(2, Math.round((MODEL_CACHE * 2) / bayCount));
   addPreviewLights(scene, renderer, { span: (BAY_SPACING * (bayCount - 1)) / 2 + 8 });
 
   // ------------------------------------------------------------------- bays
@@ -729,7 +735,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   /** Keep the newest few parsed models per bay; drop the GPU copy of the rest. */
   function remember(bay, id, visual) {
     bay.cache = [{ id, visual }, ...bay.cache.filter((entry) => entry.id !== id)];
-    bay.cache.splice(MODEL_CACHE).forEach((entry) => disposeObject(entry.visual.group));
+    bay.cache.splice(bayCache).forEach((entry) => disposeObject(entry.visual.group));
   }
 
   function clearBot(slot) {

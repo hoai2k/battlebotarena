@@ -836,6 +836,27 @@ await test("a three-way ends when one is left, not when the first one dies", asy
   });
 });
 
+await test("random rolls around everyone else, and still rolls when it cannot", async () => {
+  // Two or more players ARE allowed on the same machine — a mirror match is a
+  // thing people want, and refusing the button press read as the screen being
+  // broken. Random is the one thing that still steers around a duplicate,
+  // because asking for a surprise and getting the bot next to you is a worse
+  // surprise. Its exclude used to be a single id: handed the LIST that three
+  // and four players need, it compared an array to a string, matched nothing,
+  // and quietly rolled a bot somebody already had.
+  const { BOT_CARDS, pickRandomBotId } = await import("../src/ui/botCards.js");
+  const ids = BOT_CARDS.map((c) => c.id);
+  const taken = ids.slice(0, 3);
+  for (let i = 0; i < 200; i += 1) {
+    check(!taken.includes(pickRandomBotId(taken)), "random avoids every bot already taken");
+  }
+  check(!taken.includes(pickRandomBotId(taken[0])), "and still takes a bare id");
+  // And when there is nothing left to avoid it hands back a real bot rather
+  // than reading off the end of an empty pool — a four-way on a short roster.
+  const cornered = pickRandomBotId(ids);
+  check(ids.includes(cornered), "with the whole roster taken it still returns a bot", String(cornered));
+});
+
 await test("config: the knobs file is a leaf, and nobody keeps a private copy", async () => {
   // src/config.js is the file a person opens to change a volume or a round
   // length. Two things make it worth having and both are quiet when broken.

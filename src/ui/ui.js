@@ -79,8 +79,9 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   const slots = () => Array.from({ length: slotCount }, (_, i) => i);
   /** Bots picked by everyone EXCEPT this slot — what Random has to avoid. */
   const takenBy = (slot) => slots().filter((i) => i !== slot).map(getSlot).filter(Boolean);
-  /** Concrete ids of the match in flight, in bot order. */
-  let lastMatch = /** @type {{ botIds: string[] }|null} */ (null);
+  /** Concrete ids of the match in flight, in bot order, plus how many of them
+   *  a person is driving (the rest are AI). */
+  let lastMatch = /** @type {{ botIds: string[], humans: number }|null} */ (null);
   const matchId = (i) => lastMatch?.botIds?.[i] || null;
 
   const grid = $("bot-grid");
@@ -183,21 +184,22 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   }
 
   /**
-   * Duo pick/unpick for one player. A on a free card claims it; A on the card
-   * you already hold releases it; A on the other player's card does nothing
-   * (whoever got there first keeps it).
+   * Duo pick/unpick for one player. A on a card claims it; A on the card you
+   * already hold releases it. Somebody else holding it does NOT stop you —
+   * a mirror match is a thing people want, and refusing the press was worse
+   * than the duplicate it prevented: A did nothing, with no way to tell that
+   * apart from the screen being broken.
    * @returns {boolean} true if the press was consumed
    */
   function duoToggle(slot, id) {
     if (!id || slot >= slotCount) return true;
-    const theirs = takenBy(slot);
-    // Every bay is driven by a person here, so Random rolls straight away —
-    // and rolls around whatever the OTHER players already hold, so it can never
-    // hand you a machine somebody else is taking.
-    const pick = resolveRandom(id, { exclude: theirs });
+    // Random still ROLLS AROUND what everyone else holds — that is a courtesy,
+    // not a restriction. Asking for a surprise and getting the machine next to
+    // you is a worse surprise; deliberately picking it is a choice.
+    // pickRandomBotId falls back to the whole roster if every bot is spoken for.
+    const pick = resolveRandom(id, { exclude: takenBy(slot) });
     const mine = getSlot(slot);
     if (mine === pick && id !== "random") setSlot(slot, null);
-    else if (theirs.includes(pick)) return true; // taken — ignore rather than steal
     else setSlot(slot, pick);
     refreshAfterPick({ slot, player: slot, claimed: Boolean(getSlot(slot)) });
     return true;
@@ -209,7 +211,9 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     if (sel.stage === "player") {
       // Your own bay: Random rolls now, because you are about to drive it.
       sel.picks[0] = resolveRandom(id, { exclude: sel.picks[1] });
-      if (sel.picks[1] === sel.picks[0]) sel.picks[1] = null; // no mirror match via direct pick collision
+      // Picking the machine the opponent already has used to EMPTY their bay,
+      // which looked like the screen losing your opponent for no reason. A
+      // mirror match is allowed; only Random still steers around it, above.
       sel.stage = "rival";
       slot = 0;
     } else {
@@ -324,8 +328,16 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       // combinatorial mess and one class per pairing is not a thing worth
       // writing down — the CSS reads this attribute instead.
       const owners = slots().filter((slot) => getSlot(slot) === id);
-      if (duoMode && owners.length) el.dataset.owners = owners.map((slot) => `P${slot + 1}`).join(" + ");
-      else delete el.dataset.owners;
+      if (duoMode && owners.length) {
+        el.dataset.owners = owners.map((slot) => `P${slot + 1}`).join(" + ");
+        // More than one person on one machine is allowed, and the per-slot ring
+        // colours cannot say so — a card wearing two of them just looks like
+        // the higher-numbered one. The count switches it to a shared ring.
+        el.dataset.ownerCount = String(owners.length);
+      } else {
+        delete el.dataset.owners;
+        delete el.dataset.ownerCount;
+      }
       // Random is always pickable. It used to be greyed out for your own bay
       // and in duo — the card was there, it just refused — because it only knew
       // how to be the AI's mystery opponent. It resolves on the spot for a bay
@@ -562,9 +574,20 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
 
   function setHudNames() {
     const fallback = ["PLAYER", "RIVAL", "P3", "P4"];
+    // Several people may bring the SAME machine — a mirror match is allowed —
+    // and four panels all reading TOMBSTONE tell you nothing about which bar is
+    // yours. Only the duplicated ones get a player tag; a bot nobody else
+    // brought keeps its plain name.
+    const counts = new Map();
+    hudSlots().forEach((i) => counts.set(matchId(i), (counts.get(matchId(i)) || 0) + 1));
     hudEls.forEach((els, i) => {
-      const card = matchId(i) ? getBotCard(matchId(i)) : null;
-      hud.names[i] = card?.name.toUpperCase() || fallback[i];
+      const id = matchId(i);
+      const card = id ? getBotCard(id) : null;
+      const base = card?.name.toUpperCase() || fallback[i];
+      // The tag speaks the screen's own language: with two or more people it is
+      // P1..P4, and against the AI it is you and the rival.
+      const tag = (lastMatch?.humans || 0) >= 2 ? `P${i + 1}` : (i === 0 ? "YOU" : "RIVAL");
+      hud.names[i] = counts.get(id) > 1 ? `${tag} ${base}` : base;
       if (els.name) els.name.textContent = hud.names[i];
       if (card) els.panel?.style.setProperty("--accent", card.accent);
     });
@@ -683,7 +706,9 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       // this — so the test does not change.
       kicker.textContent = winnerIndex === 0 ? "VICTORY" : "DEFEAT";
       kicker.dataset.tone = winnerIndex === 0 ? "win" : "loss";
-      nameEl.textContent = card ? card.name.toUpperCase() : botName(winnerIndex);
+      // botName carries the player tag when the roster had duplicates, which is
+      // the whole question on a results screen for a mirror match: which one.
+      nameEl.textContent = botName(winnerIndex);
       methodEl.textContent = isKO ? "WINS BY KNOCKOUT" : "WINS BY JUDGES DECISION";
       imgWrap.innerHTML = card ? `<img src="${card.image}" alt="${card.name}" draggable="false" />` : "";
       wireImage(imgWrap);
@@ -861,7 +886,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       const id = getSlot(slot);
       return id === "random" ? pickRandomBotId(taken) : id;
     });
-    lastMatch = { botIds };
+    lastMatch = { botIds, humans: playerCount };
     resetHud();
     setHudNames();
     screens.goTo("match");

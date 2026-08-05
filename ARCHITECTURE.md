@@ -80,6 +80,14 @@ Two rules that are easy to break by accident:
   and every tuned opening exchange in the game was measured from `(0, 19)` and
   `(0, -18.7)`. Three bots is those two plus one; four is a different layout
   entirely, and that is why it is a different list rather than an adjustment.
+- **Two people may bring the same machine.** The select screen used to refuse
+  the press, and refusing was worse than the duplicate: A did nothing, with
+  nothing to tell that apart from the screen being broken. Everything below the
+  UI already coped — the same spec object drives four independent vehicles — so
+  the only real work is saying WHO is who once the names stop being unique:
+  duplicated bots wear a player tag in the HUD, and a card several people hold
+  wears a white ring and lists them. Random still steers around what everyone
+  else holds; that is a courtesy, not a restriction.
 - **Reaching 100% is an ELIMINATION, not the end of the round.** With two
   machines they are the same event and the match was written on that. In a
   three-way, ending at the first one out hands the win to whoever was nearest.

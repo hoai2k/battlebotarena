@@ -1336,10 +1336,45 @@ body.is-duo .bot-card.is-player.is-rival::after {
   content: "P1 + P2";
 }
 
-/* Three and four players: the flag on a card is whoever holds it. `is-taken`
-   carries the owning player in a data attribute rather than one class per
-   pairing — with four players the pairings are a combinatorial mess and the
-   only thing worth showing is the list. */
+/* The flag on a card is whoever holds it. The owner list lives in a data
+   attribute rather than in one class per pairing — with four players who can
+   all pick the same machine the pairings are a combinatorial mess, and the only
+   thing worth showing is the list. */
 body.is-duo .bot-card[data-owners]::after {
   content: attr(data-owners);
+  color: #0d0f13;
+  background: linear-gradient(180deg, #f2f5ff, #9aa6b8);
+}
+
+/* One owner keeps that player's own colour. */
+body.is-duo .bot-card[data-owner-count="1"].is-player::after {
+  color: #fff;
+  background: linear-gradient(180deg, var(--red-hot), var(--red-deep));
+}
+
+body.is-duo .bot-card[data-owner-count="1"].is-rival::after {
+  color: #191203;
+  background: linear-gradient(180deg, var(--yellow), var(--amber));
+}
+
+body.is-duo .bot-card[data-owner-count="1"].is-p3::after {
+  color: #fff;
+  background: linear-gradient(180deg, #b478f5, #6c2fb0);
+}
+
+body.is-duo .bot-card[data-owner-count="1"].is-p4::after {
+  color: #04211a;
+  background: linear-gradient(180deg, #6ef0be, #2aa87b);
+}
+
+/* SHARED. Several people on one machine is allowed — a mirror match is a thing
+   people want — and no single player colour can say that, because a card
+   wearing two of them just looks like whichever rule wins the cascade. A white
+   ring means "more than one of you", and the flag names them. */
+body.is-duo .bot-card[data-owner-count="2"],
+body.is-duo .bot-card[data-owner-count="3"],
+body.is-duo .bot-card[data-owner-count="4"] {
+  box-shadow:
+    inset 0 0 0 2px var(--white),
+    0 0 26px rgba(226, 234, 248, 0.32);
 }
