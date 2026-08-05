@@ -546,19 +546,11 @@ export function createArenaVisualRoot({ layout, hazards: hazardFactories, assetB
       const position = elementPosition(element);
       const size = elementSize(element, [1, 1]);
       const rotation = elementRotation(element);
-      if (element.type === "startBox") {
-        const color = element.color
-          ? new THREE.Color(element.color)
-          : new THREE.Color(element.side === "rival" ? 0x3aa9e8 : 0xe1322a);
-        const material = new THREE.MeshBasicMaterial({
-          color,
-          transparent: true,
-          opacity: element.side === "rival" ? 0.72 : 0.78,
-          depthWrite: false,
-        });
-        floorDecal(parent, size, material, [position.x, position.z], rotation);
-        return;
-      }
+      // Start boxes are NOT drawn from the layout any more. How many there are
+      // and where they sit depends on how many machines are in the match (two
+      // head-to-head, three with one on the west wall, four spread wide), so
+      // they are rebuilt per match through root.userData.setStartBoxes below.
+      if (element.type === "startBox") return;
       if (element.type === "logo") {
         floorDecal(parent, size, materials.logoMat, [position.x, position.z], rotation);
         return;
@@ -631,6 +623,34 @@ export function createArenaVisualRoot({ layout, hazards: hazardFactories, assetB
   });
 
   box(root, [WIDTH, FLOOR_THICKNESS, LENGTH], arenaFloorMat, [0, FLOOR_Y - FLOOR_THICKNESS / 2, 0], [0, 0, 0]);
+
+  // The start boxes, in their own group so a new match can replace the lot.
+  // Each is a coloured floor decal with a paler outline around it — the same
+  // shapes the layout used to hold, just built from a list somebody hands us
+  // rather than from the file. See src/sim/arenaSpec.js for the layouts.
+  const startBoxGroup = new THREE.Group();
+  root.add(startBoxGroup);
+  const startBoxDisposables = [];
+  root.userData.setStartBoxes = (boxes = []) => {
+    startBoxGroup.clear();
+    startBoxDisposables.forEach((item) => item.dispose());
+    startBoxDisposables.length = 0;
+    boxes.forEach((spawn) => {
+      const size = [spawn.sizeX ?? 5.2, spawn.sizeZ ?? 4.7];
+      const color = new THREE.Color(spawn.color || 0xe1322a);
+      const material = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.75, depthWrite: false });
+      const outline = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, depthWrite: false });
+      startBoxDisposables.push(material, outline);
+      // Rotate the decal with the spawn's facing so a box that is entered from
+      // the side reads as pointing where its machine points.
+      const rotation = -(spawn.yaw ?? 0);
+      floorDecal(startBoxGroup, size, material, [spawn.x, spawn.z], rotation);
+      floorRectOutline(startBoxGroup, [spawn.x, spawn.z], size, outline, rotation, 0.11);
+    });
+    startBoxGroup.traverse((child) => {
+      if (child.isMesh) child.castShadow = false;
+    });
+  };
   addArenaConfigElements(root, {
     yellowLineMat, hazardSlotMat, killSawBladeMat, logoMat, barrierMat,
     yellowWallMat, screwMat, upperDeckMat, redDeckLineMat, blueDeckLineMat,
@@ -643,6 +663,9 @@ export function createArenaVisualRoot({ layout, hazards: hazardFactories, assetB
     child.castShadow = false;
     child.receiveShadow = child.geometry?.type === "BoxGeometry" && child.position.y < 0.2;
   });
-  root.userData.disposeTextures = () => disposables.forEach((texture) => texture.dispose());
+  root.userData.disposeTextures = () => {
+    disposables.forEach((texture) => texture.dispose());
+    startBoxDisposables.forEach((item) => item.dispose());
+  };
   return root;
 }

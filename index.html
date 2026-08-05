@@ -152,6 +152,41 @@
               <span id="pod-controls-rival" class="pod-controls"></span>
             </div>
           </div>
+<!-- Players three and four. Present but hidden until that many controllers
+               are connected; ui.js unhides them and the stage's data-pods count
+               re-lays the row out around them. -->
+          <div id="pod-p3" class="preview-pod pod-p3" hidden>
+            <button id="slot-p3" class="pod-plate" type="button" data-role="P3">
+              <span class="pod-plate-body"></span>
+            </button>
+            <div id="pod-view-p3" class="pod-view">
+              <img id="pod-poster-p3" class="pod-poster" alt="" hidden draggable="false" />
+              <span class="pod-empty">P3 — PRESS A<br />TO PICK</span>
+              <span class="pod-random-glyph" aria-hidden="true">?</span>
+              <span class="pod-loading loader-spinner" hidden></span>
+            </div>
+            <div class="pod-foot">
+              <span class="pod-badge"></span>
+              <span class="pod-stats"></span>
+              <span id="pod-controls-p3" class="pod-controls"></span>
+            </div>
+          </div>
+          <div id="pod-p4" class="preview-pod pod-p4" hidden>
+            <button id="slot-p4" class="pod-plate" type="button" data-role="P4">
+              <span class="pod-plate-body"></span>
+            </button>
+            <div id="pod-view-p4" class="pod-view">
+              <img id="pod-poster-p4" class="pod-poster" alt="" hidden draggable="false" />
+              <span class="pod-empty">P4 — PRESS A<br />TO PICK</span>
+              <span class="pod-random-glyph" aria-hidden="true">?</span>
+              <span class="pod-loading loader-spinner" hidden></span>
+            </div>
+            <div class="pod-foot">
+              <span class="pod-badge"></span>
+              <span class="pod-stats"></span>
+              <span id="pod-controls-p4" class="pod-controls"></span>
+            </div>
+          </div>
         </div>
         <div id="bot-grid" class="bot-grid" role="listbox" aria-label="Bot roster"></div>
       </section>
@@ -168,26 +203,49 @@
           </div>
           <div style="font-size:12px;font-weight:700;letter-spacing:0.3em;color:#ffb320;">START / ESC TO RESUME</div>
         </div>
+<!-- Bot panels stack down each side of the clock: players one and three on
+             the left, two and four on the right, which is the same reading order
+             as the split-screen quadrants they are watching. -->
         <div class="hud-top">
-          <div class="hud-bot hud-bot-player">
-            <div id="hud-player-name" class="hud-bot-name">—</div>
-            <div class="hud-damage">
-              <div id="hud-player-fill" class="hud-damage-fill"></div>
-              <div id="hud-player-pct" class="hud-damage-pct">0%</div>
+          <div class="hud-side hud-side-left">
+            <div class="hud-bot hud-bot-player">
+              <div id="hud-player-name" class="hud-bot-name">—</div>
+              <div class="hud-damage">
+                <div id="hud-player-fill" class="hud-damage-fill"></div>
+                <div id="hud-player-pct" class="hud-damage-pct">0%</div>
+              </div>
+              <div id="hud-player-tags" class="hud-tags"></div>
             </div>
-            <div id="hud-player-tags" class="hud-tags"></div>
+            <div class="hud-bot hud-bot-p3" hidden>
+              <div id="hud-p3-name" class="hud-bot-name">—</div>
+              <div class="hud-damage">
+                <div id="hud-p3-fill" class="hud-damage-fill"></div>
+                <div id="hud-p3-pct" class="hud-damage-pct">0%</div>
+              </div>
+              <div id="hud-p3-tags" class="hud-tags"></div>
+            </div>
           </div>
           <div class="hud-clock-wrap">
             <div id="hud-clock" class="hud-clock" aria-live="polite">3:00</div>
             <div id="hud-phase" class="hud-phase">STAND BY</div>
           </div>
-          <div class="hud-bot hud-bot-rival">
-            <div id="hud-rival-name" class="hud-bot-name">—</div>
-            <div class="hud-damage">
-              <div id="hud-rival-fill" class="hud-damage-fill"></div>
-              <div id="hud-rival-pct" class="hud-damage-pct">0%</div>
+          <div class="hud-side hud-side-right">
+            <div class="hud-bot hud-bot-rival">
+              <div id="hud-rival-name" class="hud-bot-name">—</div>
+              <div class="hud-damage">
+                <div id="hud-rival-fill" class="hud-damage-fill"></div>
+                <div id="hud-rival-pct" class="hud-damage-pct">0%</div>
+              </div>
+              <div id="hud-rival-tags" class="hud-tags"></div>
             </div>
-            <div id="hud-rival-tags" class="hud-tags"></div>
+            <div class="hud-bot hud-bot-p4" hidden>
+              <div id="hud-p4-name" class="hud-bot-name">—</div>
+              <div class="hud-damage">
+                <div id="hud-p4-fill" class="hud-damage-fill"></div>
+                <div id="hud-p4-pct" class="hud-damage-pct">0%</div>
+              </div>
+              <div id="hud-p4-tags" class="hud-tags"></div>
+            </div>
           </div>
         </div>
         <div id="hud-ticker" class="hud-ticker" aria-live="polite"></div>

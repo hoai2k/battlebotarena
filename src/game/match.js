@@ -28,8 +28,14 @@
 // weapon -> weapon input forced false (spin decays naturally in the sim);
 // broken drive side -> that side's drive input x 0.4.
 //
-// KO: total >=100, or immobilized (speed < 0.35 ft/s) for 10s while the
-// opponent has moved within the last 2s.
+// KO: total >=100, or immobilized (speed < 0.35 ft/s) for 10s while some other
+// live machine has moved within the last 2s.
+//
+// THREE AND FOUR MACHINES. A bot that reaches 100% (or gets counted out) is
+// ELIMINATED rather than ending the round: it stops driving, stops taking
+// damage and stops being anyone's witness, and the round ends when one machine
+// is left. With two bots that is exactly the old rule — the first to 100 leaves
+// one standing — so nothing about a 1v1 changes.
 
 import { EV } from "../shared/events.js";
 import { CONFIG } from "../config.js";
@@ -119,12 +125,18 @@ const ZERO_INPUT = Object.freeze({ leftDrive: 0, rightDrive: 0, weapon: false, b
 /**
  * @param {object} args
  * @param {object} args.sim   sim public API (setKillSawsActive, getRenderState)
- * @param {import('../assets/catalog.js').BotSpec[]} args.specs [botA, botB]
+ * @param {import('../assets/catalog.js').BotSpec[]} args.specs 2-4 bots, in bot order
  * @param {Function} args.emit event bus emit
  * @param {Function} args.on   event bus on
  */
 export function createMatch({ sim, specs, emit, on }) {
-  const damage = [newBotDamage(), newBotDamage()];
+  const botCount = Math.max(2, specs?.length || 2);
+  const perBot = (make) => Array.from({ length: botCount }, make);
+  const damage = perBot(newBotDamage);
+  /** Machines that are done — at 100%, or counted out. They keep their wreck in
+   *  the arena (it is still something to drive into) but take no more damage,
+   *  get no more input, and cannot win. */
+  const eliminated = perBot(() => false);
   const unsubscribes = [];
 
   let phase = "idle"; // idle | countdown | fight | ko | timeUp | results
@@ -136,14 +148,14 @@ export function createMatch({ sim, specs, emit, on }) {
   let endCause = null;
 
   // Per-bot bookkeeping refreshed each update from sim.getRenderState().
-  const poses = [null, null];
-  const lastImpactAt = [-1, -1];
-  const hazard = [
-    { kind: null, intensity: 0, at: -1, point: null },
-    { kind: null, intensity: 0, at: -1, point: null },
-  ];
-  const lastMovedAt = [0, 0];
-  const lastPositions = [null, null];
+  const poses = perBot(() => null);
+  const lastImpactAt = perBot(() => -1);
+  const hazard = perBot(() => ({ kind: null, intensity: 0, at: -1, point: null }));
+  const lastMovedAt = perBot(() => 0);
+  const lastPositions = perBot(() => null);
+
+  /** Everyone still in the fight. */
+  const liveIndexes = () => damage.map((_, i) => i).filter((i) => !eliminated[i]);
 
   function emitMatch(payload) {
     emit(EV.MATCH, payload);
@@ -195,14 +207,14 @@ export function createMatch({ sim, specs, emit, on }) {
   function applyDamage(botIndex, amount, kind, point) {
     if (phase !== "fight" || !(amount > 0)) return;
     const bot = damage[botIndex];
-    if (!bot || bot.total >= KO_TOTAL) return;
+    if (!bot || eliminated[botIndex]) return;
     const { zone, side } = zoneForContact(botIndex, point);
     bot.total = clamp(bot.total + amount, 0, KO_TOTAL);
     bot.zones[zone] += amount;
     if (zone === "drive" && side) bot.sides[side] += amount;
     emit(EV.DAMAGE, { botIndex, amount, zone, kind, point: point || null });
     checkPartBreaks(botIndex, point);
-    if (bot.total >= KO_TOTAL) endFight("ko", 1 - botIndex, "damage");
+    if (bot.total >= KO_TOTAL) eliminate(botIndex, "damage");
   }
 
   function checkPartBreaks(botIndex, point) {
@@ -297,9 +309,32 @@ export function createMatch({ sim, specs, emit, on }) {
     clock = 0;
     fightClock = 0;
     killSawsOn = false;
-    lastMovedAt[0] = 0;
-    lastMovedAt[1] = 0;
-    emitMatch({ phase: "fight", timeRemaining: MATCH_SECONDS });
+    lastMovedAt.fill(0);
+    emitMatch({ phase: "fight", timeRemaining: MATCH_SECONDS, botCount });
+  }
+
+  /**
+   * Take a machine out of the fight. With two bots this IS the knockout and
+   * always was. With three or four it is one elimination of several, so it is
+   * announced on its own and the round only ends when one is left standing.
+   */
+  function eliminate(botIndex, cause) {
+    if (phase !== "fight" || eliminated[botIndex]) return;
+    eliminated[botIndex] = true;
+    // The damage number is NOT forced to 100. A machine counted out on the
+    // immobility rule lost while still half intact, and the results line has
+    // always said so.
+    const live = liveIndexes();
+    if (botCount > 2) {
+      emitMatch({
+        phase: "fight",
+        eliminated: botIndex,
+        cause,
+        remainingBots: live.length,
+        timeRemaining: Math.max(0, MATCH_SECONDS - fightClock),
+      });
+    }
+    if (live.length <= 1) endFight("ko", live.length === 1 ? live[0] : null, cause);
   }
 
   function endFight(endPhase, winner, cause) {
@@ -313,9 +348,16 @@ export function createMatch({ sim, specs, emit, on }) {
     const payload = {
       phase: endPhase,
       winnerIndex: winner,
-      loserIndex: winner === null ? null : 1 - winner,
+      // Only meaningful in a 1v1 — with three or four machines "the loser" is
+      // everyone else, and the HUD reads `totals` for that.
+      loserIndex: botCount === 2 && winner !== null ? 1 - winner : null,
       cause,
       totals: damage.map((d) => d.total),
+      // NOT `eliminated` — that key means "the machine that just went out", as
+      // an index, on the fight-phase announcement. One key with two types is a
+      // reader who checks the wrong one and gets a truthy array.
+      eliminatedBots: eliminated.slice(),
+      botCount,
     };
     emitMatch(payload);
   }
@@ -330,13 +372,15 @@ export function createMatch({ sim, specs, emit, on }) {
       timeElapsed: fightClock,
       totals: damage.map((d) => d.total),
       zones: damage.map((d) => ({ ...d.zones })),
+      eliminatedBots: eliminated.slice(),
+      botCount,
     });
   }
 
   function updateMotionTracking(dt) {
     const renderState = sim?.getRenderState?.();
     if (!renderState) return;
-    for (let i = 0; i < 2; i += 1) {
+    for (let i = 0; i < botCount; i += 1) {
       const state = renderState[i];
       if (!state?.position) continue;
       poses[i] = state;
@@ -368,22 +412,27 @@ export function createMatch({ sim, specs, emit, on }) {
   }
 
   function checkImmobilizedKo() {
-    for (let i = 0; i < 2; i += 1) {
-      const foe = 1 - i;
+    for (const i of liveIndexes()) {
       const stuckFor = fightClock - lastMovedAt[i];
-      const foeMovedRecently = fightClock - lastMovedAt[foe] < FOE_MOVED_RECENT_SECONDS;
+      // SOMEONE ELSE still in the fight has to be driving. A wreck sitting on
+      // the floor is not evidence that anybody is winning, so an eliminated
+      // machine cannot count anyone out — with two bots there is only ever one
+      // possible witness and this is the old rule verbatim.
+      const witnessMoving = liveIndexes().some(
+        (j) => j !== i && fightClock - lastMovedAt[j] < FOE_MOVED_RECENT_SECONDS,
+      );
       // Only bots that have actually been damaged can be counted out — a
       // healthy bot idling (common in casual local 2P) is not a knockout.
       const damagedEnough = damage[i].total >= IMMOBILE_MIN_DAMAGE;
-      if (stuckFor >= IMMOBILE_KO_SECONDS && foeMovedRecently && damagedEnough) {
-        endFight("ko", foe, "immobilized");
-        return;
+      if (stuckFor >= IMMOBILE_KO_SECONDS && witnessMoving && damagedEnough) {
+        eliminate(i, "immobilized");
+        if (phase !== "fight") return;
       }
     }
   }
 
   function applyHazardTicks(dt) {
-    for (let i = 0; i < 2; i += 1) {
+    for (let i = 0; i < botCount; i += 1) {
       const slot = hazard[i];
       if (!slot.kind || fightClock - slot.at > HAZARD_FRESH_WINDOW) continue;
       const rate = HAZARD_RATE[slot.kind] || HAZARD_RATE.killSaw;
@@ -411,8 +460,13 @@ export function createMatch({ sim, specs, emit, on }) {
       }
       if (phase === "fight") checkImmobilizedKo();
       if (phase === "fight" && timeRemaining <= 0) {
-        const [a, b] = damage.map((d) => d.total);
-        endFight("timeUp", a === b ? null : (a < b ? 0 : 1), "judges");
+        // Least damaged machine still standing takes it. A tie at the top is a
+        // draw — with four bots that means two survivors on the same number,
+        // not everyone.
+        const live = liveIndexes();
+        const best = Math.min(...live.map((i) => damage[i].total));
+        const leaders = live.filter((i) => damage[i].total === best);
+        endFight("timeUp", leaders.length === 1 ? leaders[0] : null, "judges");
       }
       return;
     }
@@ -424,8 +478,11 @@ export function createMatch({ sim, specs, emit, on }) {
   // Part-disable + phase gating. The integrator passes raw [DriveInput,
   // DriveInput] through here every frame before sim.stepFrame.
   function filterInputs(inputs) {
-    if (phase !== "fight") return [ZERO_INPUT, ZERO_INPUT];
+    if (phase !== "fight") return damage.map(() => ZERO_INPUT);
     return inputs.map((input, index) => {
+      // A wreck does not drive. Its body stays in the arena as an obstacle,
+      // which is the point of leaving it there.
+      if (eliminated[index]) return ZERO_INPUT;
       const raw = input || ZERO_INPUT;
       const bot = damage[index];
       return {
@@ -448,9 +505,11 @@ export function createMatch({ sim, specs, emit, on }) {
       killSawsOn,
       winnerIndex,
       cause: endCause,
-      bots: damage.map((d) => ({
+      botCount,
+      bots: damage.map((d, i) => ({
         total: d.total,
         percent: Math.round(d.total),
+        eliminated: eliminated[i],
         zones: { ...d.zones },
         weaponBroken: d.weaponBroken,
         driveBroken: { left: d.leftDriveBroken, right: d.rightDriveBroken },

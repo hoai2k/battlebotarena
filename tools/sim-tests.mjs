@@ -147,7 +147,7 @@ async function wiredMatch(specs, fn) {
   const sim = await createSim({ bots: specs, emit });
   const match = createMatch({ sim, specs, emit, on });
   match.start();
-  const tick = (inputs = [{}, {}]) => {
+  const tick = (inputs = specs.map(() => ({}))) => {
     sim.stepFrame(1 / 60, match.filterInputs(inputs));
     match.update(1 / 60);
   };
@@ -661,6 +661,179 @@ await test("posters: every bot has one, and no poster outlives its bot", async (
   const orphans = Object.keys(index).filter((id) => !CATALOG[id]);
   check(orphans.length === 0, "no poster is left over from a bot that is gone",
     `${orphans.join(", ")} — delete them from public/posters/`);
+});
+
+await test("start boxes: 2, 3 and 4 machines each stand clear of everything", async () => {
+  // The arena's start boxes move with the head count (sim/arenaSpec.js): the
+  // classic pair, plus a third on the west wall for three, and a spread-out
+  // four. A box laid over a screw, a kill-saw slot, the upper deck or another
+  // box is a machine that starts the round already being thrown around — and
+  // it is invisible until somebody plays that head count, because nothing else
+  // in the game reads these numbers.
+  const { spawnsFor, SPAWN_BOX, ARENA, SCREWS, UPPER_DECK, KILL_SAWS } = await import("../src/sim/arenaSpec.js");
+  const halfBox = Math.hypot(SPAWN_BOX.x, SPAWN_BOX.z) / 2; // worst case, any facing
+  /** The box's own footprint at its facing — half-extents, rotated. */
+  const extent = (spawn) => {
+    const c = Math.abs(Math.cos(spawn.yaw));
+    const s = Math.abs(Math.sin(spawn.yaw));
+    return { x: (SPAWN_BOX.x / 2) * c + (SPAWN_BOX.z / 2) * s, z: (SPAWN_BOX.x / 2) * s + (SPAWN_BOX.z / 2) * c };
+  };
+  const hw = ARENA.width / 2;
+  const hl = ARENA.length / 2;
+
+  /** Distance from a point to a screw's axis, treated as the segment it is. */
+  const screwDistance = (screw, x, z) => {
+    const yaw = (screw.yawDeg * Math.PI) / 180;
+    const dx = Math.cos(yaw);
+    const dz = -Math.sin(yaw);
+    const half = screw.length / 2;
+    const t = Math.max(-half, Math.min(half, (x - screw.x) * dx + (z - screw.z) * dz));
+    return Math.hypot(x - (screw.x + dx * t), z - (screw.z + dz * t));
+  };
+
+  for (const count of [2, 3, 4]) {
+    const spawns = spawnsFor(count);
+    check(spawns.length === count, `${count} machines get ${count} boxes`, `got ${spawns.length}`);
+    spawns.forEach((spawn, i) => {
+      const label = `${count}-bot box ${i}`;
+      const box = extent(spawn);
+      check(Math.abs(spawn.x) + box.x < hw && Math.abs(spawn.z) + box.z < hl,
+        `${label} is inside the arena`, `(${spawn.x}, ${spawn.z})`);
+      for (const screw of SCREWS.list) {
+        const gap = screwDistance(screw, spawn.x, spawn.z);
+        check(gap > SCREWS.radius + SPAWN_BOX.x / 2,
+          `${label} is not sitting on a screw`, `${gap.toFixed(2)}ft from the screw at (${screw.x}, ${screw.z})`);
+      }
+      const onDeck = Math.abs(spawn.x - UPPER_DECK.x) < UPPER_DECK.sizeX / 2 + halfBox
+        && Math.abs(spawn.z - UPPER_DECK.z) < UPPER_DECK.sizeZ / 2 + halfBox;
+      check(!onDeck, `${label} is not under the upper deck`, `(${spawn.x}, ${spawn.z})`);
+      for (const saw of KILL_SAWS.slots) {
+        const gap = Math.hypot(spawn.x - saw.x, spawn.z - saw.z);
+        check(gap > halfBox + 0.6, `${label} is not over a kill saw`, `${gap.toFixed(2)}ft from (${saw.x}, ${saw.z})`);
+      }
+      spawns.forEach((other, j) => {
+        if (j <= i) return;
+        const gap = Math.hypot(spawn.x - other.x, spawn.z - other.z);
+        check(gap > halfBox * 2, `${label} does not overlap box ${j}`, `${gap.toFixed(2)}ft apart`);
+      });
+    });
+  }
+
+  // The 1v1 poses are load-bearing — every camera angle and every tuned opening
+  // exchange was measured from them — so they must survive adding head counts.
+  const pair = spawnsFor(2);
+  check(pair[0].x === 0 && pair[0].z === 19 && pair[0].yaw === 0
+    && pair[1].x === 0 && pair[1].z === -18.7 && Math.abs(pair[1].yaw - Math.PI) < 1e-9,
+    "the head-to-head pair has not moved", JSON.stringify(pair));
+  check(spawnsFor(3).slice(0, 2).every((s, i) => s.x === pair[i].x && s.z === pair[i].z),
+    "adding a third machine does not move the first two");
+
+  // The third box faces the upper deck from the far side of the arena, which is
+  // what "in front of the screw that is not the deck's" means in coordinates:
+  // it is on the -x side, and it is looking at +x.
+  const third = spawnsFor(3)[2];
+  const forward = { x: -Math.sin(third.yaw), z: -Math.cos(third.yaw) };
+  check(third.x < 0 && UPPER_DECK.x > 0, "the third box is across the arena from the deck",
+    `box x ${third.x}, deck x ${UPPER_DECK.x}`);
+  check(forward.x > 0.99 && Math.abs(forward.z) < 0.01, "and it is pointed at the deck",
+    `forward (${forward.x.toFixed(2)}, ${forward.z.toFixed(2)})`);
+  const westScrew = SCREWS.list.reduce((a, b) => (a.x < b.x ? a : b));
+  check(screwDistance(westScrew, third.x, third.z) < 4.5, "and it stands in front of the west screw",
+    `${screwDistance(westScrew, third.x, third.z).toFixed(2)}ft`);
+
+  // Four is two a side: two red boxes facing one way, two blue facing the other.
+  const four = spawnsFor(4);
+  const colours = new Map();
+  four.forEach((s) => colours.set(s.color, (colours.get(s.color) || 0) + 1));
+  check(colours.size === 2 && [...colours.values()].every((n) => n === 2),
+    "four machines get two boxes of each colour", JSON.stringify([...colours]));
+  four.forEach((s) => {
+    const same = four.filter((o) => o.color === s.color);
+    check(same.every((o) => Math.abs(o.yaw - s.yaw) < 1e-9), "same colour, same facing");
+    check(Math.abs(Math.abs(s.x) - 12) < 1e-9, "and they sit halfway out to each side wall", `x ${s.x}`);
+  });
+});
+
+await test("three and four machines all stand up in their boxes", async () => {
+  // The sim was written around a pair and says so in a dozen places (foe
+  // selection, input completion, reset). Three and four have to be the same
+  // thing with more of it, and the way that fails is quiet: a bot spawned into
+  // geometry sinks, and a bot with no foe throws inside a weapon update.
+  const { spawnsFor } = await import("../src/sim/arenaSpec.js");
+  const { CATALOG } = await import("../src/assets/catalog.js");
+  // The biggest machine on the roster included on purpose. A start box is a
+  // POINT, and how much room it needs is a property of what stands on it — the
+  // four-way boxes sit closer to the walls than the head-to-head pair does, and
+  // Mammoth is the bot that finds out whether that was too close. Geometry
+  // cannot answer this (its bar sweeps well outside its chassis and high above
+  // the floor), so it is measured: settle it and see if it moved.
+  const biggest = Object.values(CATALOG).reduce((a, b) => ((a.radius ?? 0) > (b.radius ?? 0) ? a : b));
+  const specs4 = [drumSpec(), flipperSpec(), drumSpec(), flipperSpec()];
+  for (const count of [3, 4]) {
+    const specs = specs4.slice(0, count).map((spec, i) => ({ ...spec, id: `${spec.id}-${i}` }));
+    const spawns = spawnsFor(count);
+    await withSim(specs, (sim) => {
+      frames(sim, 240, specs.map(() => ({})));
+      const state = sim.getRenderState();
+      check(state.length === count, `${count} machines are in the sim`, `got ${state.length}`);
+      state.forEach((bot, i) => {
+        check(bot.position.y > 0, `bot ${i} is above the floor`, `y ${bot.position.y.toFixed(2)}`);
+        check(bot.position.y < 4, `bot ${i} is not in the air`, `y ${bot.position.y.toFixed(2)}`);
+        const drift = Math.hypot(bot.position.x - spawns[i].x, bot.position.z - spawns[i].z);
+        check(drift < 3, `bot ${i} settled where it spawned`, `${drift.toFixed(2)}ft away`);
+      });
+      // And a weapon fired with three or four machines around finds a target
+      // rather than reading vehicles[1 - i] off the end of the array.
+      frames(sim, 120, specs.map(() => ({ weapon: true })));
+      check(sim.getRenderState().every((bot) => Number.isFinite(bot.position.x)),
+        `${count} machines can all run their weapons`);
+    });
+
+    // Same layout, filled with the largest bot in the game. A box too near a
+    // wall shows up here as a machine that gets shoved off it before anyone has
+    // touched the controls.
+    const giants = Array.from({ length: count }, () => biggest);
+    await withSim(giants, (sim) => {
+      frames(sim, 300, giants.map(() => ({})));
+      sim.getRenderState().forEach((bot, i) => {
+        const drift = Math.hypot(bot.position.x - spawns[i].x, bot.position.z - spawns[i].z);
+        check(drift < 1, `${biggest.id} fits on box ${i} of ${count}`, `pushed ${drift.toFixed(2)}ft`);
+      });
+    });
+  }
+});
+
+await test("a three-way ends when one is left, not when the first one dies", async () => {
+  // With two machines "somebody reached 100%" and "the round is over" are the
+  // same event, and the match was written on that. They are not the same event
+  // in a three-way: the first machine out leaves two people still fighting, and
+  // ending there would hand the win to whoever happened to be nearest.
+  const specs = [drumSpec(), flipperSpec(), { ...drumSpec(), id: "test-drum-3" }];
+  await wiredMatch(specs, ({ match, tick, busEmit }) => {
+    for (let i = 0; i < 300; i++) tick();
+    check(match.getState().phase === "fight", "the match reached fight", match.getState().phase);
+    check(match.getState().botCount === 3, "the match knows there are three of them");
+
+    const destroy = (index) => {
+      for (let i = 0; i < 60 && match.getState().bots[index].total < 100; i++) {
+        busEmit(EV.WEAPON_HIT, { targetIndex: index, point: null, impulse: 900, heavy: true });
+        tick();
+      }
+    };
+
+    destroy(0);
+    check(match.getState().bots[0].eliminated, "the first machine is out", JSON.stringify(match.getState().bots[0]));
+    check(match.getState().phase === "fight", "and the round carries on", match.getState().phase);
+    // A wreck stops driving, so what is left of it is an obstacle and nothing else.
+    const wreck = match.filterInputs([{ leftDrive: 1, rightDrive: 1, weapon: true }, {}, {}])[0];
+    check(wreck.leftDrive === 0 && wreck.rightDrive === 0 && wreck.weapon === false,
+      "and it takes no more input", JSON.stringify(wreck));
+
+    destroy(1);
+    const state = match.getState();
+    check(state.phase === "ko", "the second one out ends it", state.phase);
+    check(state.winnerIndex === 2, "and the machine left standing wins", `winner ${state.winnerIndex}`);
+  });
 });
 
 await test("config: the knobs file is a leaf, and nobody keeps a private copy", async () => {

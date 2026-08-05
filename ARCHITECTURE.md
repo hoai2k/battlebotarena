@@ -57,6 +57,35 @@ engine ← main wires everything; ui never imports sim or three.js
 `config.js` is a leaf: it imports nothing, so anyone may import it and it can
 never make a cycle.
 
+## Local multiplayer is a HEAD COUNT, and it comes from the controllers
+
+Two to four machines. The count is `min(4, max(2, connected pads))` and nothing
+else decides it — there is no menu for it and no AI for the extra slots. A third
+bay exists because a third person is holding a controller, and it goes away when
+they put it down. With no pads at all (or one) it is the classic pair, bot 1
+AI-driven, exactly as before.
+
+The count reaches four places, and each one owns its own consequence:
+
+| Where | What it decides |
+|---|---|
+| `sim/arenaSpec.js` `spawnsFor(n)` | where the start boxes are, and what colour |
+| `game/match.js` | per-bot damage arrays, and last-one-standing |
+| `engine/renderer.js` `renderSplit(n)` | 1 / 2 / 2x2 viewports |
+| `ui/ui.js` `setPlayerCount` | how many bays the select screen shows |
+
+Two rules that are easy to break by accident:
+
+- **The head-to-head pair never moves.** Every camera angle, every AI approach
+  and every tuned opening exchange in the game was measured from `(0, 19)` and
+  `(0, -18.7)`. Three bots is those two plus one; four is a different layout
+  entirely, and that is why it is a different list rather than an adjustment.
+- **Reaching 100% is an ELIMINATION, not the end of the round.** With two
+  machines they are the same event and the match was written on that. In a
+  three-way, ending at the first one out hands the win to whoever was nearest.
+  A wreck stays in the arena taking no input — it is still something to drive
+  into — and the round ends when one machine is left.
+
 ## Tunables live in config.js — but only the ones a person would turn
 
 `src/config.js` is the file you open to make the menu music quieter, the round

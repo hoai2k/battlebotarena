@@ -4,7 +4,9 @@
 // three.js, rapier, or sim/game modules — DOM + shared contracts only.
 //
 // Action payloads emitted via onAction:
-//   { type: "startMatch", playerBotId, rivalBotId, difficulty }  // rivalBotId always concrete (Random resolved here)
+//   { type: "startMatch", botIds, humanCount, playerBotId, rivalBotId, difficulty }
+//       botIds holds 2-4 concrete ids in bot order (Random is resolved here);
+//       playerBotId/rivalBotId are the 1v1 shorthand for the same first two.
 //   { type: "rematch" }
 //   { type: "changeBots" }
 //   { type: "toTitle" }
@@ -20,7 +22,7 @@ const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 const ZONE_LABELS = { body: "BODY", weapon: "WEAPON", drive: "DRIVE" };
-const BREAK_LABELS = { weapon: "WEAPON OUT", drive: "DRIVE DAMAGE", body: "ARMOR BREACH" };
+const BREAK_LABELS = { weapon: "WEAPON OUT", drive: "DRIVE DAMAGE", body: "ARMOR BREACH", out: "ELIMINATED" };
 /** Shared with game/match.js via config.js — a HUD clock that disagrees with
  *  the sim clock is a HUD that lies. */
 const MATCH_SECONDS = CONFIG.match.matchSeconds;
@@ -37,20 +39,30 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   // ---------------------------------------------------------------- selection
   // Two shapes of the same screen:
   //   solo (0-1 pads) — one cursor walks a two-step flow, YOU then RIVAL.
-  //   duo  (2 pads)   — both players pick simultaneously, each owning one
-  //                     slot; slot 0 is P1/bot 0, slot 1 is P2/bot 1, matching
-  //                     main.js's pad->bot assignment.
+  //   duo  (2-4 pads) — every player picks simultaneously, each owning one
+  //                     slot; slot i is player i and bot i, matching main.js's
+  //                     pad->bot assignment.
+  //
+  // THREE AND FOUR PLAYERS are the duo shape with more slots. There is no AI
+  // for the extra machines and no way to ask for one: a third bay exists
+  // because a third controller is plugged in, and it goes away when it is not.
+  const MAX_SLOTS = 4;
   const sel = {
     stage: /** @type {"player"|"rival"} */ ("player"),
-    playerBotId: /** @type {string|null} */ (null),
-    rivalBotId: /** @type {string|null} */ (null), // may be "random"
+    /** One entry per slot; slot 1 may be "random" (the AI's mystery). */
+    picks: /** @type {(string|null)[]} */ (new Array(MAX_SLOTS).fill(null)),
   };
-  /** True while two controllers are connected. */
+  /** Controllers connected right now. */
+  let playerCount = 0;
+  /** True while two or more controllers are connected — every bay is a person. */
   let duoMode = false;
+  /** How many bays the screen is showing. Always at least the classic pair:
+   *  with nobody (or one person) holding a pad, bay 1 is the AI's. */
+  let slotCount = 2;
   /** Per slot, the bot the cursor is currently over — shown in that bay until
    *  something is claimed there. Not part of `sel`: it is where the cursor is,
    *  not what anyone has chosen, and it never reaches startMatch. */
-  const browsing = /** @type {(string|null)[]} */ ([null, null]);
+  const browsing = /** @type {(string|null)[]} */ (new Array(MAX_SLOTS).fill(null));
   /** Set by a pick, consumed by the next refreshSelect, so the 3D flourish
    *  fires once on a real claim and never on a re-render. */
   let claimSlot = /** @type {number|null} */ (null);
@@ -59,19 +71,21 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
    *  would be in the temporal dead zone for anything that runs on the way. */
   let nav = /** @type {ReturnType<typeof createGamepadNav>|null} */ (null);
 
-  const SLOT_KEYS = /** @type {const} */ (["playerBotId", "rivalBotId"]);
-  const getSlot = (slot) => sel[SLOT_KEYS[slot]];
+  const getSlot = (slot) => sel.picks[slot];
   const setSlot = (slot, id) => {
-    sel[SLOT_KEYS[slot]] = id;
+    sel.picks[slot] = id;
   };
-  /** Concrete ids of the match in flight; index 0 = player, 1 = rival. */
-  let lastMatch = /** @type {{ playerBotId: string, rivalBotId: string }|null} */ (null);
+  /** Every slot on screen. */
+  const slots = () => Array.from({ length: slotCount }, (_, i) => i);
+  /** Bots picked by everyone EXCEPT this slot — what Random has to avoid. */
+  const takenBy = (slot) => slots().filter((i) => i !== slot).map(getSlot).filter(Boolean);
+  /** Concrete ids of the match in flight, in bot order. */
+  let lastMatch = /** @type {{ botIds: string[] }|null} */ (null);
+  const matchId = (i) => lastMatch?.botIds?.[i] || null;
 
   const grid = $("bot-grid");
   const stepEl = $("sel-step");
   const fightBtn = /** @type {HTMLButtonElement} */ ($("btn-fight"));
-  const slotPlayer = $("slot-player");
-  const slotRival = $("slot-rival");
 
   // Showcase pods: the big 3D windows the chosen bots render into. The UI owns
   // their DOM chrome (plate, badge, stats, empty copy); the integrator owns the
@@ -79,14 +93,30 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   // refreshSelect.
   const stageEl = document.querySelector(".select-stage");
   const selectScreen = document.querySelector(".screen-select");
-  const pods = [$("pod-player"), $("pod-rival")].map((root, i) => ({
-    root,
-    plate: i === 0 ? slotPlayer : slotRival,
-    plateBody: (i === 0 ? slotPlayer : slotRival)?.querySelector(".pod-plate-body") || null,
-    empty: root?.querySelector(".pod-empty") || null,
-    badge: root?.querySelector(".pod-badge") || null,
-    stats: root?.querySelector(".pod-stats") || null,
-  }));
+  const POD_KEYS = ["player", "rival", "p3", "p4"];
+  const pods = POD_KEYS.map((key) => {
+    const root = $(`pod-${key}`);
+    const plate = $(`slot-${key}`);
+    return {
+      key,
+      root,
+      plate,
+      plateBody: plate?.querySelector(".pod-plate-body") || null,
+      empty: root?.querySelector(".pod-empty") || null,
+      badge: root?.querySelector(".pod-badge") || null,
+      stats: root?.querySelector(".pod-stats") || null,
+    };
+  });
+  /** Card classes and plate labels, by slot. */
+  const SLOT_CARD_CLASS = ["is-player", "is-rival", "is-p3", "is-p4"];
+  /** The pod<->FIGHT nav hints authored into index.html, captured before
+   *  anything strips them so a three- or four-pod stage can put them back. */
+  const NAV_PAIR_HINTS = [
+    [$("slot-player"), "data-nav-right"],
+    [$("slot-rival"), "data-nav-left"],
+    [fightBtn, "data-nav-left"],
+    [fightBtn, "data-nav-right"],
+  ].map(([el, attr]) => ({ el, attr, value: el?.getAttribute(attr) || "" })).filter((hint) => hint.value);
 
   /** Shimmer an image's container until the bitmap lands. The roster photos
    *  are ~2MB each, so the slot would otherwise read as broken while it
@@ -159,15 +189,15 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
    * @returns {boolean} true if the press was consumed
    */
   function duoToggle(slot, id) {
-    if (!id) return true;
-    const theirs = getSlot(slot === 0 ? 1 : 0);
-    // Both bays are driven by a person here, so Random rolls straight away —
-    // and rolls around whatever the other player already holds, so it can never
-    // hand you a mirror match you did not ask for.
+    if (!id || slot >= slotCount) return true;
+    const theirs = takenBy(slot);
+    // Every bay is driven by a person here, so Random rolls straight away —
+    // and rolls around whatever the OTHER players already hold, so it can never
+    // hand you a machine somebody else is taking.
     const pick = resolveRandom(id, { exclude: theirs });
     const mine = getSlot(slot);
     if (mine === pick && id !== "random") setSlot(slot, null);
-    else if (theirs === pick) return true; // taken — ignore rather than steal
+    else if (theirs.includes(pick)) return true; // taken — ignore rather than steal
     else setSlot(slot, pick);
     refreshAfterPick({ slot, player: slot, claimed: Boolean(getSlot(slot)) });
     return true;
@@ -178,13 +208,13 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     let slot = 1;
     if (sel.stage === "player") {
       // Your own bay: Random rolls now, because you are about to drive it.
-      sel.playerBotId = resolveRandom(id, { exclude: sel.rivalBotId });
-      if (sel.rivalBotId === sel.playerBotId) sel.rivalBotId = null; // no mirror match via direct pick collision
+      sel.picks[0] = resolveRandom(id, { exclude: sel.picks[1] });
+      if (sel.picks[1] === sel.picks[0]) sel.picks[1] = null; // no mirror match via direct pick collision
       sel.stage = "rival";
       slot = 0;
     } else {
       // The AI's bay: Random stays Random and is rolled at the box.
-      sel.rivalBotId = resolveRandom(id, { mystery: true });
+      sel.picks[1] = resolveRandom(id, { mystery: true });
     }
     refreshAfterPick({ slot, player: 0, claimed: true });
   }
@@ -241,7 +271,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   /** Which bay a given player is currently filling. Solo that is whichever
    *  step the flow is on; in duo everyone owns their own. */
   function armedSlot(player = 0) {
-    if (duoMode) return player === 1 ? 1 : 0;
+    if (duoMode) return Math.min(Math.max(0, player), slotCount - 1);
     return sel.stage === "rival" ? 1 : 0;
   }
 
@@ -253,7 +283,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
    * you do not get to look at it.
    */
   function stageIds() {
-    return [0, 1].map((slot) => {
+    return slots().map((slot) => {
       const picked = getSlot(slot);
       if (picked) return picked === "random" ? null : picked;
       return browsing[slot];
@@ -279,7 +309,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       // own bay, because that is the one you are about to drive and the pod is
       // a practice viewer. In duo there is nothing to decide: each pad owns its
       // own pod (botPreview.readPads).
-      focusSlot: duoMode ? null : (sel.playerBotId && sel.rivalBotId ? 0 : armedSlot(0)),
+      focusSlot: duoMode ? null : (sel.picks[0] && sel.picks[1] ? 0 : armedSlot(0)),
     });
   }
 
@@ -287,8 +317,15 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     if (!grid) return;
     grid.querySelectorAll(".bot-card").forEach((el) => {
       const id = el.dataset.botId;
-      el.classList.toggle("is-player", id === sel.playerBotId);
-      el.classList.toggle("is-rival", id === sel.rivalBotId);
+      SLOT_CARD_CLASS.forEach((cls, slot) => {
+        el.classList.toggle(cls, slot < slotCount && id === getSlot(slot));
+      });
+      // Who holds this card, spelled out. With four players the pairings are a
+      // combinatorial mess and one class per pairing is not a thing worth
+      // writing down — the CSS reads this attribute instead.
+      const owners = slots().filter((slot) => getSlot(slot) === id);
+      if (duoMode && owners.length) el.dataset.owners = owners.map((slot) => `P${slot + 1}`).join(" + ");
+      else delete el.dataset.owners;
       // Random is always pickable. It used to be greyed out for your own bay
       // and in duo — the card was there, it just refused — because it only knew
       // how to be the AI's mystery opponent. It resolves on the spot for a bay
@@ -305,32 +342,51 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       if (picked) return picked === "random" ? RANDOM_CARD : getBotCard(picked);
       return browsing[slot] ? getBotCard(browsing[slot]) : null;
     };
-    [0, 1].forEach((slot) => {
-      const empties = duoMode
-        ? ["P1 — PRESS A<br />TO PICK", "P2 — PRESS A<br />TO PICK"]
-        : ["PICK<br />YOUR BOT", "PICK THE<br />OPPONENT"];
-      fillPod(slot, cardFor(slot), empties[slot]);
-      pods[slot].root?.classList.toggle("is-preview", !getSlot(slot) && Boolean(browsing[slot]));
+    // Bays past the player count are not on screen at all, and the stage's
+    // column count follows so three pods lay out as three rather than as two
+    // with a gap.
+    pods.forEach((pod, slot) => {
+      if (pod.root) pod.root.hidden = slot >= slotCount;
     });
-    slotPlayer?.setAttribute("data-role", duoMode ? "P1" : "YOU");
-    slotRival?.setAttribute("data-role", duoMode ? "P2" : "RIVAL");
+    stageEl?.setAttribute("data-pods", String(slotCount));
+    // The data-nav hints are a TWO-POD arrangement: they exist so stepping
+    // across the stage stops at FIGHT between the pair instead of jumping pod
+    // to pod. With three or four pods FIGHT is not between anything — it sits
+    // under the row — so the hints would send the cursor sideways past two bays
+    // to reach it. Spatial navigation gets it right on its own from there.
+    const pairwise = slotCount === 2;
+    NAV_PAIR_HINTS.forEach(({ el, attr, value }) => {
+      if (!el) return;
+      if (pairwise) el.setAttribute(attr, value);
+      else el.removeAttribute(attr);
+    });
+    slots().forEach((slot) => {
+      const soloEmpty = ["PICK<br />YOUR BOT", "PICK THE<br />OPPONENT"];
+      const empty = duoMode ? `P${slot + 1} — PRESS A<br />TO PICK` : soloEmpty[slot];
+      fillPod(slot, cardFor(slot), empty);
+      pods[slot].root?.classList.toggle("is-preview", !getSlot(slot) && Boolean(browsing[slot]));
+      pods[slot].plate?.setAttribute("data-role", duoMode ? `P${slot + 1}` : (slot === 0 ? "YOU" : "RIVAL"));
+      // Every bay is live at once in duo, so each stays armed until it is
+      // filled; solo, exactly the bay the flow is on is armed.
+      pods[slot].root?.classList.toggle(
+        "is-armed",
+        duoMode ? !getSlot(slot) : (slot === 0) === (sel.stage === "player"),
+      );
+    });
     if (duoMode) {
-      // Both sides are live at once, so both stay armed until they are filled.
-      pods[0].root?.classList.toggle("is-armed", !sel.playerBotId);
-      pods[1].root?.classList.toggle("is-armed", !sel.rivalBotId);
-      stepEl.textContent = "TWO CONTROLLERS — EACH PLAYER PICKS THEIR OWN BOT";
+      stepEl.textContent = playerCount > 2
+        ? `${slotCount} CONTROLLERS — EVERY PLAYER PICKS THEIR OWN BOT`
+        : "TWO CONTROLLERS — EACH PLAYER PICKS THEIR OWN BOT";
     } else {
-      pods[0].root?.classList.toggle("is-armed", sel.stage === "player");
-      pods[1].root?.classList.toggle("is-armed", sel.stage === "rival");
       stepEl.textContent = sel.stage === "player" ? "STEP 1 — CHOOSE YOUR BOT" : "STEP 2 — CHOOSE THE OPPONENT";
     }
-    fightBtn.disabled = !(sel.playerBotId && sel.rivalBotId);
+    fightBtn.disabled = slots().some((slot) => !getSlot(slot));
     // Once anything is CLAIMED the screen changes job: it stops being a
     // catalogue and starts being a look at the machine you are taking in, so
     // the roster gives up a row and the bays take the height. Browsing does not
     // trigger it — the cursor is still in the grid and shrinking it under the
     // cursor would be the screen moving while you read it.
-    selectScreen?.classList.toggle("is-showcase", Boolean(sel.playerBotId || sel.rivalBotId));
+    selectScreen?.classList.toggle("is-showcase", slots().some((slot) => Boolean(getSlot(slot))));
     emitSelection(claimSlot);
     claimSlot = null;
   }
@@ -369,37 +425,44 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     refreshSelect();
   }
 
-  /** Second pad plugged in / pulled out — reshape the screen around it. */
-  function setDuoMode(active) {
-    const next = Boolean(active);
-    if (next === duoMode) return;
-    duoMode = next;
+  /** A pad plugged in or pulled out — reshape the screen around the new count.
+   *  Two pads is the duo screen; three and four add a bay each. */
+  function setPlayerCount(count) {
+    const next = Math.max(0, Math.min(MAX_SLOTS, count | 0));
+    if (next === playerCount) return;
+    playerCount = next;
+    const wasDuo = duoMode;
+    duoMode = playerCount >= 2;
+    const previousSlots = slotCount;
+    slotCount = Math.max(2, playerCount);
     // A pending "random" rival was the AI's mystery, and P2 is not the AI —
     // roll it into a real bot rather than emptying the bay someone is now
     // sitting in front of.
-    if (duoMode && sel.rivalBotId === "random") {
-      sel.rivalBotId = resolveRandom("random", { exclude: sel.playerBotId });
+    if (duoMode && !wasDuo && sel.picks[1] === "random") {
+      sel.picks[1] = resolveRandom("random", { exclude: takenBy(1) });
     }
-    if (!duoMode) sel.stage = sel.playerBotId ? "rival" : "player";
+    // Bays that just left the screen give their bots back, so a player who
+    // unplugs does not keep a machine nobody can drive.
+    for (let slot = slotCount; slot < previousSlots; slot += 1) {
+      sel.picks[slot] = null;
+      browsing[slot] = null;
+    }
+    if (!duoMode) sel.stage = sel.picks[0] ? "rival" : "player";
     refreshSelect();
   }
 
-  slotPlayer?.addEventListener("click", () => {
-    if (duoMode) {
-      duoToggle(0, sel.playerBotId); // clicking your filled slot clears it
-      return;
-    }
-    sel.stage = "player";
-    refreshSelect();
-  });
-  slotRival?.addEventListener("click", () => {
-    if (duoMode) {
-      duoToggle(1, sel.rivalBotId);
-      return;
-    }
-    if (!sel.playerBotId) return;
-    sel.stage = "rival";
-    refreshSelect();
+  // Clicking a bay's name plate: in duo it drops what that player picked, solo
+  // it moves the two-step flow to that bay.
+  pods.forEach((pod, slot) => {
+    pod.plate?.addEventListener("click", () => {
+      if (duoMode) {
+        duoToggle(slot, getSlot(slot));
+        return;
+      }
+      if (slot === 1 && !sel.picks[0]) return; // no opponent before you have a bot
+      sel.stage = slot === 1 ? "rival" : "player";
+      refreshSelect();
+    });
   });
 
   // -------------------------------------------------------------- difficulty
@@ -416,17 +479,25 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   syncDifficulty();
 
   // -------------------------------------------------------------------- HUD
+  const HUD_KEYS = ["player", "rival", "p3", "p4"];
   const hud = {
-    damage: [0, 0],
-    broken: [new Set(), new Set()],
-    names: ["—", "—"],
+    damage: new Array(MAX_SLOTS).fill(0),
+    broken: Array.from({ length: MAX_SLOTS }, () => new Set()),
+    names: new Array(MAX_SLOTS).fill("—"),
     clock: { remaining: MATCH_SECONDS, running: false, lastTs: 0, interval: /** @type {any} */ (null) },
-    lastTick: [0, 0],
+    lastTick: new Array(MAX_SLOTS).fill(0),
+    /** Machines in the match being shown. Two until a bigger one starts. */
+    bots: 2,
   };
-  const hudEls = [
-    { name: $("hud-player-name"), fill: $("hud-player-fill"), pct: $("hud-player-pct"), tags: $("hud-player-tags") },
-    { name: $("hud-rival-name"), fill: $("hud-rival-fill"), pct: $("hud-rival-pct"), tags: $("hud-rival-tags") },
-  ];
+  const hudEls = HUD_KEYS.map((key) => ({
+    name: $(`hud-${key}-name`),
+    fill: $(`hud-${key}-fill`),
+    pct: $(`hud-${key}-pct`),
+    tags: $(`hud-${key}-tags`),
+    panel: $(`hud-${key}-name`)?.closest(".hud-bot") || null,
+  }));
+  /** Every panel the current match uses. */
+  const hudSlots = () => Array.from({ length: hud.bots }, (_, i) => i);
   const clockEl = $("hud-clock");
   const phaseEl = $("hud-phase");
   const tickerEl = $("hud-ticker");
@@ -436,32 +507,50 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   const bannerEl = $("hud-banner");
 
   function botName(i) {
-    return hud.names[i] || (i === 0 ? "PLAYER" : "RIVAL");
+    return hud.names[i] || (i === 0 ? "PLAYER" : `P${i + 1}`);
   }
 
   function updateDamage(i) {
+    const els = hudEls[i];
+    if (!els?.fill) return;
     const pct = hud.damage[i];
-    hudEls[i].fill.style.transform = `scaleX(${(pct / 100).toFixed(4)})`;
-    hudEls[i].pct.textContent = `${Math.round(pct)}%`;
-    const panel = hudEls[i].fill.closest(".hud-bot");
-    panel?.classList.toggle("is-hurt", pct >= 55);
-    panel?.classList.toggle("is-critical", pct >= 85);
+    els.fill.style.transform = `scaleX(${(pct / 100).toFixed(4)})`;
+    els.pct.textContent = `${Math.round(pct)}%`;
+    els.panel?.classList.toggle("is-hurt", pct >= 55);
+    els.panel?.classList.toggle("is-critical", pct >= 85);
   }
 
   function renderTags(i) {
-    hudEls[i].tags.innerHTML = Array.from(hud.broken[i])
-      .map((zone) => `<span class="hud-tag">${BREAK_LABELS[zone] || String(zone).toUpperCase()}</span>`)
-      .join("");
+    if (hudEls[i]?.tags) {
+      hudEls[i].tags.innerHTML = Array.from(hud.broken[i])
+        .map((zone) => `<span class="hud-tag">${BREAK_LABELS[zone] || String(zone).toUpperCase()}</span>`)
+        .join("");
+    }
+  }
+
+  const hudTop = document.querySelector(".hud-top");
+
+  /** Panels for machines that are not in this match are not on the bar. The
+   *  count goes on the bar itself so the CSS can move the extra panels down to
+   *  the corners their viewports are in. */
+  function syncHudPanels() {
+    hudTop?.setAttribute("data-bots", String(hud.bots));
+    hudEls.forEach((els, i) => {
+      if (els.panel) els.panel.hidden = i >= hud.bots;
+      els.panel?.classList.remove("is-out");
+    });
   }
 
   function resetHud() {
-    hud.damage = [0, 0];
-    hud.broken = [new Set(), new Set()];
-    hud.lastTick = [0, 0];
-    updateDamage(0);
-    updateDamage(1);
-    renderTags(0);
-    renderTags(1);
+    hud.bots = Math.max(2, lastMatch?.botIds?.length || 2);
+    hud.damage = new Array(MAX_SLOTS).fill(0);
+    hud.broken = Array.from({ length: MAX_SLOTS }, () => new Set());
+    hud.lastTick = new Array(MAX_SLOTS).fill(0);
+    syncHudPanels();
+    hudEls.forEach((_, i) => {
+      updateDamage(i);
+      renderTags(i);
+    });
     tickerEl.innerHTML = "";
     bannerEl.hidden = true;
     calloutEl.hidden = true;
@@ -472,16 +561,13 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   }
 
   function setHudNames() {
-    hud.names = [
-      lastMatch ? getBotCard(lastMatch.playerBotId)?.name.toUpperCase() || "PLAYER" : "PLAYER",
-      lastMatch ? getBotCard(lastMatch.rivalBotId)?.name.toUpperCase() || "RIVAL" : "RIVAL",
-    ];
-    hudEls[0].name.textContent = hud.names[0];
-    hudEls[1].name.textContent = hud.names[1];
-    const pCard = lastMatch && getBotCard(lastMatch.playerBotId);
-    const rCard = lastMatch && getBotCard(lastMatch.rivalBotId);
-    if (pCard) hudEls[0].name.closest(".hud-bot")?.style.setProperty("--accent", pCard.accent);
-    if (rCard) hudEls[1].name.closest(".hud-bot")?.style.setProperty("--accent", rCard.accent);
+    const fallback = ["PLAYER", "RIVAL", "P3", "P4"];
+    hudEls.forEach((els, i) => {
+      const card = matchId(i) ? getBotCard(matchId(i)) : null;
+      hud.names[i] = card?.name.toUpperCase() || fallback[i];
+      if (els.name) els.name.textContent = hud.names[i];
+      if (card) els.panel?.style.setProperty("--accent", card.accent);
+    });
   }
 
   function setPhase(text) {
@@ -589,9 +675,12 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     const imgWrap = $("res-image");
     const lineEl = $("res-line");
 
-    if (winnerIndex === 0 || winnerIndex === 1) {
-      const id = winnerIndex === 0 ? lastMatch?.playerBotId : lastMatch?.rivalBotId;
+    if (winnerIndex !== null && winnerIndex >= 0 && winnerIndex < hud.bots) {
+      const id = matchId(winnerIndex);
       const card = id ? getBotCard(id) : null;
+      // VICTORY is you winning. With three or four machines everybody but P1
+      // reads as a defeat FOR P1, which is the same question — whose screen is
+      // this — so the test does not change.
       kicker.textContent = winnerIndex === 0 ? "VICTORY" : "DEFEAT";
       kicker.dataset.tone = winnerIndex === 0 ? "win" : "loss";
       nameEl.textContent = card ? card.name.toUpperCase() : botName(winnerIndex);
@@ -606,7 +695,9 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       methodEl.textContent = "JUDGES CALL IT EVEN";
       imgWrap.innerHTML = "";
     }
-    lineEl.textContent = `FINAL DAMAGE — ${botName(0)} ${Math.round(hud.damage[0])}% · ${botName(1)} ${Math.round(hud.damage[1])}%`;
+    lineEl.textContent = `FINAL DAMAGE — ${hudSlots()
+      .map((i) => `${botName(i)} ${Math.round(hud.damage[i])}%`)
+      .join(" · ")}`;
   }
 
   // -------------------------------------------------------------- bus wiring
@@ -629,6 +720,15 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       if (p.killSaws === true || p.killSawsActive === true || p.hazard === "killSaw" || p.phase === "killSaws") {
         showCallout("KILL SAWS ACTIVE");
         ticker(`<b>HAZARD</b> — kill saws are live`, "tick-alert");
+      }
+      // A machine out of a three- or four-way, which is not the end of the
+      // round any more. The panel stays on the bar greyed out — who is left is
+      // the thing you most want to know at that moment.
+      if (typeof p.eliminated === "number") {
+        hud.broken[p.eliminated]?.add("out");
+        hudEls[p.eliminated]?.panel?.classList.add("is-out");
+        showCallout(`${botName(p.eliminated)} IS OUT`);
+        ticker(`<b>${botName(p.eliminated)}</b> — eliminated · ${p.remainingBots} left`, "tick-alert");
       }
       switch (p.phase) {
         case "countdown":
@@ -671,7 +771,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   cleanups.push(
     subscribe(EV.DAMAGE, (p = {}) => {
       const i = p.botIndex;
-      if (i !== 0 && i !== 1) return;
+      if (!Number.isInteger(i) || i < 0 || i >= hud.bots) return;
       const amount = typeof p.amount === "number" ? p.amount : 0;
       hud.damage[i] = clamp(hud.damage[i] + amount, 0, 100);
       updateDamage(i);
@@ -687,7 +787,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   cleanups.push(
     subscribe(EV.PART_BREAK, (p = {}) => {
       const i = p.botIndex;
-      if (i !== 0 && i !== 1) return;
+      if (!Number.isInteger(i) || i < 0 || i >= hud.bots) return;
       hud.broken[i].add(p.zone);
       renderTags(i);
       ticker(`<b>${botName(i)}</b> — ${BREAK_LABELS[p.zone] || "PART"} `, "tick-alert");
@@ -751,16 +851,29 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   $("btn-select-back")?.addEventListener("click", () => screens.goTo("title"));
 
   fightBtn?.addEventListener("click", () => {
-    if (!sel.playerBotId || !sel.rivalBotId) return;
-    const rivalBotId = sel.rivalBotId === "random" ? pickRandomBotId(sel.playerBotId) : sel.rivalBotId;
-    lastMatch = { playerBotId: sel.playerBotId, rivalBotId };
+    if (slots().some((slot) => !getSlot(slot))) return;
+    // The AI's mystery opponent is rolled HERE, at the box, which is the whole
+    // point of it. Every other bay already holds a concrete bot.
+    // Everything already decided, so the mystery cannot roll a machine somebody
+    // else is bringing.
+    const taken = slots().map(getSlot).filter((id) => id && id !== "random");
+    const botIds = slots().map((slot) => {
+      const id = getSlot(slot);
+      return id === "random" ? pickRandomBotId(taken) : id;
+    });
+    lastMatch = { botIds };
     resetHud();
     setHudNames();
     screens.goTo("match");
     onAction({
       type: "startMatch",
-      playerBotId: lastMatch.playerBotId,
-      rivalBotId,
+      botIds,
+      // How many of those machines have a person behind them. main.js needs it
+      // to know whether to split the screen and how many ways.
+      humanCount: playerCount,
+      // The 1v1 shorthand, still what the dev console and older callers read.
+      playerBotId: botIds[0],
+      rivalBotId: botIds[1],
       difficulty: settings.aiDifficulty,
     });
   });
@@ -793,7 +906,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     modal,
     // Bot select is the one screen where "who pressed the button" matters.
     duoScreens: ["botSelect"],
-    onPlayerCountChange: (count) => setDuoMode(count >= 2),
+    onPlayerCountChange: setPlayerCount,
     // The cursor IS the browse pointer on this screen. Moving it off the grid
     // leaves the last card staged rather than emptying the bay — the pod is
     // where you look at a bot, and blanking it because you reached for FIGHT
@@ -807,10 +920,10 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       if (!duoMode || screens.current() !== "botSelect") return false;
       const card = el.closest?.(".bot-card");
       if (card && !card.classList.contains("is-disabled")) return duoToggle(player, card.dataset.botId);
-      // Your own VS slot is a shortcut for "drop what I picked".
-      if (el === slotPlayer) return duoToggle(0, sel.playerBotId);
-      if (el === slotRival) return duoToggle(1, sel.rivalBotId);
-      return false; // FIGHT, difficulty, back — either player may press these
+      // Your own bay's name plate is a shortcut for "drop what I picked".
+      const plateSlot = pods.findIndex((pod) => pod.plate && pod.plate === el);
+      if (plateSlot >= 0 && plateSlot < slotCount) return duoToggle(plateSlot, getSlot(plateSlot));
+      return false; // FIGHT, difficulty, back — any player may press these
     },
     onBack: (screen, player = 0) => {
       if (screen !== "botSelect") return false;
@@ -829,13 +942,13 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       // the screen back to an empty stage and a full-size roster, and without
       // this step there was no way to get there short of leaving.
       if (sel.stage === "rival") {
-        sel.rivalBotId = null;
+        sel.picks[1] = null;
         sel.stage = "player";
         refreshSelect();
         return true;
       }
-      if (sel.playerBotId) {
-        sel.playerBotId = null;
+      if (sel.picks[0]) {
+        sel.picks[0] = null;
         refreshSelect();
         return true;
       }
@@ -843,7 +956,17 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     },
   });
   nav.start();
-  if (typeof window !== "undefined") window.__bba2Nav = nav;
+  if (typeof window !== "undefined") {
+    window.__bba2Nav = nav;
+    // Dev observability: the select screen's whole state in one object. Who
+    // holds what is otherwise only visible through CSS classes, which is a
+    // miserable thing to assert against from a probe.
+    window.__bba2Select = () => ({
+      playerCount, duoMode, slotCount, stage: sel.stage,
+      picks: sel.picks.slice(0, slotCount), browsing: browsing.slice(0, slotCount),
+      fightEnabled: !fightBtn.disabled,
+    });
+  }
 
   function dispose() {
     stopClock();

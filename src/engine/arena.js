@@ -5,6 +5,7 @@
 import { createArenaVisualRoot } from "./arenaVisuals.js";
 import { ARENA_LAYOUT } from "./arenaLayout.js";
 import { createScrewHazardElement, createKillSawHazardElement, screwHazardRotationSpeed } from "./hazardElements.js";
+import { spawnsFor, SPAWN_BOX } from "../sim/arenaSpec.js";
 
 // Matches a sim hazard to its visual by arena position; the sim deduplicates
 // some layout entries, so indices are not interchangeable.
@@ -22,6 +23,9 @@ function nearestByPosition(list, x, z, getPos) {
   // Guard against a layout/spec mismatch silently animating the wrong hazard.
   return bestDistance <= 1.5 ? best : null;
 }
+
+/** A spawn pose plus the decal size every start box shares. */
+const withBoxSize = (spawn) => ({ ...spawn, sizeX: SPAWN_BOX.x, sizeZ: SPAWN_BOX.z });
 
 export function createArenaVisuals(scene) {
   const root = createArenaVisualRoot({
@@ -55,8 +59,22 @@ export function createArenaVisuals(scene) {
   const wallMeshes = root.userData.wallMeshes || {};
   const ceilingMeshes = root.userData.ceilingMeshes || [];
 
+  // Paint the head-to-head pair up front so the arena is never boxless; a
+  // match with three or four machines replaces them through setBotCount.
+  root.userData.setStartBoxes?.(spawnsFor(2).map(withBoxSize));
+
   return {
     group: root,
+
+    /**
+     * How many machines this match has, which is the whole of what decides
+     * where the start boxes go and what colour they are (sim/arenaSpec.js).
+     * The arena is built ONCE and reused across matches, so this has to be a
+     * setter rather than a construction argument.
+     */
+    setBotCount(count) {
+      root.userData.setStartBoxes?.(spawnsFor(count).map(withBoxSize));
+    },
 
     /**
      * Nothing may block a shot. Accepts one or more views — in split screen

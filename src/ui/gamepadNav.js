@@ -20,17 +20,18 @@
 // activate (native button behaviour), Escape/Backspace go back. Mouse and the
 // existing ui.js listeners are untouched.
 //
-// DUO MODE. On screens listed in `duoScreens`, when two pads are connected,
-// each pad gets its OWN independent cursor so both players can drive the menu
-// at once (bot select: each person picks and unpicks their own bot). Pad slot
-// order matches game/input.js — dense getGamepads() order, so menu P1/P2 are
-// the same people as sim bot 0/1. Only cursor 0 takes real DOM focus; cursor 1
-// is a class-only ring, since the document has exactly one focused element.
+// DUO MODE. On screens listed in `duoScreens`, when two OR MORE pads are
+// connected, each pad gets its OWN independent cursor so every player can drive
+// the menu at once (bot select: each person picks and unpicks their own bot).
+// Pad slot order matches game/input.js — dense getGamepads() order, so menu
+// P1..P4 are the same people as sim bots 0..3. Only cursor 0 takes real DOM
+// focus; the rest are class-only rings, since the document has exactly one
+// focused element.
 
 const FOCUS_CLASS = "is-nav-focus";
 /** Per-player ring classes, applied alongside FOCUS_CLASS in duo mode. */
-const PLAYER_FOCUS_CLASS = ["is-nav-p1", "is-nav-p2"];
-const MAX_CURSORS = 2;
+const PLAYER_FOCUS_CLASS = ["is-nav-p1", "is-nav-p2", "is-nav-p3", "is-nav-p4"];
+const MAX_CURSORS = 4;
 
 const FOCUSABLE_SELECTOR = [
   "button:not([disabled])",
@@ -185,15 +186,16 @@ export function createGamepadNav({
     return activeScreenName() === "match" && !modalOpen() && !pauseOpen();
   }
 
-  /** Two independent cursors: two pads, on a screen that asked for it, with
-   *  nothing modal on top (a modal has one cursor no matter who opened it). */
+  /** One independent cursor per pad: two or more pads, on a screen that asked
+   *  for it, with nothing modal on top (a modal has one cursor no matter who
+   *  opened it). */
   function duo() {
     return padCount >= 2 && duoScreenSet.has(activeScreenName()) && !modalOpen() && !pauseOpen();
   }
 
   /** How many cursors are live right now. */
   function cursorCount() {
-    return duo() ? MAX_CURSORS : 1;
+    return duo() ? Math.min(padCount, MAX_CURSORS) : 1;
   }
 
   // -------------------------------------------------------------------- focus
@@ -467,7 +469,10 @@ export function createGamepadNav({
   /** Key that changes whenever the focus context changes. Duo-ness is part of
    *  it: plugging in a second pad re-seeds both cursors. */
   function contextKey() {
-    return `${activeScreenName()}|${modalOpen() ? "modal" : "-"}|${duo() ? "duo" : "solo"}`;
+    // The cursor COUNT is in the key, not just duo-ness: a third pad joining a
+    // two-player screen has to seed the cursor that just appeared, and "still
+    // duo" would have said nothing changed.
+    return `${activeScreenName()}|${modalOpen() ? "modal" : "-"}|${cursorCount()}`;
   }
 
   function resetCursors() {
@@ -649,9 +654,9 @@ export function createGamepadNav({
     }
 
     if (!duo()) {
-      // Solo: merge every connected pad, so either controller drives the menu.
+      // Solo: merge every connected pad, so any controller drives the menu.
       applyPad(0, readPads(list));
-      clearPadState(1);
+      for (let i = 1; i < MAX_CURSORS; i += 1) clearPadState(i);
       return;
     }
     // Duo: pad slot i drives cursor i, independently. Slot order is the dense

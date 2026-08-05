@@ -5,7 +5,7 @@
 // Each CHOSEN bot on the select screen gets a live 3D turntable inside its
 // pod's view window. One transparent WebGL canvas spans the whole screen and
 // every pod is a scissored viewport into a shared scene with one lit "bay"
-// per slot, so two previews cost one context. The pod's owner drives it like
+// per slot, so every preview on screen costs one context. The pod's owner drives it like
 // a standard 3D camera: right stick orbits, LT leans in — mouse users drag and
 // wheel the window.
 //
@@ -44,7 +44,7 @@ import { createPreviewWeapon } from "./previewWeapon.js";
 import { createWeaponInputShaper, describeWeaponControls } from "../game/weaponControls.js";
 import { CONFIG } from "../config.js";
 
-const BAY_SPACING = 30; // ft between the two bays; far enough that neither bot ever shows in the other's window
+const BAY_SPACING = 30; // ft between adjacent bays; far enough that no bot ever shows in a neighbour's window
 const STICK_DEADZONE = 0.18;
 const ORBIT_YAW_SPEED = 2.6; // rad/s at full stick
 const ORBIT_PITCH_SPEED = 1.7;
@@ -95,7 +95,9 @@ function disposeObject(root) {
 /**
  * @param {object} opts
  * @param {HTMLCanvasElement} opts.canvas full-screen transparent canvas inside the select section
- * @param {{ view: HTMLElement, test?: HTMLElement|null }[]} opts.pods one per slot (0 = player, 1 = rival)
+ * @param {{ view: HTMLElement, controls?: HTMLElement|null, poster?: HTMLElement|null }[]} opts.pods
+ *   one per slot, in player order (0 = player one). Two for a 1v1, up to four
+ *   when that many controllers are plugged in.
  */
 export function createBotPreview({ canvas, pods = [] } = {}) {
   if (!canvas || pods.length === 0) {
@@ -121,11 +123,14 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   const scene = new THREE.Scene(); // transparent background: the screen's carbon backdrop shows through
   // Lights, plinth and camera fit all come from engine/previewStage.js, which
   // the poster baker uses too — see engine/posters.js for why they must agree.
-  addPreviewLights(scene, renderer, { span: BAY_SPACING / 2 + 8 });
+  // Two to four bays, laid out in a line and centred on the origin. The shadow
+  // camera has to span the lot.
+  const bayCount = pods.length;
+  addPreviewLights(scene, renderer, { span: (BAY_SPACING * (bayCount - 1)) / 2 + 8 });
 
   // ------------------------------------------------------------------- bays
   function buildBay(slot) {
-    const x = (slot === 0 ? -1 : 1) * (BAY_SPACING / 2);
+    const x = (slot - (bayCount - 1) / 2) * BAY_SPACING;
     const { group: deco, ringMaterial } = buildPlinth();
     deco.position.set(x, 0, 0);
     deco.visible = false;
@@ -196,7 +201,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
     };
   }
 
-  const bays = [buildBay(0), buildBay(1)];
+  const bays = pods.map((_, slot) => buildBay(slot));
   // Fire-and-forget: until it resolves posterMeta() returns null and every bay
   // falls back to the spinner, which is exactly the behaviour before posters
   // existed. Nothing waits on it.
@@ -295,9 +300,10 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       bay.raw.auxPad = bay.raw.auxPad || lb;
     };
     if (control.duo) {
-      // Pad slot i owns pod i — same dense order as game/input.js.
-      feed(bays[0], pads[0]);
-      feed(bays[1], pads[1]);
+      // Pad slot i owns pod i — same dense order as game/input.js. Three and
+      // four pads work the same way; the pods past the second are only on
+      // screen when there are pads to drive them.
+      bays.forEach((bay, i) => feed(bay, pads[i]));
     } else {
       // Solo: every pad drives the pod the pick flow is focused on.
       const bay = bays[control.focusSlot] || bays[0];
@@ -780,7 +786,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
   /** @param {{ duo?: boolean, focusSlot?: number|null }} next */
   function setControl(next = {}) {
     control.duo = Boolean(next.duo);
-    if (typeof next.focusSlot === "number") control.focusSlot = next.focusSlot === 1 ? 1 : 0;
+    if (typeof next.focusSlot === "number") control.focusSlot = clamp(Math.round(next.focusSlot), 0, bays.length - 1);
   }
 
   function dispose() {
@@ -804,7 +810,7 @@ export function createBotPreview({ canvas, pods = [] } = {}) {
       bays,
       control,
       get shaperState() {
-        return [0, 1].map((slot) => ({
+        return bays.map((_, slot) => ({
           weapon: shaper.isWeaponLatched(slot),
           alt: shaper.isAltLatched(slot),
         }));

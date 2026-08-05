@@ -3,7 +3,7 @@
 // the last two ticks; max 8 substeps per frame. Headless-safe (node + browser).
 
 import { initRapier, createWorld, buildArena } from "./world.js";
-import { SPAWNS } from "./arenaSpec.js";
+import { spawnsFor } from "./arenaSpec.js";
 import { createVehicle, completeInput } from "./vehicle.js";
 import { createWeapon } from "./weapons.js";
 import { createHazards } from "./hazards.js";
@@ -19,7 +19,7 @@ const MAX_FRAME_DT = 0.25;
  * @typedef {{leftDrive:number, rightDrive:number, weapon:boolean, brake:boolean}} DriveInput
  *
  * @param {object} args
- * @param {object[]} args.bots two BotSimSpec objects from the catalog
+ * @param {object[]} args.bots 2-4 BotSimSpec objects from the catalog
  * @param {(type:string, payload:object) => void} args.emit event bus emit
  */
 export async function createSim({ bots, emit }) {
@@ -28,8 +28,12 @@ export async function createSim({ bots, emit }) {
   const { world, eventQueue, meta } = ctx;
   buildArena(ctx);
 
+  // 2, 3 or 4 machines, and the arena's start boxes are laid out differently
+  // for each — see sim/arenaSpec.js. Captured once so create and reset can
+  // never disagree about where a bot belongs.
+  const spawns = spawnsFor(bots.length);
   const vehicles = bots.map((spec, index) =>
-    createVehicle({ world, meta, spec, index, spawn: SPAWNS[index] }),
+    createVehicle({ world, meta, spec, index, spawn: spawns[index] }),
   );
   const weapons = vehicles.map((vehicle, index) =>
     createWeapon({ world, meta, vehicle, index, emit }),
@@ -69,18 +73,42 @@ export async function createSim({ bots, emit }) {
   let prev = vehicles.map((v, i) => snapshotBot(i));
   let curr = vehicles.map((v, i) => snapshotBot(i));
 
+  /** WHO a weapon is aimed at. With two machines this is "the other one" and
+   *  always was; with three or four it has to be a choice, and the only one a
+   *  weapon can make from inside the sim is the machine it is closest to. Every
+   *  consumer of `foe` is proximity-shaped anyway — a hammer looking for
+   *  something under it, a flipper looking for something on its wedge — so the
+   *  nearest body is the one those questions were always really about. */
+  function nearestFoe(i) {
+    if (vehicles.length === 2) return 1 - i;
+    const self = vehicles[i].body.translation();
+    let best = i === 0 ? 1 : 0;
+    let bestDistance = Infinity;
+    for (let j = 0; j < vehicles.length; j += 1) {
+      if (j === i) continue;
+      const other = vehicles[j].body.translation();
+      const distance = (other.x - self.x) ** 2 + (other.z - self.z) ** 2;
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = j;
+      }
+    }
+    return best;
+  }
+
   function tick(inputs) {
     hazards.update(FIXED_DT, simTime);
     for (let i = 0; i < vehicles.length; i++) {
       vehicles[i].update(FIXED_DT, inputs[i]);
     }
     for (let i = 0; i < weapons.length; i++) {
+      const target = nearestFoe(i);
       weapons[i].update(FIXED_DT, inputs[i].weapon, {
-        foe: vehicles[1 - i],
+        foe: vehicles[target],
         // Weapons that can act ON another weapon (a rotor clash, a hammer coming
         // down on a spinning shell) need the other machine's mechanism, not just
         // its body.
-        foeWeapon: weapons[1 - i],
+        foeWeapon: weapons[target],
         simTime,
         world,
         // Spinner gyro and the lifter's disc toggle both need more than the
@@ -109,11 +137,11 @@ export async function createSim({ bots, emit }) {
     /**
      * Advance the sim by one render frame.
      * @param {number} frameDtSeconds
-     * @param {[DriveInput, DriveInput]} inputs
+     * @param {DriveInput[]} inputs one per bot, in bot order
      */
     stepFrame(frameDtSeconds, inputs) {
       if (paused) return;
-      const completed = [completeInput(inputs?.[0]), completeInput(inputs?.[1])];
+      const completed = vehicles.map((_, i) => completeInput(inputs?.[i]));
       accumulator += m.clamp(frameDtSeconds, 0, MAX_FRAME_DT);
       // Cap substeps; drop overflow time rather than spiraling.
       accumulator = Math.min(accumulator, MAX_SUBSTEPS * FIXED_DT + FIXED_DT * 0.999);
@@ -160,7 +188,7 @@ export async function createSim({ bots, emit }) {
 
     /** Restore spawn poses and clear all transient state (between plays only). */
     reset() {
-      vehicles.forEach((vehicle, i) => vehicle.resetTo(SPAWNS[i]));
+      vehicles.forEach((vehicle, i) => vehicle.resetTo(spawns[i]));
       weapons.forEach((weapon) => weapon.reset());
       hazards.reset();
       contacts.reset();

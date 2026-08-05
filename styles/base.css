@@ -501,7 +501,11 @@ img {
 .is-nav-focus.is-nav-p1,
 .is-nav-focus.is-nav-p1:focus-visible,
 .is-nav-focus.is-nav-p2,
-.is-nav-focus.is-nav-p2:focus-visible {
+.is-nav-focus.is-nav-p2:focus-visible,
+.is-nav-focus.is-nav-p3,
+.is-nav-focus.is-nav-p3:focus-visible,
+.is-nav-focus.is-nav-p4,
+.is-nav-focus.is-nav-p4:focus-visible {
   animation: none;
   outline-offset: -4px;
 }
@@ -516,11 +520,56 @@ img {
   outline: 4px dashed var(--yellow);
 }
 
-/* Both cursors on the same element: nest the rings so neither disappears. */
+.is-nav-focus.is-nav-p3,
+.is-nav-focus.is-nav-p3:focus-visible {
+  outline: 4px dashed #a45cf0;
+}
+
+.is-nav-focus.is-nav-p4,
+.is-nav-focus.is-nav-p4:focus-visible {
+  outline: 4px dashed #4bd6a0;
+}
+
+/* Two cursors on the same element: nest the rings so neither disappears. The
+   outline is the LOWER-numbered player's and the inset ring is the other's, so
+   with three or four players a shared card still names both of them. Only the
+   pairs are enumerated — three cursors on one card is a rare enough moment that
+   showing two of them is honest enough, and the card's own P-flags say the
+   rest. */
 .is-nav-focus.is-nav-p1.is-nav-p2,
 .is-nav-focus.is-nav-p1.is-nav-p2:focus-visible {
   outline: 4px dashed var(--red-hot);
   box-shadow: inset 0 0 0 9px rgba(11, 13, 17, 0.9), inset 0 0 0 13px var(--yellow);
+}
+
+.is-nav-focus.is-nav-p1.is-nav-p3,
+.is-nav-focus.is-nav-p1.is-nav-p3:focus-visible {
+  outline: 4px dashed var(--red-hot);
+  box-shadow: inset 0 0 0 9px rgba(11, 13, 17, 0.9), inset 0 0 0 13px #a45cf0;
+}
+
+.is-nav-focus.is-nav-p1.is-nav-p4,
+.is-nav-focus.is-nav-p1.is-nav-p4:focus-visible {
+  outline: 4px dashed var(--red-hot);
+  box-shadow: inset 0 0 0 9px rgba(11, 13, 17, 0.9), inset 0 0 0 13px #4bd6a0;
+}
+
+.is-nav-focus.is-nav-p2.is-nav-p3,
+.is-nav-focus.is-nav-p2.is-nav-p3:focus-visible {
+  outline: 4px dashed var(--yellow);
+  box-shadow: inset 0 0 0 9px rgba(11, 13, 17, 0.9), inset 0 0 0 13px #a45cf0;
+}
+
+.is-nav-focus.is-nav-p2.is-nav-p4,
+.is-nav-focus.is-nav-p2.is-nav-p4:focus-visible {
+  outline: 4px dashed var(--yellow);
+  box-shadow: inset 0 0 0 9px rgba(11, 13, 17, 0.9), inset 0 0 0 13px #4bd6a0;
+}
+
+.is-nav-focus.is-nav-p3.is-nav-p4,
+.is-nav-focus.is-nav-p3.is-nav-p4:focus-visible {
+  outline: 4px dashed #a45cf0;
+  box-shadow: inset 0 0 0 9px rgba(11, 13, 17, 0.9), inset 0 0 0 13px #4bd6a0;
 }
 
 /* ============================================================ LOADERS

@@ -49,35 +49,88 @@ export function createRenderer(canvas) {
   window.addEventListener("resize", resize);
   resize();
 
-  // Second camera for split-screen local multiplayer (left = P1, right = P2).
-  const cameraB = new THREE.PerspectiveCamera(52, 8 / 9, 0.05, 140);
+  // PER-PLAYER CAMERAS for local multiplayer, up to four of them.
+  //
+  // playerCameras[0] IS `camera`. The director and player one's chase cam never
+  // run in the same frame — one of them owns the shot — so they share the
+  // object, which keeps everything downstream that reads `stage.camera` (the
+  // audio listener, arena wall culling) pointing at the view a person is
+  // actually looking out of.
+  const playerCameras = [
+    camera,
+    new THREE.PerspectiveCamera(52, 8 / 9, 0.05, 140),
+    new THREE.PerspectiveCamera(52, 8 / 9, 0.05, 140),
+    new THREE.PerspectiveCamera(52, 8 / 9, 0.05, 140),
+  ];
+  // The odd cell out. Three players in a 2x2 grid leaves one quadrant, and an
+  // arena-wide shot of the whole fight is a better thing to put there than a
+  // black rectangle — everyone can see where the other two went.
+  const overviewCamera = new THREE.PerspectiveCamera(52, 1, 0.05, 140);
+
+  /** Viewport rects, in GL coordinates (origin bottom-left), reading order. */
+  function viewRects(count) {
+    const w = canvas.width;
+    const h = canvas.height;
+    if (count <= 1) return [[0, 0, w, h]];
+    // Two players get the full height each — a wide letterbox reads far better
+    // for a chase camera than a quarter of the screen would.
+    if (count === 2) {
+      const half = Math.floor(w / 2);
+      return [[0, 0, half, h], [half, 0, w - half, h]];
+    }
+    const halfW = Math.floor(w / 2);
+    const halfH = Math.floor(h / 2);
+    const right = w - halfW;
+    const top = h - halfH;
+    return [
+      [0, halfH, halfW, top],        // P1 top-left
+      [halfW, halfH, right, top],    // P2 top-right
+      [0, 0, halfW, halfH],          // P3 bottom-left
+      [halfW, 0, right, halfH],      // P4 bottom-right
+    ];
+  }
+
+  function drawView(cam, [x, y, vw, vh]) {
+    cam.aspect = vw / vh;
+    cam.updateProjectionMatrix();
+    renderer.setViewport(x, y, vw, vh);
+    renderer.setScissor(x, y, vw, vh);
+    renderer.render(scene, cam);
+  }
 
   return {
     renderer,
     scene,
     camera,
-    cameraB,
+    playerCameras,
+    overviewCamera,
+    /** Where each player's viewport lands, for anything that has to line up
+     *  with them (HUD panels, on-screen labels). Fractions of the canvas, with
+     *  y measured from the TOP so it can go straight into CSS. */
+    viewLayout(count) {
+      const h = canvas.height || 1;
+      const w = canvas.width || 1;
+      return viewRects(count).map(([x, y, vw, vh]) => ({
+        left: x / w, top: (h - y - vh) / h, width: vw / w, height: vh / h,
+      }));
+    },
     resize,
     render() {
       renderer.setScissorTest(false);
       renderer.setViewport(0, 0, canvas.width, canvas.height);
       renderer.render(scene, camera);
     },
-    renderSplit() {
-      const w = canvas.width;
-      const h = canvas.height;
-      const half = Math.floor(w / 2);
+    /**
+     * One viewport per human. Three players fill the fourth quadrant with the
+     * arena overview; four fill it with player four.
+     * @param {number} count 2-4
+     */
+    renderSplit(count = 2) {
+      const players = Math.min(4, Math.max(2, count | 0));
+      const rects = viewRects(players);
       renderer.setScissorTest(true);
-      camera.aspect = half / h;
-      camera.updateProjectionMatrix();
-      renderer.setViewport(0, 0, half, h);
-      renderer.setScissor(0, 0, half, h);
-      renderer.render(scene, camera);
-      cameraB.aspect = (w - half) / h;
-      cameraB.updateProjectionMatrix();
-      renderer.setViewport(half, 0, w - half, h);
-      renderer.setScissor(half, 0, w - half, h);
-      renderer.render(scene, cameraB);
+      for (let i = 0; i < players; i += 1) drawView(playerCameras[i], rects[i]);
+      if (players === 3) drawView(overviewCamera, rects[3]);
       renderer.setScissorTest(false);
     },
     dispose() {

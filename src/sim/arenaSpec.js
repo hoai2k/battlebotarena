@@ -32,13 +32,70 @@ export const ARENA = {
   wallThickness: 0.5,
 };
 
-// Spawn poses from v1 startBox elements (player z 19 yaw 0, rival z -18.7 yaw 180).
-// yaw 0 faces -Z, so the two bots face each other. Spawn height is computed by
-// the sim from each bot's suspension rest height.
-export const SPAWNS = [
-  { x: 0, z: 19, yaw: 0 },
-  { x: 0, z: -18.7, yaw: Math.PI },
+// ---------------------------------------------------------------- spawn boxes
+//
+// yaw 0 faces -Z. Spawn HEIGHT is computed by the sim from each bot's
+// suspension rest height, so a layout is only ever a floor position and a
+// facing. `color` rides along because the arena paints a decal under each one
+// (engine/arenaVisuals.js) and the box you start on is how a player finds
+// their own machine in the first second of a four-way.
+//
+// The 2-bot poses are v1's startBox elements (player z 19 yaw 0, rival z -18.7
+// yaw 180) and must not move: every camera angle, every AI approach and every
+// tuned opening exchange in the game was measured from them.
+
+const RED = "#e1322a";
+const BLUE = "#3aa9e8";
+const PURPLE = "#a45cf0";
+
+/** Half-extents of a start-box decal, in feet (v1 startBox sizes). */
+export const SPAWN_BOX = { x: 5.2, z: 4.7 };
+
+const SPAWN_2 = [
+  { x: 0, z: 19, yaw: 0, color: RED },
+  { x: 0, z: -18.7, yaw: Math.PI, color: BLUE },
 ];
+
+// THREE BOTS. The two originals stay exactly where they are and a third box
+// goes on the west wall, in front of the one screw that is not the upper deck's
+// — SCREWS.list[0] at x -23.15 — at the same stand-off from its screw as the
+// other two have from theirs (~3.9ft toward the middle). Facing +X, so the new
+// machine looks at the upper deck across the arena from the side opposite the
+// deck's own screw, which is the mirror of what the other two boxes look at.
+const SPAWN_3 = [
+  ...SPAWN_2,
+  { x: -19.3, z: 0.8, yaw: -Math.PI / 2, color: PURPLE },
+];
+
+// FOUR BOTS. Two a side rather than one, so nobody spawns nose-to-nose with
+// two machines at once. Out to x +-12 — halfway from the middle to each side
+// wall — which also takes them off the end screws (those only span x -5.5..6.3),
+// and with no screw in front of them any more they sit 2ft further back toward
+// their own wall than the head-to-head boxes do. Reds face -Z, blues +Z; the
+// pairs are DIAGONAL so P1 and P2 still open the round looking at each other.
+const SPAWN_4 = [
+  { x: -12, z: 21, yaw: 0, color: RED },
+  { x: 12, z: -21, yaw: Math.PI, color: BLUE },
+  { x: 12, z: 21, yaw: 0, color: RED },
+  { x: -12, z: -21, yaw: Math.PI, color: BLUE },
+];
+
+/** Every supported layout, by how many machines are in the box. */
+export const SPAWN_SETS = { 2: SPAWN_2, 3: SPAWN_3, 4: SPAWN_4 };
+
+export const MAX_BOTS = 4;
+
+/**
+ * The start boxes for a match of `count` machines. Anything outside 2..4 is
+ * clamped rather than refused: a caller that gets this wrong should put bots on
+ * the floor facing each other, not throw in the middle of match setup.
+ */
+export function spawnsFor(count) {
+  return SPAWN_SETS[Math.min(MAX_BOTS, Math.max(2, count | 0))];
+}
+
+/** The head-to-head pair, still the default everywhere that has no count. */
+export const SPAWNS = SPAWN_2;
 
 // v1 upper-deck element: position (18.4, -0.2), size 9.9 x 15.8. Height and ramp
 // length are v2 choices (v1 kept them in mesh data); the ramp descends toward -x.

@@ -10,7 +10,13 @@ const REFERENCE_BOT_RADIUS = 2.3;
 const BATTLE_HEIGHT = 7.5;
 const BATTLE_LERP = 3.2;
 
-export function createCameraDirector(camera) {
+/**
+ * @param {THREE.PerspectiveCamera} camera
+ * @param {{ forceMode?: "battle"|"bot"|"arena" }} [options] pin the shot instead
+ *   of reading settings.cameraMode — the three-player overview quadrant is
+ *   always a wide view of the fight, whatever the player's own camera is set to.
+ */
+export function createCameraDirector(camera, { forceMode = null } = {}) {
   const position = new THREE.Vector3(0, 14, 26);
   const target = new THREE.Vector3(0, 0.5, 0);
   let shake = 0;
@@ -31,9 +37,35 @@ export function createCameraDirector(camera) {
   let battleFraming = 1;
 
   function updateBattle(dt, bots) {
-    const [a, b] = bots;
-    scratch.mid.set((a.position.x + b.position.x) / 2, 0.6, (a.position.z + b.position.z) / 2);
-    scratch.span.set(a.position.x - b.position.x, 0, a.position.z - b.position.z);
+    // TWO OR MORE machines. With a pair, the midpoint and the line between them
+    // are the shot, and that is what this was written around. With three or
+    // four, the same two quantities generalise: the mid is the centroid, and
+    // the "line between them" becomes the WIDEST separation in the group — the
+    // pair furthest apart is what the frame has to hold, so sitting square to
+    // that pair is what keeps everyone in it.
+    let sumX = 0;
+    let sumZ = 0;
+    for (const bot of bots) {
+      sumX += bot.position.x;
+      sumZ += bot.position.z;
+    }
+    scratch.mid.set(sumX / bots.length, 0.6, sumZ / bots.length);
+    let widest = 0;
+    let ax = bots[0].position.x - bots[1].position.x;
+    let az = bots[0].position.z - bots[1].position.z;
+    for (let i = 0; i < bots.length; i += 1) {
+      for (let j = i + 1; j < bots.length; j += 1) {
+        const dx = bots[i].position.x - bots[j].position.x;
+        const dz = bots[i].position.z - bots[j].position.z;
+        const d = dx * dx + dz * dz;
+        if (d > widest) {
+          widest = d;
+          ax = dx;
+          az = dz;
+        }
+      }
+    }
+    scratch.span.set(ax, 0, az);
     const spread = scratch.span.length();
     // Sit perpendicular to the line between the bots, pulled back with spread.
     const side = spread > 0.5
@@ -95,7 +127,7 @@ export function createCameraDirector(camera) {
   return {
     /** bots: [{position:{x,y,z}, yaw}, ...] from sim render state. */
     update(dt, bots) {
-      const mode = settings.cameraMode;
+      const mode = forceMode || settings.cameraMode;
       if (mode === "bot" && bots?.length) updateBot(dt, bots);
       else if (mode === "arena" || !bots?.length) updateArena(dt);
       else updateBattle(dt, bots);

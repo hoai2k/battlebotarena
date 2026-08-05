@@ -323,6 +323,95 @@
   align-items: stretch;
 }
 
+/* THREE AND FOUR PODS. The stage's default is the head-to-head pair with the
+   VS column between them; with more players the pods take one row of their own
+   and the VS column drops underneath as a strip, which is the same shape the
+   narrow-window layout already used. data-pods is set by ui/ui.js. */
+.select-stage[data-pods="3"],
+.select-stage[data-pods="4"] {
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: clamp(8px, 1.4vw, 18px);
+}
+
+.select-stage[data-pods="3"] {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-areas:
+    "p1 p2 p3"
+    "mid mid mid";
+}
+
+.select-stage[data-pods="4"] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-areas:
+    "p1 p2 p3 p4"
+    "mid mid mid mid";
+}
+
+.select-stage[data-pods="3"] .pod-player,
+.select-stage[data-pods="4"] .pod-player {
+  grid-area: p1;
+}
+
+.select-stage[data-pods="3"] .pod-rival,
+.select-stage[data-pods="4"] .pod-rival {
+  grid-area: p2;
+}
+
+.select-stage[data-pods="3"] .pod-p3,
+.select-stage[data-pods="4"] .pod-p3 {
+  grid-area: p3;
+}
+
+.select-stage[data-pods="4"] .pod-p4 {
+  grid-area: p4;
+}
+
+.select-stage[data-pods="3"] .select-mid,
+.select-stage[data-pods="4"] .select-mid {
+  grid-area: mid;
+  flex-direction: row;
+  gap: 18px;
+  padding: 2px 0 0;
+}
+
+/* THE FOOT ROW at three or four pods. A quarter-width pod cannot hold the badge,
+   the stat pips and the control legend on one line — they overlapped — so the
+   row wraps and centres, and every pod reads left-to-right (the rival pod's
+   mirrored layout is a two-pod idea: it exists so the pair face each other
+   across the VS column, and there is no pair here). */
+.select-stage[data-pods="3"] .pod-foot,
+.select-stage[data-pods="4"] .pod-foot {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 3px 10px;
+  min-height: 0;
+  padding-top: 6px;
+}
+
+.select-stage[data-pods="3"] .pod-controls,
+.select-stage[data-pods="4"] .pod-controls {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 2px 12px;
+  width: 100%;
+  margin: 0;
+}
+
+.select-stage[data-pods="4"] .pod-stats {
+  gap: 6px;
+}
+
+/* "VS" is a two-machine idea, and the orbit hint is the first thing worth
+   giving up for the height four pods need. */
+.select-stage[data-pods="3"] .vs-label,
+.select-stage[data-pods="4"] .vs-label,
+.select-stage[data-pods="4"] .pod-controls-hint {
+  display: none;
+}
+
 .preview-pod {
   --accent: var(--muted);
   position: relative;
@@ -378,6 +467,14 @@
   left: var(--cut);
   --role-color: linear-gradient(180deg, var(--red-hot), var(--red));
   color: #fff;
+}
+
+.pod-p3 .pod-plate::before {
+  background: linear-gradient(180deg, #a45cf0, rgba(90, 40, 150, 0.5));
+}
+
+.pod-p4 .pod-plate::before {
+  background: linear-gradient(180deg, #4bd6a0, rgba(20, 110, 80, 0.5));
 }
 
 .pod-rival .pod-plate::before {
@@ -823,7 +920,9 @@
 }
 
 .bot-card.is-player,
-.bot-card.is-rival {
+.bot-card.is-rival,
+.bot-card.is-p3,
+.bot-card.is-p4 {
   border-color: transparent;
 }
 
@@ -839,6 +938,18 @@
     0 0 26px rgba(255, 185, 46, 0.3);
 }
 
+.bot-card.is-p3 {
+  box-shadow:
+    inset 0 0 0 2px #a45cf0,
+    0 0 26px rgba(164, 92, 240, 0.3);
+}
+
+.bot-card.is-p4 {
+  box-shadow:
+    inset 0 0 0 2px #4bd6a0,
+    0 0 26px rgba(75, 214, 160, 0.3);
+}
+
 .bot-card.is-player.is-rival {
   box-shadow:
     inset 0 0 0 2px var(--red),
@@ -847,7 +958,9 @@
 }
 
 .bot-card.is-player::after,
-.bot-card.is-rival::after {
+.bot-card.is-rival::after,
+.bot-card.is-p3::after,
+.bot-card.is-p4::after {
   position: absolute;
   top: 6px;
   right: 0;
@@ -869,6 +982,18 @@
   content: "RIVAL";
   color: #191203;
   background: linear-gradient(180deg, var(--yellow), var(--amber));
+}
+
+.bot-card.is-p3::after {
+  content: "P3";
+  color: #fff;
+  background: linear-gradient(180deg, #b478f5, #6c2fb0);
+}
+
+.bot-card.is-p4::after {
+  content: "P4";
+  color: #04211a;
+  background: linear-gradient(180deg, #6ef0be, #2aa87b);
 }
 
 .bot-card.is-player.is-rival::after {
@@ -1209,4 +1334,12 @@ body.is-duo .bot-card.is-rival::after {
 
 body.is-duo .bot-card.is-player.is-rival::after {
   content: "P1 + P2";
+}
+
+/* Three and four players: the flag on a card is whoever holds it. `is-taken`
+   carries the owning player in a data attribute rather than one class per
+   pairing — with four players the pairings are a combinatorial mess and the
+   only thing worth showing is the list. */
+body.is-duo .bot-card[data-owners]::after {
+  content: attr(data-owners);
 }

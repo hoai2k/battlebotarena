@@ -29,13 +29,32 @@ import { createWeaponInputShaper } from "./game/weaponControls.js";
 const bus = createEventBus();
 const stage = createRenderer(document.querySelector("#scene"));
 const cameraDirector = createCameraDirector(stage.camera);
-const chaseCameraA = createChaseCamera(stage.camera);
-const chaseCameraB = createChaseCamera(stage.cameraB);
+// One chase camera per local player. chaseCameras[0] drives stage.camera (the
+// same object the director uses when nobody is split-screening), so player one
+// keeps the audio listener and the wall-culling reference wherever they are.
+const chaseCameras = stage.playerCameras.map((camera) => createChaseCamera(camera));
+// The odd cell in a three-player grid: a wide shot of the whole fight, pinned
+// to battle framing regardless of what the camera setting says.
+const overviewDirector = createCameraDirector(stage.overviewCamera, { forceMode: "battle" });
 const effects = createEffects(stage.scene);
-const input = createInput({ on: bus.on, playerIndex: 0, gamepadIndex: 0 });
-// Second local player: activates automatically whenever a second gamepad is
-// connected; otherwise the rival stays AI-driven.
-const inputP2 = createInput({ on: bus.on, playerIndex: 1, gamepadIndex: 1 });
+// LOCAL PLAYERS. One per pad, up to four; a player exists exactly when their
+// pad is plugged in. Player one also has the keyboard, which is why a match
+// with no pads at all is still playable — bot 1 stays AI-driven there.
+const inputs = [0, 1, 2, 3].map((i) => createInput({ on: bus.on, playerIndex: i, gamepadIndex: i }));
+const input = inputs[0];
+
+/** Pads connected right now, dense — the same order game/input.js indexes by. */
+function padCount() {
+  if (typeof navigator === "undefined" || !navigator.getGamepads) return 0;
+  return Array.from(navigator.getGamepads() || []).filter(Boolean).length;
+}
+/** How many machines a match started NOW would have. Three and four pads make
+ *  three- and four-way fights; anything less is the classic pair. There is no
+ *  AI for the extra slots by design — a third machine exists because a third
+ *  person is holding a controller. */
+function matchBotCount() {
+  return Math.min(4, Math.max(2, padCount()));
+}
 // Music is app-level, not per-session: it follows EV.MATCH phases on the bus.
 const music = createMusic(bus);
 
@@ -55,7 +74,11 @@ const podEls = (side) => ({
 });
 const botPreview = createBotPreview({
   canvas: document.querySelector("#preview-canvas"),
-  pods: [podEls("player"), podEls("rival")],
+  // Four bays, built up front. The pods for players three and four are hidden
+  // until that many pads are plugged in, and a hidden pod measures zero, which
+  // the preview loop already treats as "scrolled away" and skips — so an unused
+  // bay costs a plinth in a scene nobody renders.
+  pods: [podEls("player"), podEls("rival"), podEls("p3"), podEls("p4")],
 });
 let arenaVisuals = null;
 let session = null; // { sim, match, botVisuals: [{group, parts, spec}], raf }
@@ -128,24 +151,37 @@ bus.on(EV.PART_BREAK, (event) => {
  *  synchronous chunks of match setup (model parsing, the settle loop). */
 const nextFrame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
 
-async function startMatch({ playerBotId, rivalBotId, difficulty }) {
+/**
+ * @param {{ botIds?: string[], playerBotId?: string, rivalBotId?: string,
+ *           humanCount?: number, difficulty?: string }} action
+ * `botIds` is the general form (2-4 machines, in bot order). The two named ids
+ * are the 1v1 shorthand the UI used before there were more than two, and the
+ * dev console still starts fights with them.
+ */
+async function startMatch({ botIds, playerBotId, rivalBotId, humanCount, difficulty }) {
   await endMatch();
   // Free the showcase's GPU copies while the arena runs; ui.js re-emits the
   // selection whenever the select screen is re-entered, so they reload from
   // cache on the way back.
   botPreview.unload();
-  const specs = [getBotSpec(playerBotId), getBotSpec(rivalBotId)];
+  const ids = botIds?.length >= 2 ? botIds.slice(0, 4) : [playerBotId, rivalBotId];
+  const specs = ids.map((id) => getBotSpec(id));
+  // Who is a person. Everything past `humans` is AI — which in practice is only
+  // ever bot 1 in a solo game, because three- and four-ways only exist when
+  // three and four pads are plugged in.
+  const humans = Math.min(specs.length, Math.max(0, humanCount ?? padCount()));
 
   // Bot models are the long pole: 10-17MB each, and both are needed before the
   // match can start. Aggregate the two downloads into one bar; if either
   // response has no content-length (chunked/gzipped) the whole bar goes
   // indeterminate rather than reporting a half-truth.
-  loader.show({ title: "Loading Bots", detail: `${specs[0].name} vs ${specs[1].name}`, progress: 0 });
-  const modelProgress = [0, 0];
+  loader.show({ title: "Loading Bots", detail: specs.map((s) => s.name).join(" vs "), progress: 0 });
+  const modelProgress = specs.map(() => 0);
   const reportModels = () => {
     const known = modelProgress.every((p) => typeof p === "number");
+    const total = modelProgress.reduce((sum, p) => sum + p, 0) / modelProgress.length;
     // Models occupy the first 80% of the bar; setup takes the rest.
-    loader.setProgress(known ? ((modelProgress[0] + modelProgress[1]) / 2) * 0.8 : null);
+    loader.setProgress(known ? total * 0.8 : null);
   };
   const botVisuals = await Promise.all(
     specs.map((spec, i) =>
@@ -172,6 +208,8 @@ async function startMatch({ playerBotId, rivalBotId, difficulty }) {
   loader.setProgress(0.84);
   await nextFrame();
   if (!arenaVisuals) arenaVisuals = createArenaVisuals(stage.scene);
+  // Where the start boxes go depends on how many machines are in the box.
+  arenaVisuals.setBotCount(specs.length);
 
   loader.setDetail("Starting physics");
   loader.setProgress(0.9);
@@ -193,14 +231,16 @@ async function startMatch({ playerBotId, rivalBotId, difficulty }) {
   loader.setDetail("Calibrating chassis");
   loader.setProgress(0.96);
   await nextFrame();
-  for (let i = 0; i < 150; i += 1) sim.stepFrame(1 / 60, [idleInput, idleInput]);
+  const idleInputs = specs.map(() => idleInput);
+  for (let i = 0; i < 150; i += 1) sim.stepFrame(1 / 60, idleInputs);
   // Average the last 30 frames so residual suspension oscillation cancels.
-  const settleSum = [0, 0];
+  const settleSum = specs.map(() => 0);
   for (let i = 0; i < 30; i += 1) {
-    sim.stepFrame(1 / 60, [idleInput, idleInput]);
+    sim.stepFrame(1 / 60, idleInputs);
     const state = sim.getRenderState();
-    settleSum[0] += state[0].position.y;
-    settleSum[1] += state[1].position.y;
+    specs.forEach((_, b) => {
+      settleSum[b] += state[b].position.y;
+    });
   }
   botVisuals.forEach((visual, i) => {
     const drop = settleSum[i] / 30;
@@ -210,7 +250,7 @@ async function startMatch({ playerBotId, rivalBotId, difficulty }) {
     });
   });
   sim.reset();
-  session = { sim, match, botVisuals, specs, difficulty, audio };
+  session = { sim, match, botVisuals, specs, difficulty, audio, humans, botIds: ids };
   // Frame the cameras around the bots that are actually in this match. The
   // radius comes off the LOADED model, not the catalog: bodyDims describe the
   // shell, and a bot's silhouette is mostly weapon — Mammoth's disc rides a
@@ -220,12 +260,13 @@ async function startMatch({ playerBotId, rivalBotId, difficulty }) {
     const sphere = new THREE.Box3().setFromObject(visual.group).getBoundingSphere(new THREE.Sphere());
     return sphere.radius || 0;
   });
-  chaseCameraA.setSubjectRadius(radii[0]);
-  chaseCameraB.setSubjectRadius(radii[1]);
+  radii.forEach((radius, i) => chaseCameras[i]?.setSubjectRadius(radius));
   cameraDirector.setSubjectRadius(Math.max(...radii));
-  cameraDirector.snapTo(sim.getRenderState());
-  chaseCameraA.snapTo(sim.getRenderState()[0]);
-  chaseCameraB.snapTo(sim.getRenderState()[1]);
+  overviewDirector.setSubjectRadius(Math.max(...radii));
+  const spawned = sim.getRenderState();
+  cameraDirector.snapTo(spawned);
+  overviewDirector.snapTo(spawned);
+  spawned.forEach((state, i) => chaseCameras[i]?.snapTo(state));
   loader.setProgress(1);
   loader.hide();
   match.start?.();
@@ -246,8 +287,8 @@ const ui = createUI({
     try {
       if (action.type === "startMatch") await startMatch(action);
       else if (action.type === "rematch" && session) await startMatch({
-        playerBotId: session.specs[0].id,
-        rivalBotId: session.specs[1].id,
+        botIds: session.botIds,
+        humanCount: session.humans,
         difficulty: session.difficulty,
       });
       else if (action.type === "previewSelection") {
@@ -293,24 +334,48 @@ const playerWeapons = createWeaponInputShaper();
 let lastInputs = null;
 const shapePlayerInput = (raw, spec, slot) => playerWeapons.shape(raw, spec, slot);
 let splitActive = false;
+let splitViews = 0;
+
+/** The machine an AI-driven bot should be looking at: whoever is closest. With
+ *  two bots that is the other one, which is all this was ever asked for. */
+function nearestOther(states, self) {
+  let best = self === 0 ? 1 : 0;
+  let bestDistance = Infinity;
+  for (let i = 0; i < states.length; i += 1) {
+    if (i === self) continue;
+    const dx = states[i].position.x - states[self].position.x;
+    const dz = states[i].position.z - states[self].position.z;
+    const distance = dx * dx + dz * dz;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = i;
+    }
+  }
+  return states[best];
+}
 
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
   if (session) {
-    const rawP1 = input.readInput();
-    const p2Human = inputP2.hasGamepad();
-    const rawP2 = p2Human ? inputP2.readInput() : null;
-    if (rawP1.pausePressed || rawP2?.pausePressed) setPaused(!paused);
+    const botCount = session.specs.length;
+    // A player exists while their pad does. Player one is the exception: they
+    // have the keyboard too, so slot 0 is always human.
+    const raw = session.specs.map((_, i) =>
+      (i === 0 || inputs[i].hasGamepad()) ? inputs[i].readInput() : null);
+    if (raw.some((r) => r?.pausePressed)) setPaused(!paused);
 
     if (!paused) {
       const renderNow = session.sim.getRenderState();
-      const inputs = [
-        shapePlayerInput(rawP1, session.specs[0], 0),
-        p2Human
-          ? shapePlayerInput(rawP2, session.specs[1], 1)
-          : computeAiInput(renderNow[1], renderNow[0], session.specs[1], session.difficulty, dt),
-      ];
-      const filtered = session.match.filterInputs ? session.match.filterInputs(inputs) : inputs;
+      const frameInputs = session.specs.map((spec, i) => {
+        if (raw[i]) return shapePlayerInput(raw[i], spec, i);
+        // AI only ever fills bot 1 of a solo game — a third or fourth machine
+        // exists because a third or fourth person is holding a controller.
+        // Keyed by SLOT as well as by bot: with more than two machines the same
+        // model can appear twice, and a shared brain makes them one machine in
+        // two bodies.
+        return computeAiInput(renderNow[i], nearestOther(renderNow, i), spec, session.difficulty, dt, `${spec.id}#${i}`);
+      });
+      const filtered = session.match.filterInputs ? session.match.filterInputs(frameInputs) : frameInputs;
       lastInputs = filtered;
       session.sim.stepFrame(dt, filtered);
       session.match.update?.(dt);
@@ -335,36 +400,46 @@ function frame() {
     }
     arenaVisuals?.updateHazards(session.sim.getHazardState?.(), paused ? 0 : dt);
 
-    // Split-screen when both players are human AND bot camera is selected;
-    // otherwise the single director camera runs.
-    splitActive = p2Human && settings.cameraMode === "bot";
-    const mid = {
-      x: (renderState[0].position.x + renderState[1].position.x) / 2,
-      y: 0.6,
-      z: (renderState[0].position.z + renderState[1].position.z) / 2,
-    };
+    // SPLIT SCREEN. Two humans split only when the bot camera is selected —
+    // a shared battle cam frames a 1v1 perfectly well and some people prefer
+    // it. Three and four do not have that choice: one camera cannot follow
+    // four machines, and the whole reason a third player exists is that they
+    // are driving one of them.
+    splitViews = session.humans >= 3 ? session.humans : (session.humans >= 2 && settings.cameraMode === "bot" ? 2 : 0);
+    splitActive = splitViews >= 2;
+    const centre = { x: 0, y: 0.6, z: 0 };
+    for (const state of renderState) {
+      centre.x += state.position.x / renderState.length;
+      centre.z += state.position.z / renderState.length;
+    }
     if (splitActive) {
-      chaseCameraA.update(dt, renderState[0]);
-      chaseCameraB.update(dt, renderState[1]);
-      // Both viewports contribute: a wall blocking EITHER player's shot hides.
-      arenaVisuals?.updateVisibility([
-        { position: stage.camera.position, target: renderState[0].position },
-        { position: stage.cameraB.position, target: renderState[1].position },
-      ]);
+      const views = [];
+      for (let i = 0; i < splitViews; i += 1) {
+        chaseCameras[i].update(dt, renderState[i]);
+        views.push({ position: stage.playerCameras[i].position, target: renderState[i].position });
+      }
+      // Three players leave a quadrant over; it holds a wide shot of everyone.
+      if (splitViews === 3) {
+        overviewDirector.update(dt, renderState);
+        views.push({ position: stage.overviewCamera.position, target: centre });
+      }
+      // Every viewport contributes: a wall blocking ANY player's shot hides.
+      arenaVisuals?.updateVisibility(views);
     } else if (settings.cameraMode === "bot") {
       // Single-player bot cam uses the same v1-damped chase as split screen.
-      chaseCameraA.update(dt, renderState[0]);
+      chaseCameras[0].update(dt, renderState[0]);
       arenaVisuals?.updateVisibility({ position: stage.camera.position, target: renderState[0].position });
     } else {
       cameraDirector.update(dt, renderState);
-      arenaVisuals?.updateVisibility({ position: stage.camera.position, target: mid });
+      arenaVisuals?.updateVisibility({ position: stage.camera.position, target: centre });
     }
   } else {
     splitActive = false;
+    splitViews = 0;
     cameraDirector.update(dt, null);
   }
   effects.update(paused ? 0 : dt);
-  if (splitActive) stage.renderSplit();
+  if (splitActive) stage.renderSplit(splitViews);
   else stage.render();
   requestAnimationFrame(frame);
 }
@@ -383,6 +458,14 @@ window.__bba2 = {
     return session?.match.getState?.();
   },
   camera: stage.camera,
+  // How many machines a match started right now would have, and how the screen
+  // would be carved up for them. Both are pad-count derived and invisible from
+  // the DOM, so a probe has no other way to check them.
+  matchBotCount,
+  padCount,
+  get splitViews() {
+    return splitViews;
+  },
   botPreview,
   music,
   effects,

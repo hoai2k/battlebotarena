@@ -155,10 +155,16 @@ export function describeWeaponControls(spec) {
  * the sim consumes: `{ ...raw, weapon, sawActive, auxActive, brake }`.
  */
 export function createWeaponInputShaper() {
-  const weaponLatch = [false, false];
-  const sawLatch = [false, false];
-  const prevWeaponDown = [false, false];
-  const prevAltDown = [false, false];
+  // One entry per SLOT: bot 0..3 in a match, bay 0..3 in the select screen's
+  // viewer. Sized for the biggest local game rather than for a pair — a slot
+  // past the end reads `undefined` for its latch, which is a weapon that
+  // silently never toggles.
+  const SLOTS = 4;
+  const blank = () => new Array(SLOTS).fill(false);
+  const weaponLatch = blank();
+  const sawLatch = blank();
+  const prevWeaponDown = blank();
+  const prevAltDown = blank();
 
   function shape(rawIn, spec, slot) {
     const raw = mapDrive(rawIn, spec);
@@ -219,7 +225,7 @@ export function createWeaponInputShaper() {
   }
 
   function reset(slot = null) {
-    const slots = slot === null ? [0, 1] : [slot];
+    const slots = slot === null ? weaponLatch.map((_, i) => i) : [slot];
     for (const i of slots) {
       weaponLatch[i] = false;
       sawLatch[i] = false;

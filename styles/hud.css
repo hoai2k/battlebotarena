@@ -15,6 +15,20 @@
   padding: 16px clamp(14px, 2.4vw, 30px) 0;
 }
 
+/* Each side of the clock is a COLUMN, so a three- or four-way stacks the extra
+   machines under the ones already there rather than squeezing the row. With two
+   players there is one panel a side and this is invisible. */
+.hud-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.hud-side-right {
+  align-items: flex-end;
+}
+
 .hud-bot {
   --accent: var(--muted);
   position: relative;
@@ -30,15 +44,57 @@
   clip-path: polygon(0 0, 100% 0, calc(100% - 16px) 100%, 0 100%);
 }
 
-.hud-bot-rival {
+.hud-bot-rival,
+.hud-bot-p4 {
   justify-self: end;
   align-items: flex-end;
   width: 100%;
   clip-path: polygon(0 0, 100% 0, 100% 100%, 16px 100%);
 }
 
-.hud-bot-player {
+.hud-bot-player,
+.hud-bot-p3 {
   width: 100%;
+}
+
+/* PLAYERS THREE AND FOUR sit at the BOTTOM corners, not stacked under one and
+   two. Three or four machines always means a 2x2 split screen (main.js), and
+   those two are watching the bottom quadrants — a panel over someone else's
+   viewport telling you about a bot you cannot see there is worse than no panel.
+   Taken out of the flow, so each .hud-side is one panel again. */
+.hud-bot-p3,
+.hud-bot-p4 {
+  position: fixed;
+  bottom: clamp(10px, 2vh, 22px);
+  width: min(38vw, 430px);
+  padding: 7px 14px 9px;
+}
+
+.hud-bot-p3 {
+  left: clamp(14px, 2.4vw, 30px);
+}
+
+.hud-bot-p4 {
+  right: clamp(14px, 2.4vw, 30px);
+}
+
+.hud-bot-p3 .hud-bot-name,
+.hud-bot-p4 .hud-bot-name {
+  font-size: clamp(0.85rem, 1.4vw, 1.1rem);
+}
+
+/* The keyboard hint lives in the bottom-right corner, which is player four's
+   panel in a four-way — and a four-way is all pads by definition. */
+.hud-top[data-bots="3"] ~ .hud-hint,
+.hud-top[data-bots="4"] ~ .hud-hint {
+  display: none;
+}
+
+/* A machine that is out stays on the bar — you want to see who is left — but
+   it stops competing for attention with the ones still fighting. */
+.hud-bot.is-out {
+  opacity: 0.42;
+  filter: grayscale(0.7);
 }
 
 .hud-bot::before {
@@ -60,7 +116,16 @@
   --team: var(--amber);
 }
 
-.hud-bot-rival::before {
+.hud-bot-p3 {
+  --team: #a45cf0;
+}
+
+.hud-bot-p4 {
+  --team: #4bd6a0;
+}
+
+.hud-bot-rival::before,
+.hud-bot-p4::before {
   left: auto;
   right: 0;
 }
@@ -97,7 +162,8 @@
   transition: transform 0.25s ease-out;
 }
 
-.hud-bot-rival .hud-damage-fill {
+.hud-bot-rival .hud-damage-fill,
+.hud-bot-p4 .hud-damage-fill {
   transform-origin: right center;
   background: linear-gradient(270deg, #ffb92e 0%, #ff7a1f 45%, var(--red-hot) 75%, #ff2f1f 100%);
 }

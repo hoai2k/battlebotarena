@@ -329,7 +329,15 @@ export function getBotCard(id) {
  * from the Random slot — a deliberate booking decision).
  * @param {string|null} excludeId
  */
-export function pickRandomBotId(excludeId = null) {
-  const pool = BOT_CARDS.filter((c) => c.id !== excludeId);
-  return pool[Math.floor(Math.random() * pool.length)].id;
+/**
+ * @param {string|string[]|null} exclude ids already taken. A LIST, because with
+ *   three or four players there is more than one machine Random must not hand
+ *   you — passing an array used to compare it against a string and match
+ *   nothing, so a four-way could roll a bot somebody else already had.
+ */
+export function pickRandomBotId(exclude = null) {
+  const taken = new Set(Array.isArray(exclude) ? exclude : exclude ? [exclude] : []);
+  const pool = BOT_CARDS.filter((c) => !taken.has(c.id));
+  const list = pool.length ? pool : BOT_CARDS;
+  return list[Math.floor(Math.random() * list.length)].id;
 }
