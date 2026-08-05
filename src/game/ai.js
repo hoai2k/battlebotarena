@@ -251,9 +251,15 @@ export function computeAiInput(selfState, foeState, spec, difficulty = "normal",
     }
     weapon = ai.t - ai.lastFireAt < 0.25; // hold through the stroke window
   } else if (type === "crusher") {
-    // Latch on contact range and hold the clamp.
-    if (distance < strikeRange * 0.7) ai.latchedUntil = ai.t + 1.6;
-    weapon = ai.t < ai.latchedUntil;
+    // Bite, hold, let go, bite again. A crusher can only START a bite while its
+    // jaw is still closing (sim/weapons.js), so a trigger held down forever gets
+    // one grip and then never gets another — and a driver does not hold it down
+    // forever either. 1.5s clamped, 0.5s open, on a rolling cycle that only runs
+    // while there is something in reach.
+    // A new cycle only starts when the last one has run out, or the refresh
+    // holds the trigger down forever and the jaw never reopens to bite again.
+    if (distance < strikeRange * 0.7 && ai.t > ai.latchedUntil) ai.latchedUntil = ai.t + 2.0;
+    weapon = ai.latchedUntil - ai.t > 0.5; // shut for the first 1.5s of every 2
     if (weapon && distance < 2.2) throttleScale = 0.45; // stay planted while biting
   } else if (type === "hammerSaw") {
     // Close in, then rhythmic swings while on target.

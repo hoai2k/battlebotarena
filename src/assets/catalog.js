@@ -405,7 +405,16 @@ export const CATALOG = {
       // its underside sits 0.035ft off the deck, and dropping it further just
       // parks the chassis on the wedge and unloads the suspension probes
       // (2s of full throttle moved 0.13ft instead of 19ft).
-      { shape: "box", halfExtents: { x: 1.1002, y: 0.2666, z: 0.8129 }, offset: { x: 0, y: 0.383, z: -1.0011 } }, // front wedge
+      // A WEDGE, and the comment above it always said so — it was a box. The
+      // lower jaw is a broad black scoop running the full width of the nose from
+      // a knife edge on the floor up to the mouth, and it is how a crusher gets
+      // anything into that mouth: the bot has to come UP the plow. As a box it
+      // was a 0.53ft step that opponents bounced off. Base moved to the floor,
+      // which is what a plow's edge does; the top is where it was.
+      // Base at 0.09 rather than on the floor: Quantum rests lower than most of
+      // the roster and a plow edge at y=0 scrapes through it (see the note above
+      // about parking the chassis on its own wedge).
+      { shape: "wedge", halfExtents: { x: 1.1002, y: 0.28, z: 0.8129 }, offset: { x: 0, y: 0.37, z: -1.0011 }, tipY: 0.02 },
       { shape: "box", halfExtents: { x: 1.0022, y: 0.1284, z: 0.9739 }, offset: { x: 0, y: 0.2253, z: 0.4951 } },
       { shape: "box", halfExtents: { x: 1.0338, y: 0.2394, z: 0.925 }, offset: { x: 0, y: 0.5659, z: 0.2721 } }, // merged mid+rear decks
     ],
@@ -859,7 +868,13 @@ export const CATALOG = {
       tuning: { reach: 1.8421, holdDamagePerSecond: 0 },
     },
     colliders: [
-      { shape: "box", halfExtents: { x: 1.3158, y: 0.3158, z: 1.7369 }, offset: { x: 0, y: 0.3553, z: 0.2895 } },
+      // restAngle says the forks lie flat on the deck and that they ARE the
+      // wedge — and then the front of the machine was a box, so nothing could
+      // ride them. The first 1ft of that box is now the slope it always
+      // described; the rest of the chassis is the box it was, starting where the
+      // forks end.
+      { shape: "wedge", halfExtents: { x: 1.3158, y: 0.3355, z: 0.5 }, offset: { x: 0, y: 0.3355, z: -0.9474 }, tipY: 0.02 },
+      { shape: "box", halfExtents: { x: 1.3158, y: 0.3158, z: 1.2369 }, offset: { x: 0, y: 0.3553, z: 0.7895 } },
       { shape: "box", halfExtents: { x: 0.7895, y: 0.2105, z: 0.9211 }, offset: { x: 0, y: 0.8947, z: 0.7895 } },
     ],
   },
@@ -1950,7 +1965,7 @@ export const CATALOG = {
     // — so the mirror changed Glitch's shape without changing how much arena he
     // takes up, and realWorld.size below now quotes the scan rather than the
     // class guess.
-    modelScale: 2.8636,
+    modelScale: 3.4363,
     hideWheels: true, // four omniwheels in an X-drive, tucked under the wedge
     // --- the real machine ---------------------------------------------
     // battlebots.com files the weapon as a vertical bar spinner; the team and
@@ -1971,26 +1986,30 @@ export const CATALOG = {
       // 9 inches tall is 6.4 cu ft for 250lb, or 39 lb/cu ft, against 33 for
       // Duck and 30 for Copperhead. Duck is the fair comparison — the only
       // other bot this flat — and Glitch has to fit everything Duck does PLUS a
-      // 58lb drum and its motor into LESS box. 3.45ft puts it at 28 lb/cu ft,
-      // level with HyperShock, and makes it the widest bot outside the four
-      // giants while staying one of the shortest, which is the machine.
-      size: { widthFt: 3.45, lengthFt: 3.0408, heightFt: 0.8519, source: "scan" },
+      // 58lb drum and its motor into LESS box.
+      //
+      // 3.086 -> 3.45 on that reasoning, then 3.45 -> 4.14 on the look of it in
+      // the arena, which is the check no arithmetic replaces. It is now the
+      // third widest machine here behind HUGE and Mammoth and ahead of Deep
+      // Six, at 16 lb/cu ft — mid-pack density rather than the outlier it was —
+      // and still one of the shortest, which is the shape of the machine.
+      size: { widthFt: 4.14, lengthFt: 3.649, heightFt: 1.0223, source: "scan" },
       weapon: { name: "Eggbeater drum", weightLbs: 58, tipSpeedMph: 180, rpm: null },
       drive: "4x Scorpion SII-4035-450KV (X-drive omni)", power: null,
     },
 
     weightLbs: 250,
     weaponWeightLbs: 58,
-    bodyDims: { x: 3.45, y: 0.7501, z: 3.0408 }, // MEASURED after glitch-mirror.json: flat delta, and the plate is only 8in thick
+    bodyDims: { x: 4.14, y: 0.9001, z: 3.649 }, // MEASURED after glitch-mirror.json: flat delta, and the plate is only 8in thick
     // Moved with the body: x out by the same 6.4% the mirror widened it, z in
     // by the 5.7% it shortened. y is NOT a length on the bot — it is the
     // suspension probe origin against sim/vehicle.js's fixed 0.45ft travel —
     // so it does not scale with the model.
     wheelAnchors: [
-      { x: -1.3684, y: 0.21, z: -1.1068 },
-      { x: 1.3684, y: 0.21, z: -1.1068 },
-      { x: -1.3684, y: 0.21, z: 1.1068 },
-      { x: 1.3684, y: 0.21, z: 1.1068 },
+      { x: -1.6421, y: 0.21, z: -1.3282 },
+      { x: 1.6421, y: 0.21, z: -1.3282 },
+      { x: -1.6421, y: 0.21, z: 1.3282 },
+      { x: 1.6421, y: 0.21, z: 1.3282 },
     ],
     maxSpeedFps: mph(6.96), // 10.21 fps
     accel: 6,
@@ -2004,7 +2023,7 @@ export const CATALOG = {
     drive: { type: "holonomic", strafeRatio: 0.9, pushForceScale: 0.4 },
     weapon: {
       type: "drum",
-      pivot: { x: 0, y: 0.4919, z: -0.2683 }, // MEASURED best-fit drum axle, game space
+      pivot: { x: 0, y: 0.5903, z: -0.322 }, // MEASURED best-fit drum axle, game space
       // MEASURED, and now exactly transverse with no residual tilt: after
       // glitch-mirror.json the drum is symmetric about the centreline, and a
       // shape symmetric about a plane perpendicular to X cannot carry an axle
@@ -2032,8 +2051,8 @@ export const CATALOG = {
       // swept radius, which is not a change to the machine: the old figure came
       // off a single ragged spike in the sector the scan never resolved, and
       // that sector is now a copy of the lobe the scan DID resolve.
-      radius: 0.4449, // MEASURED swept radius about the axle
-      dims: { x: 0.3935, y: 0.36, z: 0.3958 }, // MEASURED half-extents; only .x is read (half the drum's length along its axle)
+      radius: 0.5339, // MEASURED swept radius about the axle
+      dims: { x: 0.4722, y: 0.432, z: 0.475 }, // MEASURED half-extents; only .x is read (half the drum's length along its axle)
     },
     // The nose is a WEDGE: it is the whole point of the machine, and test 16
     // requires nothing but a wedge ahead of the drum's leading edge, now
@@ -2046,9 +2065,9 @@ export const CATALOG = {
     // right of the centreline, and the bot no longer has a right and a left.
     // The third box is the drum bay, which is why it had the largest one.
     colliders: [
-      { shape: "wedge", halfExtents: { x: 1.5461, y: 0.1286, z: 0.4215 }, offset: { x: 0, y: 0.1286, z: -1.2856 }, tipY: 0.0212 },
-      { shape: "box", halfExtents: { x: 1.725, y: 0.2146, z: 0.8429 }, offset: { x: 0, y: 0.2146, z: 0.1688 } },
-      { shape: "box", halfExtents: { x: 0.5355, y: 0.2146, z: 0.2113 }, offset: { x: 0, y: 0.5914, z: -0.3689 } },
+      { shape: "wedge", halfExtents: { x: 1.8553, y: 0.1543, z: 0.5058 }, offset: { x: 0, y: 0.1543, z: -1.5427 }, tipY: 0.0254 },
+      { shape: "box", halfExtents: { x: 2.07, y: 0.2575, z: 1.0115 }, offset: { x: 0, y: 0.2575, z: 0.2026 } },
+      { shape: "box", halfExtents: { x: 0.6426, y: 0.2575, z: 0.2536 }, offset: { x: 0, y: 0.7097, z: -0.4427 } },
     ],
   },
 
@@ -2227,7 +2246,15 @@ export const CATALOG = {
     // a scan artifact rather than the machine — authored to the floor so it
     // works as the wedge it is.
     colliders: [
-      { shape: "wedge", halfExtents: { x: 0.3792, y: 0.1785, z: 0.5354 }, offset: { x: 0, y: 0.1785, z: -1.1154 }, tipY: 0.0223 },
+      // The lower jaw. It used to be 0.76ft wide — the red tongue in the
+      // reference photo and nothing else — which is a quarter of the nose, so an
+      // opponent met the vertical box behind it unless it happened to line up
+      // with the middle of the mouth. The tongue is only the MIDDLE of a sloped
+      // face that runs the width of the machine: green side wedges either side
+      // of it, all climbing from a knife edge on the floor to the mouth. That
+      // whole face is the wedge, and getting under a bot is how Kraken gets one
+      // into the jaw at all.
+      { shape: "wedge", halfExtents: { x: 1.22, y: 0.31, z: 0.62 }, offset: { x: 0, y: 0.31, z: -1.16 }, tipY: 0.02 },
       { shape: "box", halfExtents: { x: 1.0596, y: 0.6135, z: 0.6135 }, offset: { x: 0, y: 0.6135, z: -0.5019 } },
       { shape: "box", halfExtents: { x: 1.45, y: 0.5019, z: 0.6915 }, offset: { x: 0, y: 0.5019, z: 0.4685 } },
       { shape: "box", halfExtents: { x: 1.0262, y: 0.3681, z: 0.6469 }, offset: { x: 0, y: 0.3681, z: 1.3608 } },

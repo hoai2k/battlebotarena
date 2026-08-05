@@ -498,8 +498,20 @@ export function createVehicle({ world, meta, spec, index, spawn }) {
         // an opponent while circling — which is the entire reason a combat
         // robot fits omniwheels, and why Glitch is "always pointed at you".
         if (holonomic) {
-          yawRate = -input.spin * T.baseTurnRate * turnScale
-            * (Math.abs(input.spin) > 0.55 ? T.counterRotateBoost : 1);
+          // PROPORTIONAL, with nothing stepped in it. The rate used to jump by
+          // counterRotateBoost the moment |spin| crossed 0.55, so the stick had
+          // a cliff in the middle of its travel: one o'clock and two o'clock
+          // asked for the same rotation until you crossed the line, and then it
+          // leapt. A stick pushed to twelve holds the bot straight, three
+          // o'clock turns it as fast as it turns, and everything between is the
+          // fraction it looks like — which is the whole point of putting yaw on
+          // its own axis.
+          //
+          // spinScale halves what that used to be. An X-drive commands yaw
+          // directly rather than through a speed difference across a track pair,
+          // so the same tuning that makes a tank bot's turn feel right makes an
+          // omni bot pirouette.
+          yawRate = -input.spin * T.baseTurnRate * turnScale * (spec.drive?.spinScale ?? 0.5);
           // Same ceiling the tank pair gets when it counter-rotates. Without it
           // a fast X-drive on full stick was commanded nearly three revolutions
           // a second — the rate is the product of the bot's top speed and its

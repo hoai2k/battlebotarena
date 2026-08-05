@@ -32,6 +32,12 @@ export const WEAPON_TUNING = Object.freeze({
   flipperImpulseDir: { up: 1, forward: 0.45 },
   flipperRecoilFraction: 0.3,
   crusherTickSeconds: 0.25,
+  // How far the jaw may already be shut and still start a bite. The stroke
+  // closes over 0.25s, so this is a window of about a fifth of a second from the
+  // moment the trigger goes down — enough that pressing with a bot in the mouth
+  // always takes, and short enough that a jaw held closed cannot collect
+  // whatever it drives into.
+  crusherBiteStroke: 0.85,
   // --- self-righting ---------------------------------------------------------
   // A bot on its back is not out of the fight: any arm that can reach the floor
   // shoves against it, and a spun-up rotor can be walked over by throwing the
@@ -764,7 +770,14 @@ function createCrusher({ vehicle, index, emit }) {
     update(dt, fire, ctx) {
       const { foe, simTime } = ctx;
       const local = toLocal(vehicle, foe.body.translation());
-      const inZone = fire && localZoneContains(zone, local);
+      // A bite is the jaw CLOSING on something. `stroke` is 0 with the mouth
+      // open and 1 with it shut, so a crusher whose trigger is already held down
+      // has stroke 1 and cannot start a new bite — it has to be opened and shut
+      // again. Without that gate, holding the button parked the jaw closed and
+      // every bot Kraken bumped into counted as bitten, which is a crusher that
+      // does its damage by driving into people.
+      const biting = stroke < TU.crusherBiteStroke;
+      const inZone = fire && biting && localZoneContains(zone, local);
       if (inZone && !engaged) {
         engaged = true;
         emit(EV.WEAPON_FIRED, { botIndex: index, weaponType: "crusher" });

@@ -21,7 +21,7 @@ export const WEDGE_TUNING = Object.freeze({
   // Share of the victim's weight the wedge can carry at full closing speed. Below
   // 1 a wedge alone never fully lifts a bot — it unweights them, which is what
   // makes them easy to shove and easy to feed to a weapon.
-  liftFraction: 0.85,
+  liftFraction: 1.15,
   closingSpeedFull: 5.0, // ft/s of approach for full effect
   minClosingSpeed: 0.6, // below this the wedge is just resting against them
   ownerReactionShare: 0.6, // how much of the reaction plants the wedge's owner
@@ -52,13 +52,23 @@ export function createWedges({ world, meta, vehicles }) {
             const foe = vehicles[info.botIndex];
             if (!foe) return;
 
+            // Two wedges meeting is a stalemate, not a ride. Both are on the
+            // floor, neither can get under the other, and in the sport that is
+            // exactly what happens: they bounce off each other and go round for
+            // a better angle. Lifting here made every wedge-on-wedge exchange a
+            // pair of bots levitating each other.
+            if (info.surface === "wedge") return;
+
             // Only the closing component counts, so a wedge cannot levitate a
             // bot it is being pushed away from.
             const closing = m.dot(m.sub(vehicle.body.linvel(), foe.body.linvel()), forward);
             if (closing < T.minClosingSpeed) return;
             const drive = m.clamp(closing / T.closingSpeedFull, 0, 1);
 
-            const contact = contactPointBetween(world, wedge, other);
+            // 0.06ft of slack: this runs BEFORE world.step, so it is asking
+            // about last step's manifolds, and a pair that is genuinely riding
+            // up a slope is frequently a hair apart at the moment it is asked.
+            const contact = contactPointBetween(world, wedge, other, 0.06);
             if (!contact) return;
 
             const lift = foe.mass * 32.174 * T.liftFraction * drive * dt;
