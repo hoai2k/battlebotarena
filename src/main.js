@@ -382,6 +382,7 @@ window.__bba2 = {
   },
   camera: stage.camera,
   botPreview,
+  music,
   effects,
   // Boot straight into a fight without clicking through the menus, so a
   // headless browser can verify that a bot actually renders and drives rather

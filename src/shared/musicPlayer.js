@@ -5,14 +5,22 @@
 // waiting on a full decode. Volume is faded manually on a timer, which keeps
 // the module independent of any AudioContext (v1 and v2 each own their own).
 //
-// Two cues: "countdown" during the pre-fight countdown, "battle" once fighting
-// starts. Tracks are picked at random within a cue, avoiding an immediate
-// repeat, and battle tracks loop until the round ends.
+// Three cues: "menu" under the title and bot-select screens, "countdown" during
+// the pre-fight countdown, "battle" once fighting starts. Tracks are picked at
+// random within a cue, avoiding an immediate repeat, and both the menu and
+// battle cues loop.
 
 const DEFAULT_TRACKS = {
+  menu: ["Battle Bots Arena Anthem.mp3"],
   countdown: ["Steel Countdown.mp3", "Steel Countdown 2.mp3"],
   battle: ["Iron Circuit Rush.mp3", "Iron Circuit Rush 2.mp3", "Steel Arena.mp3", "Steel Arena 2.mp3"],
 };
+
+// Per-cue level, as a fraction of the player's peak. The menu cue is BEHIND
+// something — a screen you are reading and clicking around — rather than the
+// thing you are doing, so it sits lower than the fight. Kept as a fraction so
+// it tracks the master volume instead of having to be re-tuned alongside it.
+const DEFAULT_CUE_VOLUME = { menu: 0.62 };
 
 const FADE_INTERVAL_MS = 50;
 
@@ -22,10 +30,23 @@ const FADE_INTERVAL_MS = 50;
  * @param {number} [options.volume]  Peak volume for music (0..1).
  * @param {() => boolean} options.isEnabled  Gate checked before playing.
  */
-export function createMusicPlayer({ basePath, volume = 0.55, isEnabled = () => true, tracks = DEFAULT_TRACKS } = {}) {
+export function createMusicPlayer({
+  basePath,
+  volume = 0.55,
+  isEnabled = () => true,
+  tracks = DEFAULT_TRACKS,
+  cueVolume = DEFAULT_CUE_VOLUME,
+} = {}) {
   let current = null; // { audio, cue, fadeTimer }
   let lastTrackByCue = {};
   let peakVolume = volume;
+  let duck = 1;
+
+  /** The level THIS cue plays at: master, scaled by the cue's own share, and
+   *  by whatever the game has ducked to. */
+  function peakFor(cue) {
+    return peakVolume * (cueVolume[cue] ?? 1) * duck;
+  }
 
   function urlFor(cue) {
     const list = tracks[cue] || [];
@@ -88,14 +109,14 @@ export function createMusicPlayer({ basePath, volume = 0.55, isEnabled = () => t
       const previous = current;
       const audio = new Audio(url);
       audio.loop = loop;
-      audio.volume = fadeIn > 0 ? 0 : peakVolume;
+      audio.volume = fadeIn > 0 ? 0 : peakFor(cue);
       audio.preload = "auto";
       const entry = { audio, cue, fadeTimer: null };
       current = entry;
       // Autoplay can still reject if no gesture has happened yet; the next cue
       // change (or the sound toggle) retries, so a rejection is not fatal.
       audio.play().then(() => {
-        if (current === entry && fadeIn > 0) fade(entry, peakVolume, fadeIn);
+        if (current === entry && fadeIn > 0) fade(entry, peakFor(cue), fadeIn);
       }).catch(() => {});
       if (previous) stopEntry(previous, fadeOut);
     },
@@ -107,14 +128,15 @@ export function createMusicPlayer({ basePath, volume = 0.55, isEnabled = () => t
 
     /** Duck to a fraction of peak (e.g. under a KO callout) and back. */
     setDuck(amount = 1, seconds = 0.4) {
-      if (current) fade(current, peakVolume * amount, seconds);
+      duck = Math.max(0, Math.min(1, amount));
+      if (current) fade(current, peakFor(current.cue), seconds);
     },
 
     setVolume(value) {
       peakVolume = Math.max(0, Math.min(1, value));
       if (current?.audio) {
         clearFade(current);
-        current.audio.volume = peakVolume;
+        current.audio.volume = peakFor(current.cue);
       }
     },
 
@@ -125,6 +147,13 @@ export function createMusicPlayer({ basePath, volume = 0.55, isEnabled = () => t
 
     get currentCue() {
       return current?.cue || null;
+    },
+
+    /** What the cue playing right now is actually at. Read-only, for tuning:
+     *  the menu cue is meant to sit well under the fight and that is a number
+     *  you want to be able to check rather than argue about. */
+    get currentVolume() {
+      return current?.audio ? current.audio.volume : 0;
     },
   };
 }
