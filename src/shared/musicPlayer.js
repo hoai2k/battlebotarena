@@ -16,11 +16,16 @@ const DEFAULT_TRACKS = {
   battle: ["Iron Circuit Rush.mp3", "Iron Circuit Rush 2.mp3", "Steel Arena.mp3", "Steel Arena 2.mp3"],
 };
 
+/** How far the music drops when the game pauses. Exported because the menu cue
+ *  is set to the same level and the two must not drift: pausing is the game
+ *  stepping back to let you think, and a menu is the same thing for longer. */
+export const PAUSE_DUCK = 0.25;
+
 // Per-cue level, as a fraction of the player's peak. The menu cue is BEHIND
 // something — a screen you are reading and clicking around — rather than the
-// thing you are doing, so it sits lower than the fight. Kept as a fraction so
-// it tracks the master volume instead of having to be re-tuned alongside it.
-const DEFAULT_CUE_VOLUME = { menu: 0.62 };
+// thing you are doing, so it sits where a paused game sits. Kept as a fraction
+// so it tracks the master volume instead of having to be re-tuned alongside it.
+const DEFAULT_CUE_VOLUME = { menu: PAUSE_DUCK };
 
 const FADE_INTERVAL_MS = 50;
 
