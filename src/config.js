@@ -29,12 +29,53 @@
 // ============================================================================
 
 export const CONFIG = {
+  // ---------------------------------------------------------------------- mix
+  // THE BALANCE BETWEEN THE SOUNDTRACK AND THE FIGHT. One place, because the
+  // question a person actually has is never "how loud is the music" — it is
+  // "how loud is the music COMPARED TO the hits", and answering that from two
+  // numbers in two sections is how a mix drifts.
+  //
+  // Everything is 0..1 and everything below is a fraction of `master`, so
+  // raising the master lifts the whole game and keeps the balance intact.
+  // The sound ON/OFF toggle is a separate, harder gate: off is off.
+  mix: {
+    /** Everything the game plays sits under this. */
+    master: 1,
+
+    /** The fight: impacts, weapons, motors, hazards. Louder than the score
+     *  because it is the thing you are DOING — the score is what it happens
+     *  over. This is the number to drop if the clangs are burying the music. */
+    sfx: 1,
+
+    /** The soundtrack, as a share of the master. Half the level of the fight:
+     *  a spinner hit has to be able to land ON something. */
+    music: 0.5,
+
+    /** The crowd bed. Deliberately quiet — it is the room the fight is in, not
+     *  a participant, and it is the first thing that sounds fake when it is up
+     *  too loud. Its own knob because it is the layer people most often want
+     *  gone without touching anything else. */
+    crowd: 0.35,
+
+    /** Announcer callouts, over the top of both. Slightly hot on purpose:
+     *  a callout that loses to a spinner is a callout nobody hears. */
+    announcer: 0.9,
+
+    /** Menu and HUD clicks. Under everything — UI that competes with the game
+     *  is UI that gets turned off. */
+    ui: 0.5,
+  },
+
   // -------------------------------------------------------------------- music
   // Levels are 0..1. The cue levels are FRACTIONS OF `masterVolume`, not
   // absolute — so raising the master lifts the whole score and keeps the mix.
   music: {
-    /** Peak level for the loudest cue (the fight). Everything else is under it. */
-    masterVolume: 0.5,
+    /** Peak level for the loudest cue (the fight). Derived from `mix` above so
+     *  the music/SFX balance has exactly one home; override it here only if you
+     *  want the score off the shared master entirely. */
+    get masterVolume() {
+      return CONFIG.mix.master * CONFIG.mix.music;
+    },
 
     /** Each cue's share of the master. 1 = as loud as the master allows. */
     cueVolume: {
@@ -63,11 +104,42 @@ export const CONFIG = {
 
   // -------------------------------------------------------------------- audio
   audio: {
-    /** Master level for the procedural sound effects, 0..1. Independent of
-     *  `music.masterVolume` — this is the lever for "the clangs are drowning
-     *  out the soundtrack" (or the other way round). The sound ON/OFF toggle in
-     *  the game is separate and still wins: off is off. */
-    sfxVolume: 1,
+    /** Master level for the sound effects, 0..1. Comes from `mix` above, which
+     *  is where the SFX-vs-music balance is set. */
+    get sfxVolume() {
+      return CONFIG.mix.master * CONFIG.mix.sfx;
+    },
+
+    /** Crowd bed level, and the announcer's, on the same footing. */
+    get crowdVolume() {
+      return CONFIG.mix.master * CONFIG.mix.crowd;
+    },
+    get announcerVolume() {
+      return CONFIG.mix.master * CONFIG.mix.announcer;
+    },
+    get uiVolume() {
+      return CONFIG.mix.master * CONFIG.mix.ui;
+    },
+
+    /** Play the recorded sample bank (public/sfx) where one exists, instead of
+     *  synthesising the sound. This is the DEFAULT for the build; the in-game
+     *  "Sampled audio" switch is what a player flips, and it overrides this.
+     *  With no bank generated, or a sample still downloading, the synthesised
+     *  soundscape plays regardless — samples are a layer over it, never a
+     *  dependency of it. */
+    useSamples: true,
+
+    /** How far a sampled one-shot may be pitched either side of unity, to keep
+     *  a burst of the same impact from sounding like a copy-paste. 0 disables
+     *  it. Above ~0.12 heavy impacts start to sound like a different, smaller
+     *  object rather than the same one hit again. */
+    samplePitchJitter: 0.08,
+
+    /** Announcer voice lines (public/sfx/vo). OFF: the takes in the repo came
+     *  out of a text-to-SOUND model, not a speech model, so they approximate a
+     *  shouted callout rather than saying the word. Turn this on once real
+     *  takes replace them — see public/sfx/vo/README.md. */
+    announcerVoice: false,
   },
 
   // -------------------------------------------------------------------- match

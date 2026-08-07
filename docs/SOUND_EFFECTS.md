@@ -1,23 +1,29 @@
 # BattleBot Arena — Sound Effect Manifest & Generation Prompts
 
-Every sound the game needs, what triggers it, and a ready-to-paste prompt for a
-generative audio tool (ElevenLabs SFX, Stable Audio, AudioGen, Optimizer, or a
-human Foley artist reading the same brief).
+Every sound the game needs, what triggers it, and the prompt that produced it.
 
-## Why this document exists
+## Status: generated and wired
 
-Today every in-game sound effect is **synthesised at runtime** by
-`src/game/audio.js` — Web Audio oscillators, filtered noise and keep-alive
-loops. That was the right call for a no-bundler, no-asset-pipeline prototype:
-zero download cost, infinitely variable, and it responds continuously to
-impulse and spin ratio. It is also the reason the arena sounds like a
-synthesiser rather than like a quarter-tonne of steel meeting another quarter
-tonne of steel.
+**All 131 files in this manifest exist**, in `public/sfx/` (~4 MB of MP3). They
+were generated from the prompts below with ElevenLabs' text-to-sound API by
+`tools/generate-sfx.mjs`, which holds the same manifest in machine-readable
+form — that script, not this file, is what a regeneration reads. Editing a
+prompt here without editing it there changes nothing.
 
-This manifest is the shopping list for replacing (or, for the continuous
-loops, *layering under*) that synthesis with recorded/generated samples. Music
-is out of scope — it already ships as real audio in `public/music/` and is
-driven by `src/shared/musicPlayer.js`.
+One exception, called out again in § 6: the **announcer voice lines are off by
+default**. They came out of a text-to-*sound* model rather than a speech model
+and nobody has verified they say the words. See `public/sfx/vo/README.md`.
+
+The synthesis in `src/game/audio.js` — Web Audio oscillators, filtered noise,
+keep-alive loops — is still there, underneath. It was the right call for a
+no-bundler prototype and it is now the fallback: it covers any sound with no
+sample, any sample still downloading, and the "Sampled audio" switch being off.
+Deleting `public/sfx/` entirely leaves a game that still makes every sound it
+made before. Samples are a layer over the synthesis, never a dependency of it.
+
+Music is out of scope here — it already ships as real audio in `public/music/`
+and is driven by `src/shared/musicPlayer.js`. What the two share is the mix:
+`CONFIG.mix` sets the SFX/music/crowd/announcer/UI balance in one place.
 
 ## How to read the tables
 
@@ -388,6 +394,20 @@ short, quiet and unmusical; they play under the anthem.
 
 ---
 
+## What shipped, versus what this document asked for
+
+Two things came out different from the brief above, both because of what the
+generator can actually deliver:
+
+- **Everything is 44.1 kHz stereo**, not 48 kHz mono. That is what the API
+  returns; there is no mono or 48 kHz option on the endpoint. Positioned
+  sounds are panned in engine anyway, and a stereo source panned is a slightly
+  wider image than a mono one, not a broken one.
+- **The announcer is not real.** See § 6 and `public/sfx/vo/README.md`.
+
+Everything else — the tiers, the variant counts, the loop treatment, the dry
+no-reverb rule appended to every prompt — is as specified.
+
 ## Delivery checklist
 
 - [ ] 48 kHz, 16-bit source; ship `.ogg` (q5) plus `.m4a` fallback
@@ -402,10 +422,35 @@ short, quiet and unmusical; they play under the anthem.
       stays fast; loops and impacts are the only ones worth preloading, the
       rest can stream on first use
 
-## Integration notes for whoever wires these up
+## How they are wired (done)
 
-`src/game/audio.js` owns the whole soundscape and is the only file that needs
-to change. The existing structure already fits samples:
+| File | Role |
+|---|---|
+| `src/game/sfxBank.js` | Fetches `manifest.json`, decodes takes on demand, rotates variants. Every failure path returns null so the caller falls back to synthesis. |
+| `src/game/audio.js` | Sample-first, synth-second at every call site; owns the crowd bed and the match callouts. |
+| `src/game/uiAudio.js` | Menu and HUD sound, via delegated document listeners rather than a play() call in every button handler. |
+| `src/config.js` | `CONFIG.mix` (the SFX/music balance), `CONFIG.audio.useSamples`, pitch jitter, `announcerVoice`. |
+| `settings.sampledSfx` | The player's switch — Settings → **Sampled audio**, default ON. |
+| `tools/generate-sfx.mjs` | Regenerates the bank. |
+| `tools/sfx-probe.mjs` | Proves the bank actually loads and plays in the real page. |
+
+The sampled/synth choice is made per sound, per call, not once at start-up.
+Turning the switch off mid-match drops the running loops so the change is
+audible immediately; turning it on triggers the preload.
+
+Two notes for the next person in here:
+
+- **Loops use separate cache keys** (`sample:spin:0` vs `spin:0`), so when a
+  sample finishes downloading mid-fight the synth loop simply stops being
+  refreshed and fades out through the existing keep-alive path. There is no
+  crossfade code, and there should not be.
+- **`MAX_VOICES` went 14 → 24.** A 2.5-second heavy impact holds a voice far
+  longer than the 0.3-second synth ping the old ceiling was measured against.
+
+### The original notes, kept because they still describe the design
+
+`src/game/audio.js` owns the whole soundscape and is the only file that needed
+to change. The existing structure already fitted samples:
 
 - `playImpactProfile()` becomes a sample picker (surface + intensity tier →
   variant round-robin) instead of an oscillator builder. Keep the `throttled()`
@@ -419,11 +464,10 @@ to change. The existing structure already fits samples:
 - `MAX_VOICES` matters more with samples than with oscillators — a 2-second
   heavy impact holds a voice far longer than a 0.3-second synth ping. Re-tune
   it once real assets are in.
-- Everything stays behind `settings.soundEnabled` and `CONFIG.sfxVolume`; the
-  crowd bed should get its own level in `config.js` since it is the one sound
-  a player will predictably want quieter without touching the rest.
+- Everything stays behind `settings.soundEnabled` and `CONFIG.audio.sfxVolume`;
+  the crowd bed got its own level (`CONFIG.mix.crowd`) since it is the one
+  sound a player will predictably want quieter without touching the rest.
 
-A reasonable staging order: impacts and weapon hits first (biggest perceptual
-win per asset), then the spinner and drive loops, then UI, then crowd and
-announcer. Synthesis can stay as the fallback for anything not yet recorded —
-the two can coexist per-sound during the transition.
+Synthesis stays as the fallback for anything not recorded — the two coexist
+per-sound, which is what let the whole bank land in one pass instead of a
+staged migration.

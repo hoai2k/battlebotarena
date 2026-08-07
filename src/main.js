@@ -20,7 +20,8 @@ import { createSim } from "./sim/sim.js";
 import { createMatch } from "./game/match.js";
 import { computeAiInput, resetAiState } from "./game/ai.js";
 import { createInput } from "./game/input.js";
-import { createGameAudio } from "./game/audio.js";
+import { createGameAudio, initAppAudio } from "./game/audio.js";
+import { createUiAudio } from "./game/uiAudio.js";
 import { createMusic } from "./game/music.js";
 import { PAUSE_DUCK } from "./shared/musicPlayer.js";
 import { CONFIG } from "./config.js";
@@ -57,6 +58,11 @@ function matchBotCount() {
 }
 // Music is app-level, not per-session: it follows EV.MATCH phases on the bus.
 const music = createMusic(bus);
+// Menu audio is app-level for the same reason, and the sample bank starts
+// downloading here rather than at the first fight — the menus are where the
+// first click happens, and a click that arrives before the bank is silent.
+initAppAudio();
+const uiAudio = createUiAudio();
 
 const loader = createLoader();
 // 3D showcase on the bot select screen: each chosen bot renders on a lit
@@ -269,6 +275,7 @@ async function startMatch({ botIds, playerBotId, rivalBotId, humanCount, difficu
   spawned.forEach((state, i) => chaseCameras[i]?.snapTo(state));
   loader.setProgress(1);
   loader.hide();
+  uiAudio.matchReady();
   match.start?.();
 }
 

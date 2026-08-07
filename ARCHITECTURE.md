@@ -134,8 +134,31 @@ Event payloads (all positions world-space `{x,y,z}`):
 
 `settings` plain object + `onSettingChanged(key, fn)` + `setSetting(key, value)`
 with localStorage persistence under `bba2-*` keys. Defaults include
-`soundEnabled: false`, `hapticsEnabled: true`, `cameraMode: 'bot'`,
-`aiDifficulty: 'normal'`.
+`soundEnabled: true`, `sampledSfx: true`, `hapticsEnabled: true`,
+`cameraMode: 'bot'`, `aiDifficulty: 'normal'`.
+
+Frozen means the SHAPE is frozen — the store's API and the fact that everyone
+reads plain properties off it. Adding a key with a default is the one edit that
+does not break anyone (`setSetting` rejects unknown keys, so a new setting has
+to be declared here to exist at all); doing so means updating the list above,
+which is what this note is. `sampledSfx` arrived that way, with the sound work.
+
+## Sound: two sources, one switch (v2/src/game/audio.js, sfxBank.js, uiAudio.js)
+
+`audio.js` subscribes to the bus and makes every in-match sound. It answers
+each one from the recorded bank first (`sfxBank.js` → `public/sfx/`) and from
+its own Web Audio synthesis second — per sound, per call, so a sample that is
+missing, still downloading, or switched off in Settings falls through to the
+synth without anything else noticing. `uiAudio.js` is the menu half, listening
+to the DOM at document level so the UI layer never has to call into game code.
+
+The mix lives in `config.js` (`CONFIG.mix`): SFX, music, crowd, announcer and
+UI as fractions of one master, because the question is never "how loud is the
+music" but "how loud is it compared to the hits".
+
+`tools/generate-sfx.mjs` regenerates the bank; `tools/sfx-probe.mjs` proves it
+loads in the real page (the bank swallows its own failures by design, so a
+broken bank sounds exactly like a working one from the inside).
 
 ## Sim public API (v2/src/sim/sim.js)
 

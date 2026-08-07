@@ -6,6 +6,10 @@ const STORAGE_PREFIX = "bba2-";
 
 const DEFAULTS = Object.freeze({
   soundEnabled: true,
+  // Recorded sample bank (public/sfx) over the synthesised soundscape. On by
+  // default: the samples are the intended sound of the game, and the synth is
+  // the fallback under them for anything the bank cannot serve.
+  sampledSfx: true,
   hapticsEnabled: true,
   cameraMode: "bot", // battle | bot | arena
   aiDifficulty: "normal", // easy | normal | hard

@@ -858,6 +858,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
 
   bindToggle($("btn-title-sound"), "soundEnabled", "SOUND: ON", "SOUND: OFF");
   bindToggle($("set-sound"), "soundEnabled", "ON", "OFF");
+  bindToggle($("set-sampled-sfx"), "sampledSfx", "ON", "OFF");
   bindToggle($("set-haptics"), "hapticsEnabled", "ON", "OFF");
   bindToggle($("set-damage-events"), "showDamageEvents", "ON", "OFF");
 

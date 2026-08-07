@@ -24,10 +24,23 @@
 import { EV } from "../shared/events.js";
 import { settings, onSettingChanged } from "../shared/settings.js";
 import { CONFIG } from "../config.js";
+import { attachSfxContext, preloadSfx, hasSample, takeSample, loadSfxManifest } from "./sfxBank.js";
 
-/** Master level for every synthesised sound. The soundEnabled toggle is a
- *  separate, harder gate: off is 0 whatever this says. */
+/** Master level for every sound this module makes. The soundEnabled toggle is
+ *  a separate, harder gate: off is 0 whatever this says. */
 const SFX_VOLUME = CONFIG.audio.sfxVolume;
+
+/** Sampled bank on/off. The build default lives in config; the player's switch
+ *  overrides it, and either way a sample that is missing or still downloading
+ *  falls through to synthesis. */
+let useSamples = CONFIG.audio.useSamples && settings.sampledSfx !== false;
+onSettingChanged("sampledSfx", (value) => {
+  useSamples = CONFIG.audio.useSamples && value !== false;
+  if (useSamples) preloadSfx();
+  // Loops are built from whichever source was live when they were created, so
+  // the running ones have to go for the switch to be audible immediately.
+  dropLoops();
+});
 
 let ctx = null;
 let masterGain = null;
@@ -38,7 +51,10 @@ let unlockInstalled = false;
 let activeVoices = 0;
 let sweepTimer = null;
 
-const MAX_VOICES = 14;
+// Raised from 14 for the sampled bank: a 2.5-second heavy impact holds a voice
+// far longer than the 0.3-second synth ping the old ceiling was measured
+// against, and 14 was clipping the tail off exchanges that landed together.
+const MAX_VOICES = 24;
 const loops = new Map();
 const lastPlayedByKey = new Map();
 
@@ -96,7 +112,24 @@ function ensureContext() {
   const data = noiseBuffer.getChannelData(0);
   for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
   sweepTimer = setInterval(sweepStaleLoops, 1500);
+  attachSfxContext(ctx);
+  if (useSamples) preloadSfx();
   return ctx;
+}
+
+/** Tear every loop down so the next frame rebuilds it. Used when the sampled/
+ *  synth choice changes underneath a loop that is already running. */
+function dropLoops() {
+  if (!ctx) return;
+  loops.forEach((loop) => {
+    try {
+      loop.nodes.forEach((node) => node.stop?.());
+      loop.gain.disconnect();
+    } catch {
+      // Already stopped; nothing further to clean.
+    }
+  });
+  loops.clear();
 }
 
 function sweepStaleLoops() {
@@ -172,6 +205,155 @@ function throttled(key, minGap) {
 }
 
 // ---------------------------------------------------------------------------
+// Sampled layer (public/sfx, see sfxBank.js)
+//
+// Every entry point here answers the same question the same way: is there a
+// decoded sample for this, and is the bank switched on? If yes it plays and
+// returns true, and the caller returns early; if no it returns false and the
+// synthesis below runs exactly as it always did. No call site has to know
+// which of the two it got.
+//
+// masterGain already carries mix.master * mix.sfx, so the crowd and announcer
+// levels here are expressed RELATIVE to the SFX level rather than absolutely —
+// that keeps one master fader in front of everything.
+// ---------------------------------------------------------------------------
+
+const CROWD_GAIN = CONFIG.mix.sfx > 0 ? CONFIG.mix.crowd / CONFIG.mix.sfx : 0;
+const ANNOUNCER_GAIN = CONFIG.mix.sfx > 0 ? CONFIG.mix.announcer / CONFIG.mix.sfx : 0;
+
+/**
+ * Play one take of a sampled asset.
+ * @returns {boolean} true if a sample actually started.
+ */
+function playSample(id, { gain = 1, position = null, rate = 1, jitter = true } = {}) {
+  if (!useSamples || !ready() || activeVoices > MAX_VOICES) return false;
+  const buffer = takeSample(id);
+  if (!buffer) return false;
+  const jitterAmount = jitter ? CONFIG.audio.samplePitchJitter : 0;
+  // Same take twice in a row is the artefact variants exist to hide; a few
+  // percent of pitch on top hides what is left of it.
+  const pitch = 1 + (Math.random() * 2 - 1) * jitterAmount;
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.playbackRate.value = Math.max(0.25, rate * pitch);
+  const env = ctx.createGain();
+  env.gain.value = Math.max(0, gain);
+  source.connect(env);
+  env.connect(outputChain(position));
+  source.start();
+  trackVoice(source, ctx.currentTime + buffer.duration / source.playbackRate.value + 0.05);
+  return true;
+}
+
+/**
+ * Sampled equivalent of the synth loops. Keyed separately (`sample:`) from the
+ * synth ones on purpose: if the bank is still downloading, the synth loop runs
+ * first and simply stops being refreshed once the sample arrives, so it fades
+ * out on its own through the same keep-alive path. No crossfade code needed.
+ *
+ * @param {number} [tail] seconds of hold before the fade, for loops refreshed
+ *   by sparse contact events rather than every frame.
+ * @returns {boolean}
+ */
+function sampledLoop(key, id, level, { rate = 1, tail = 0 } = {}) {
+  if (!useSamples || !ready() || !hasSample(id)) return false;
+  const existing = loops.get(`sample:${key}`);
+  const buffer = existing ? null : takeSample(id);
+  if (!existing && !buffer) return false;
+  const loop = acquireLoop(`sample:${key}`, (l) => {
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    source.connect(l.gain);
+    l.params = { source };
+    l.nodes.push(source);
+  });
+  const now = ctx.currentTime;
+  loop.params.source.playbackRate.setTargetAtTime(Math.max(0.25, rate), now, 0.08);
+  if (tail > 0) {
+    loop.gain.gain.cancelScheduledValues(now);
+    loop.gain.gain.setTargetAtTime(level, now, 0.05);
+    loop.gain.gain.setTargetAtTime(0, now + tail, 0.12);
+  } else {
+    keepAlive(loop, level);
+  }
+  return true;
+}
+
+/** EV.IMPACT surface + intensity -> sampled asset id. The tiers exist because
+ *  a tap and a full-speed slam differ in SPECTRUM, not just level. */
+function impactSampleId(surface, intensity) {
+  switch (surface) {
+    case "wall":
+    case "ceiling":
+      return intensity < 0.5 ? "impact/wall_light" : "impact/wall_heavy";
+    case "floor":
+      return "impact/floor";
+    case "prop":
+      return "impact/prop";
+    default:
+      if (intensity < 0.35) return "impact/bot_light";
+      return intensity < 0.7 ? "impact/bot_medium" : "impact/bot_heavy";
+  }
+}
+
+/** Weapon type (from the catalog spec) -> the hit sample that reads as it. */
+function weaponHitSampleId(weaponType, intensity, isFlame) {
+  if (isFlame) return "weapon/flame_tick";
+  if (weaponType === "hammer" || weaponType === "hammerSaw") return "weapon/hammer_hit";
+  if (weaponType === "crusher") return "weapon/crusher_bite";
+  if (weaponType === "sawArms") return "weapon/saw_bite";
+  if (intensity < 0.35) return "weapon/spinner_hit_glance";
+  return intensity < 0.75 ? "weapon/spinner_hit_solid" : "weapon/spinner_hit_massive";
+}
+
+/** EV.WEAPON_FIRED weaponType -> mechanism sample. */
+const FIRE_SAMPLES = {
+  flipper: "weapon/flipper_fire",
+  crusher: "weapon/crusher_actuate",
+  jaw: "weapon/jaw_grip",
+  grappler: "weapon/grappler_fire",
+  hammer: "weapon/hammer_swing",
+  hammerSaw: "weapon/hammer_swing",
+  lifter: "weapon/lifter_raise",
+  lifterDisc: "weapon/lifter_raise",
+};
+
+/**
+ * Crowd reaction one-shot. Throttled hard and independently of the impact that
+ * caused it: a crowd that reacts to every hit in a long exchange stops sounding
+ * like a crowd and starts sounding like a stuck sample.
+ */
+function crowdReact(id, gain = 1, minGap = 4) {
+  if (!ready() || CROWD_GAIN <= 0) return;
+  if (minGap > 0 && throttled(`crowd:${id}`, minGap)) return;
+  playSample(id, { gain: gain * CROWD_GAIN * 1.6, jitter: false });
+}
+
+/**
+ * Announcer callout. Off by default — see CONFIG.audio.announcerVoice and
+ * public/sfx/vo/README.md for why the takes in the repo are not shippable.
+ */
+function announce(id) {
+  if (!CONFIG.audio.announcerVoice || !id.startsWith("vo/")) return;
+  playSample(id, { gain: ANNOUNCER_GAIN, jitter: false });
+}
+
+/** Crowd bed under the whole fight, keep-alive like every other loop. */
+function crowdLoop(active) {
+  if (CROWD_GAIN <= 0) return;
+  sampledLoop("crowd", "loop/crowd_ambient", active ? CROWD_GAIN * 0.5 : 0);
+}
+
+/** Spinner loop sample per weapon type. */
+const SPIN_LOOP_SAMPLES = {
+  bar: "loop/spinner_bar",
+  drum: "loop/spinner_drum",
+  shellSpinner: "loop/spinner_shell",
+  hammerSaw: "loop/spinner_hammersaw",
+};
+
+// ---------------------------------------------------------------------------
 // One-shot impact synthesis (verbatim v1 profiles)
 // ---------------------------------------------------------------------------
 
@@ -211,10 +393,23 @@ function ready() {
   return enabled && ctx && ctx.state === "running";
 }
 
-function playImpactProfile(profileName, intensity, position) {
+/**
+ * @param {string} profileName synth profile, used when no sample is available
+ * @param {string} [sampleId] sampled asset to prefer. The throttle runs FIRST
+ *   and is shared between the two paths — otherwise a contact-heavy frame
+ *   fires forty overlapping clangs the moment the bank loads.
+ */
+function playImpactProfile(profileName, intensity, position, sampleId = null) {
   const profile = IMPACT_PROFILES[profileName];
   if (!profile || activeVoices > MAX_VOICES) return;
-  if (throttled(`impact:${profileName}`, profile.minGap)) return;
+  if (throttled(`impact:${sampleId || profileName}`, profile.minGap)) return;
+  if (sampleId && playSample(sampleId, {
+    gain: 0.45 + intensity * 0.75,
+    position,
+    // Harder hits play very slightly faster, which reads as more energy
+    // without needing a fourth tier of samples.
+    rate: 0.96 + intensity * 0.1,
+  })) return;
   const now = ctx.currentTime;
   const out = outputChain(position);
 
@@ -261,10 +456,21 @@ function playImpactProfile(profileName, intensity, position) {
 }
 
 // Metal tearing + debris clatter when a part-disable threshold is crossed.
-function breakSound(position, magnitude = 1) {
+function breakSound(position, magnitude = 1, zone = "weapon") {
   if (!ready()) return;
   if (throttled("break", 0.12)) return;
   const strength = Math.min(1, 0.45 + magnitude * 0.08);
+
+  const breakId = zone === "drive" ? "damage/part_break_drive" : "damage/part_break_weapon";
+  if (playSample(breakId, { gain: 0.85 * strength, position })) {
+    // The clatter is a separate asset rather than part of the break take, so
+    // the debris can trail the tear by a different amount every time.
+    setTimeout(() => {
+      playSample("damage/debris_clatter", { gain: 0.55 * strength, position });
+    }, 120 + Math.random() * 220);
+    return;
+  }
+
   const now = ctx.currentTime;
   const out = outputChain(position);
 
@@ -294,8 +500,18 @@ function breakSound(position, magnitude = 1) {
 }
 
 // Pneumatic flipper fire: CO2 hiss sweep + launch thunk + latch click.
+// The sampled bank covers every mechanism in the roster; the synthesis below
+// it only ever knew how to be a flipper.
 function weaponFire(type) {
   if (!ready()) return;
+  const sampleId = FIRE_SAMPLES[type];
+  if (sampleId && !throttled(`fire:${type}`, 0.15)
+    && playSample(sampleId, { gain: 0.8 })) {
+    if (type === "flipper") {
+      setTimeout(() => playSample("weapon/flipper_reset", { gain: 0.5 }), 420);
+    }
+    return;
+  }
   if (type !== "flipper") return;
   if (throttled("flipperFire", 0.15)) return;
   const now = ctx.currentTime;
@@ -369,6 +585,12 @@ function weaponLoop(key, { type, ratio = 0, position = null } = {}) {
     return;
   }
   if (type !== "bar" && type !== "drum" && type !== "hammerSaw") return;
+  const sampleLevel = ratio <= 0.01 ? 0 : (0.06 + ratio * 0.3) * spatialize(position).gain;
+  // Samples were rendered at full RPM: playback rate IS the spin-up. Floored
+  // well above zero so a coasting rotor still sounds like a rotor rather than
+  // a tape being stopped by hand.
+  if (sampledLoop(`spin:${key}`, SPIN_LOOP_SAMPLES[type], sampleLevel,
+    { rate: 0.55 + ratio * 0.55 })) return;
   const loop = acquireLoop(`spin:${key}`, (l) => {
     const whine = ctx.createOscillator();
     whine.type = "sawtooth";
@@ -417,6 +639,7 @@ function weaponLoop(key, { type, ratio = 0, position = null } = {}) {
 
 // Hydraulic crusher: slow pump groan while the jaw is driven.
 function crusherLoop(key, active) {
+  if (sampledLoop(`crusher:${key}`, "loop/crusher_pump", active > 0 ? 0.3 : 0)) return;
   const loop = acquireLoop(`crusher:${key}`, (l) => {
     const pump = ctx.createOscillator();
     pump.type = "sawtooth";
@@ -444,6 +667,20 @@ function crusherLoop(key, active) {
 // Drive motors: detuned low buzz scaled by input + wheel rumble scaled by speed.
 function driveLoop(key, { level = 0, speed = 0, position = null } = {}) {
   if (!ready()) return;
+  const speedShare = Math.min(1, speed / 14);
+  const spatialGain = spatialize(position).gain;
+  // Motor and wheel rumble are two samples, not one, because throttle and
+  // ground speed come apart constantly: a bot pushing against a wall is all
+  // motor and no rumble, and a bot coasting after a hit is the reverse.
+  const motorSampled = sampledLoop(`drive:${key}`, "loop/drive_motor",
+    level <= 0.02 ? 0 : (0.05 + level * 0.2) * spatialGain,
+    { rate: 0.8 + level * 0.45 });
+  if (motorSampled) {
+    sampledLoop(`rumble:${key}`, "loop/drive_rumble",
+      speedShare <= 0.03 ? 0 : speedShare * 0.22 * spatialGain,
+      { rate: 0.85 + speedShare * 0.4 });
+    return;
+  }
   const loop = acquireLoop(`drive:${key}`, (l) => {
     const motorA = ctx.createOscillator();
     motorA.type = "sawtooth";
@@ -486,6 +723,7 @@ function driveLoop(key, { level = 0, speed = 0, position = null } = {}) {
 // Kill saw ambience: idle blade whine whenever the saws are live.
 function killSawAmbient(active) {
   if (!ready()) return;
+  if (sampledLoop("killSawAmbient", "loop/killsaw_ambient", active ? 0.05 : 0)) return;
   const loop = acquireLoop("killSawAmbient", (l) => {
     const bladeA = ctx.createOscillator();
     bladeA.type = "sawtooth";
@@ -512,10 +750,21 @@ const GRIND_SETTINGS = {
   screw: { center: 640, q: 1, rumble: 52, level: 0.34, sizzle: 0.14 },
 };
 
+const GRIND_SAMPLES = { killSaw: "loop/killsaw_grind", screw: "loop/screw_grind" };
+
 function hazardGrind(kind, position = null, intensity = 1) {
   if (!ready()) return;
   const settingsFor = GRIND_SETTINGS[kind];
   if (!settingsFor) return;
+  const level = settingsFor.level * Math.min(1, Math.max(0.35, intensity)) * spatialize(position).gain;
+  // 0.42s tail rather than the default keep-alive fade: contact events arrive
+  // sparsely, and a grind that drops out between them sounds like a fault.
+  if (sampledLoop(`grind:${kind}`, GRIND_SAMPLES[kind], level, { tail: 0.42 })) {
+    if (kind === "killSaw" && intensity > 0.6 && !throttled("sparks", 0.35)) {
+      playSample("damage/sparks", { gain: 0.4 * intensity, position });
+    }
+    return;
+  }
   const loop = acquireLoop(`grind:${kind}`, (l) => {
     const roar = noiseSource();
     const roarFilter = ctx.createBiquadFilter();
@@ -568,6 +817,31 @@ function hazardGrind(kind, position = null, intensity = 1) {
 // Public API: bus wiring + per-frame keep-alive
 // ---------------------------------------------------------------------------
 
+const UI_GAIN = CONFIG.mix.sfx > 0 ? CONFIG.mix.ui / CONFIG.mix.sfx : 0;
+
+/**
+ * App-level audio start-up: install the gesture unlock and begin fetching the
+ * sample manifest before any match exists. Without this the menus are silent
+ * until the first fight builds a context, which is the wrong way round — the
+ * menus are where the first click happens.
+ */
+export function initAppAudio() {
+  installUnlock();
+  loadSfxManifest();
+  if (enabled) ensureContext();
+}
+
+/**
+ * Play a UI sound by asset id ("ui/confirm"). Sampled only: there is no synth
+ * fallback for the menus, because there was never any menu audio to fall back
+ * to — with the bank switched off, the UI is as silent as it always was.
+ */
+export function playUiSound(id, gain = 1) {
+  if (!ctx) ensureContext();
+  if (UI_GAIN <= 0) return;
+  playSample(id, { gain: gain * UI_GAIN, jitter: false });
+}
+
 /**
  * @param {{on: Function}} bus event bus (needs .on)
  * @param {{specs?: import('../assets/catalog.js').BotSpec[]}} [options]
@@ -582,6 +856,9 @@ export function createGameAudio(bus, { specs = [] } = {}) {
   // still need per-frame keep-alive, so updateFrame replays these).
   const spinState = new Map();
   let sawsActive = false;
+  let crowdActive = false;
+  let lastPhase = null;
+  let lastCount = null;
   let lastFrameAt = null;
   const lastPositions = [null, null];
 
@@ -590,14 +867,23 @@ export function createGameAudio(bus, { specs = [] } = {}) {
     const mapping = SURFACE_SOUNDS[surface] || SURFACE_SOUNDS.bot;
     const intensity = Math.min(1, Math.sqrt(Math.max(0, relSpeed || 0) / mapping.scale));
     if (intensity < 0.12) return;
-    playImpactProfile(mapping.profile, intensity, point);
+    playImpactProfile(mapping.profile, intensity, point, impactSampleId(surface, intensity));
   }));
 
-  unsubscribes.push(bus.on(EV.WEAPON_HIT, ({ point, impulse, heavy }) => {
+  unsubscribes.push(bus.on(EV.WEAPON_HIT, (payload) => {
     if (!ready()) return;
+    const { point, impulse, heavy, attackerIndex, appliedImpulse } = payload || {};
     const intensity = Math.min(1, Math.sqrt(Math.max(0, impulse || 0) / 120)) * (heavy ? 1.1 : 1);
     if (intensity < 0.1) return;
-    playImpactProfile("heavyClang", Math.min(1, intensity), point);
+    // WEAPON_HIT carries no weapon type — the attacker's catalog spec does, and
+    // audio already holds the specs for the crusher pump. A hit that applied no
+    // impulse at all from a machine with a flamethrower is the flame ticking:
+    // fire is the one weapon in the game that damages without pushing.
+    const weapon = specs[attackerIndex]?.weapon;
+    const isFlame = Boolean(weapon?.flame) && !(appliedImpulse > 0);
+    const sampleId = weaponHitSampleId(weapon?.type, intensity, isFlame);
+    playImpactProfile("heavyClang", Math.min(1, intensity), point, sampleId);
+    if (intensity > 0.8) crowdReact("crowd/cheer_big", 0.9);
   }));
 
   unsubscribes.push(bus.on(EV.WEAPON_SPIN, ({ botIndex, weaponType, ratio }) => {
@@ -614,17 +900,50 @@ export function createGameAudio(bus, { specs = [] } = {}) {
 
   unsubscribes.push(bus.on(EV.HAZARD_LAUNCH, ({ point, impulse }) => {
     if (!ready()) return;
-    playImpactProfile("heavyClang", Math.min(1, Math.sqrt(Math.max(0, impulse || 0) / 220)), point);
+    const intensity = Math.min(1, Math.sqrt(Math.max(0, impulse || 0) / 220));
+    playImpactProfile("heavyClang", intensity, point, "hazard/killsaw_launch");
+    // A bot going airborne off the saws is the crowd's moment, not the KO.
+    if (intensity > 0.5) crowdReact("crowd/gasp", 0.8);
   }));
 
-  unsubscribes.push(bus.on(EV.PART_BREAK, ({ point }) => {
-    breakSound(point || null, 6);
+  unsubscribes.push(bus.on(EV.PART_BREAK, ({ point, zone }) => {
+    breakSound(point || null, 6, zone);
+    crowdReact("crowd/cheer_big", 1);
   }));
 
   unsubscribes.push(bus.on(EV.MATCH, (payload) => {
-    if (payload?.callout === "killSaws") sawsActive = true;
-    if (payload?.phase === "ko" || payload?.phase === "timeUp" || payload?.phase === "results" || payload?.phase === "countdown") {
+    if (payload?.callout === "killSaws") {
+      if (!sawsActive) {
+        playSample("hazard/killsaw_deploy", { gain: 0.7 });
+        announce("vo/killsaws");
+      }
+      sawsActive = true;
+    }
+    const phase = payload?.phase;
+    if (phase === "ko" || phase === "timeUp" || phase === "results" || phase === "countdown") {
       sawsActive = false;
+    }
+    crowdActive = phase === "countdown" || phase === "fight";
+
+    if (phase === "countdown" && typeof payload.count === "number" && payload.count !== lastCount) {
+      lastCount = payload.count;
+      playSample("match/countdown_beep", { gain: 0.5, jitter: false });
+      announce(`vo/${["", "one", "two", "three"][payload.count] || ""}`);
+    }
+    if (phase !== "countdown") lastCount = null;
+    if (phase !== lastPhase) {
+      if (phase === "fight") {
+        playSample("match/countdown_beep_final", { gain: 0.6, jitter: false });
+        announce("vo/fight");
+        crowdReact("crowd/cheer_big", 1, 0);
+      }
+      if (phase === "ko") {
+        announce("vo/ko");
+        crowdReact("crowd/cheer_big", 1, 0);
+      }
+      if (phase === "timeUp") announce("vo/time");
+      if (phase === "results") playSample("match/results_sting", { gain: 0.7, jitter: false });
+      lastPhase = phase;
     }
   }));
 
@@ -665,8 +984,16 @@ export function createGameAudio(bus, { specs = [] } = {}) {
       if (specs[i]?.weapon?.type === "hammerSaw") {
         weaponLoop(i, { type: "bar", ratio: input?.sawActive ? 0.85 : 0, position });
       }
+      // Flame rides the secondary channel on whatever arm the bot has, so the
+      // jet loop follows that latch rather than a weapon type.
+      if (specs[i]?.weapon?.flame) {
+        const burning = Boolean(input?.auxActive || input?.sawActive);
+        sampledLoop(`flame:${i}`, "loop/flame_jet",
+          burning ? 0.32 * spatialize(position).gain : 0);
+      }
     }
     killSawAmbient(sawsActive);
+    crowdLoop(crowdActive);
   }
 
   function setListenerProviderLocal(provider) {

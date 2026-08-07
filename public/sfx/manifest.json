@@ -1,0 +1,403 @@
+{
+  "impact/bot_light": {
+    "files": [
+      "impact/bot_light_1.mp3",
+      "impact/bot_light_2.mp3",
+      "impact/bot_light_3.mp3",
+      "impact/bot_light_4.mp3"
+    ],
+    "loop": false
+  },
+  "impact/bot_medium": {
+    "files": [
+      "impact/bot_medium_1.mp3",
+      "impact/bot_medium_2.mp3",
+      "impact/bot_medium_3.mp3",
+      "impact/bot_medium_4.mp3"
+    ],
+    "loop": false
+  },
+  "impact/bot_heavy": {
+    "files": [
+      "impact/bot_heavy_1.mp3",
+      "impact/bot_heavy_2.mp3",
+      "impact/bot_heavy_3.mp3",
+      "impact/bot_heavy_4.mp3"
+    ],
+    "loop": false
+  },
+  "impact/wall_light": {
+    "files": [
+      "impact/wall_light_1.mp3",
+      "impact/wall_light_2.mp3",
+      "impact/wall_light_3.mp3"
+    ],
+    "loop": false
+  },
+  "impact/wall_heavy": {
+    "files": [
+      "impact/wall_heavy_1.mp3",
+      "impact/wall_heavy_2.mp3",
+      "impact/wall_heavy_3.mp3"
+    ],
+    "loop": false
+  },
+  "impact/floor": {
+    "files": [
+      "impact/floor_1.mp3",
+      "impact/floor_2.mp3",
+      "impact/floor_3.mp3",
+      "impact/floor_4.mp3"
+    ],
+    "loop": false
+  },
+  "impact/prop": {
+    "files": [
+      "impact/prop_1.mp3",
+      "impact/prop_2.mp3",
+      "impact/prop_3.mp3"
+    ],
+    "loop": false
+  },
+  "weapon/spinner_hit_glance": {
+    "files": [
+      "weapon/spinner_hit_glance_1.mp3",
+      "weapon/spinner_hit_glance_2.mp3",
+      "weapon/spinner_hit_glance_3.mp3",
+      "weapon/spinner_hit_glance_4.mp3",
+      "weapon/spinner_hit_glance_5.mp3"
+    ],
+    "loop": false
+  },
+  "weapon/spinner_hit_solid": {
+    "files": [
+      "weapon/spinner_hit_solid_1.mp3",
+      "weapon/spinner_hit_solid_2.mp3",
+      "weapon/spinner_hit_solid_3.mp3",
+      "weapon/spinner_hit_solid_4.mp3",
+      "weapon/spinner_hit_solid_5.mp3"
+    ],
+    "loop": false
+  },
+  "weapon/spinner_hit_massive": {
+    "files": [
+      "weapon/spinner_hit_massive_1.mp3",
+      "weapon/spinner_hit_massive_2.mp3",
+      "weapon/spinner_hit_massive_3.mp3",
+      "weapon/spinner_hit_massive_4.mp3",
+      "weapon/spinner_hit_massive_5.mp3"
+    ],
+    "loop": false
+  },
+  "weapon/hammer_hit": {
+    "files": [
+      "weapon/hammer_hit_1.mp3",
+      "weapon/hammer_hit_2.mp3",
+      "weapon/hammer_hit_3.mp3"
+    ],
+    "loop": false
+  },
+  "weapon/crusher_bite": {
+    "files": [
+      "weapon/crusher_bite_1.mp3",
+      "weapon/crusher_bite_2.mp3",
+      "weapon/crusher_bite_3.mp3"
+    ],
+    "loop": false
+  },
+  "weapon/saw_bite": {
+    "files": [
+      "weapon/saw_bite_1.mp3",
+      "weapon/saw_bite_2.mp3",
+      "weapon/saw_bite_3.mp3"
+    ],
+    "loop": false
+  },
+  "weapon/flame_tick": {
+    "files": [
+      "weapon/flame_tick_1.mp3",
+      "weapon/flame_tick_2.mp3",
+      "weapon/flame_tick_3.mp3"
+    ],
+    "loop": false
+  },
+  "weapon/flipper_fire": {
+    "files": [
+      "weapon/flipper_fire_1.mp3",
+      "weapon/flipper_fire_2.mp3",
+      "weapon/flipper_fire_3.mp3"
+    ],
+    "loop": false
+  },
+  "weapon/flipper_reset": {
+    "files": [
+      "weapon/flipper_reset_1.mp3",
+      "weapon/flipper_reset_2.mp3"
+    ],
+    "loop": false
+  },
+  "weapon/hammer_swing": {
+    "files": [
+      "weapon/hammer_swing_1.mp3",
+      "weapon/hammer_swing_2.mp3",
+      "weapon/hammer_swing_3.mp3"
+    ],
+    "loop": false
+  },
+  "weapon/crusher_actuate": {
+    "files": [
+      "weapon/crusher_actuate_1.mp3",
+      "weapon/crusher_actuate_2.mp3"
+    ],
+    "loop": false
+  },
+  "weapon/jaw_grip": {
+    "files": [
+      "weapon/jaw_grip_1.mp3",
+      "weapon/jaw_grip_2.mp3"
+    ],
+    "loop": false
+  },
+  "weapon/grappler_fire": {
+    "files": [
+      "weapon/grappler_fire_1.mp3",
+      "weapon/grappler_fire_2.mp3"
+    ],
+    "loop": false
+  },
+  "weapon/lifter_raise": {
+    "files": [
+      "weapon/lifter_raise_1.mp3",
+      "weapon/lifter_raise_2.mp3"
+    ],
+    "loop": false
+  },
+  "loop/spinner_bar": {
+    "files": [
+      "loop/spinner_bar.mp3"
+    ],
+    "loop": true
+  },
+  "loop/spinner_drum": {
+    "files": [
+      "loop/spinner_drum.mp3"
+    ],
+    "loop": true
+  },
+  "loop/spinner_shell": {
+    "files": [
+      "loop/spinner_shell.mp3"
+    ],
+    "loop": true
+  },
+  "loop/spinner_hammersaw": {
+    "files": [
+      "loop/spinner_hammersaw.mp3"
+    ],
+    "loop": true
+  },
+  "loop/crusher_pump": {
+    "files": [
+      "loop/crusher_pump.mp3"
+    ],
+    "loop": true
+  },
+  "loop/drive_motor": {
+    "files": [
+      "loop/drive_motor.mp3"
+    ],
+    "loop": true
+  },
+  "loop/drive_rumble": {
+    "files": [
+      "loop/drive_rumble.mp3"
+    ],
+    "loop": true
+  },
+  "loop/killsaw_ambient": {
+    "files": [
+      "loop/killsaw_ambient.mp3"
+    ],
+    "loop": true
+  },
+  "loop/killsaw_grind": {
+    "files": [
+      "loop/killsaw_grind.mp3"
+    ],
+    "loop": true
+  },
+  "loop/screw_grind": {
+    "files": [
+      "loop/screw_grind.mp3"
+    ],
+    "loop": true
+  },
+  "loop/flame_jet": {
+    "files": [
+      "loop/flame_jet.mp3"
+    ],
+    "loop": true
+  },
+  "loop/crowd_ambient": {
+    "files": [
+      "loop/crowd_ambient.mp3"
+    ],
+    "loop": true
+  },
+  "damage/part_break_weapon": {
+    "files": [
+      "damage/part_break_weapon_1.mp3",
+      "damage/part_break_weapon_2.mp3",
+      "damage/part_break_weapon_3.mp3"
+    ],
+    "loop": false
+  },
+  "damage/part_break_drive": {
+    "files": [
+      "damage/part_break_drive_1.mp3",
+      "damage/part_break_drive_2.mp3",
+      "damage/part_break_drive_3.mp3"
+    ],
+    "loop": false
+  },
+  "damage/debris_clatter": {
+    "files": [
+      "damage/debris_clatter_1.mp3",
+      "damage/debris_clatter_2.mp3",
+      "damage/debris_clatter_3.mp3",
+      "damage/debris_clatter_4.mp3"
+    ],
+    "loop": false
+  },
+  "damage/sparks": {
+    "files": [
+      "damage/sparks_1.mp3",
+      "damage/sparks_2.mp3",
+      "damage/sparks_3.mp3",
+      "damage/sparks_4.mp3"
+    ],
+    "loop": false
+  },
+  "damage/smoke_hiss": {
+    "files": [
+      "damage/smoke_hiss_1.mp3",
+      "damage/smoke_hiss_2.mp3"
+    ],
+    "loop": false
+  },
+  "hazard/killsaw_launch": {
+    "files": [
+      "hazard/killsaw_launch_1.mp3",
+      "hazard/killsaw_launch_2.mp3",
+      "hazard/killsaw_launch_3.mp3"
+    ],
+    "loop": false
+  },
+  "hazard/killsaw_deploy": {
+    "files": [
+      "hazard/killsaw_deploy.mp3"
+    ],
+    "loop": false
+  },
+  "match/countdown_beep": {
+    "files": [
+      "match/countdown_beep.mp3"
+    ],
+    "loop": false
+  },
+  "match/countdown_beep_final": {
+    "files": [
+      "match/countdown_beep_final.mp3"
+    ],
+    "loop": false
+  },
+  "match/results_sting": {
+    "files": [
+      "match/results_sting.mp3"
+    ],
+    "loop": false
+  },
+  "crowd/cheer_big": {
+    "files": [
+      "crowd/cheer_big_1.mp3",
+      "crowd/cheer_big_2.mp3",
+      "crowd/cheer_big_3.mp3"
+    ],
+    "loop": false
+  },
+  "crowd/gasp": {
+    "files": [
+      "crowd/gasp_1.mp3",
+      "crowd/gasp_2.mp3"
+    ],
+    "loop": false
+  },
+  "ui/nav_move": {
+    "files": [
+      "ui/nav_move_1.mp3",
+      "ui/nav_move_2.mp3"
+    ],
+    "loop": false
+  },
+  "ui/confirm": {
+    "files": [
+      "ui/confirm.mp3"
+    ],
+    "loop": false
+  },
+  "ui/back": {
+    "files": [
+      "ui/back.mp3"
+    ],
+    "loop": false
+  },
+  "ui/bot_hover": {
+    "files": [
+      "ui/bot_hover_1.mp3",
+      "ui/bot_hover_2.mp3"
+    ],
+    "loop": false
+  },
+  "ui/bot_lock": {
+    "files": [
+      "ui/bot_lock.mp3"
+    ],
+    "loop": false
+  },
+  "ui/bot_unlock": {
+    "files": [
+      "ui/bot_unlock.mp3"
+    ],
+    "loop": false
+  },
+  "ui/fight_button": {
+    "files": [
+      "ui/fight_button.mp3"
+    ],
+    "loop": false
+  },
+  "ui/pad_connect": {
+    "files": [
+      "ui/pad_connect.mp3"
+    ],
+    "loop": false
+  },
+  "ui/toggle": {
+    "files": [
+      "ui/toggle.mp3"
+    ],
+    "loop": false
+  },
+  "ui/error": {
+    "files": [
+      "ui/error.mp3"
+    ],
+    "loop": false
+  },
+  "ui/loading_done": {
+    "files": [
+      "ui/loading_done.mp3"
+    ],
+    "loop": false
+  }
+}
