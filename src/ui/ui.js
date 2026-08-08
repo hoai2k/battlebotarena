@@ -17,12 +17,16 @@ import { createScreens } from "./screens.js";
 import { createGamepadNav } from "./gamepadNav.js";
 import { BOT_CARDS, RANDOM_CARD, getBotCard, pickRandomBotId } from "./botCards.js";
 import { CONFIG } from "../config.js";
+import { t, applyStaticText } from "./text.js";
 
 const $ = (id) => /** @type {HTMLElement} */ (document.getElementById(id));
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-const ZONE_LABELS = { body: "BODY", weapon: "WEAPON", drive: "DRIVE" };
-const BREAK_LABELS = { weapon: "WEAPON OUT", drive: "DRIVE DAMAGE", body: "ARMOR BREACH", out: "ELIMINATED" };
+// Ticker copy, read through CONFIG.text like everything else the player sees.
+const ZONE_LABELS = { body: "hud.zoneBody", weapon: "hud.zoneWeapon", drive: "hud.zoneDrive" };
+const BREAK_LABELS = {
+  weapon: "hud.breakWeapon", drive: "hud.breakDrive", body: "hud.breakBody", out: "hud.breakOut",
+};
 /** Shared with game/match.js via config.js — a HUD clock that disagrees with
  *  the sim clock is a HUD that lies. */
 const MATCH_SECONDS = CONFIG.match.matchSeconds;
@@ -32,6 +36,10 @@ const MATCH_SECONDS = CONFIG.match.matchSeconds;
  */
 export function createUI({ bus, on, onAction = () => {} } = {}) {
   const subscribe = bus && typeof bus.on === "function" ? bus.on.bind(bus) : on || (() => () => {});
+  // Every string authored into index.html carrying a data-text-key is replaced
+  // from CONFIG.text here, before anything is shown. The markup keeps the
+  // default copy so a mistyped key degrades to the old wording, not to blank.
+  applyStaticText();
   const screens = createScreens({ initial: "title" });
   /** @type {Function[]} */
   const cleanups = [];
@@ -132,10 +140,14 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     img.addEventListener("error", done, { once: true });
   }
 
-  function statRow(label, value) {
+  // `key` picks the colour (.stat-spd / .stat-pwr / .stat-arm in screens.css)
+  // and `label` is the copy. They were the same string until the labels moved
+  // into CONFIG.text — at which point renaming SPD would have silently dropped
+  // the bar's colour, which is not something a copy edit should be able to do.
+  function statRow(key, label, value) {
     let pips = "";
     for (let i = 1; i <= 5; i += 1) pips += `<i class="pip${i <= value ? " on" : ""}"></i>`;
-    return `<span class="stat stat-${label.toLowerCase()}"><b class="stat-label">${label}</b><span class="pips">${pips}</span></span>`;
+    return `<span class="stat stat-${key}"><b class="stat-label">${label}</b><span class="pips">${pips}</span></span>`;
   }
 
   // Dock cards are deliberately terse — thumbnail, name, weapon badge. The
@@ -262,10 +274,10 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       if (pod.stats)
         pod.stats.innerHTML = isRandom
           ? `<span class="random-note">REVEALED AT THE BOX</span>`
-          : `${statRow("SPD", card.stats.speed)}${statRow("PWR", card.stats.power)}${statRow("ARM", card.stats.armor)}`;
+          : `${statRow("spd", t("select.statSpeed"), card.stats.speed)}${statRow("pwr", t("select.statPower"), card.stats.power)}${statRow("arm", t("select.statArmor"), card.stats.armor)}`;
     } else {
       pod.root.style.removeProperty("--accent");
-      if (pod.plateBody) pod.plateBody.innerHTML = `<span class="pod-plate-empty">— OPEN BAY —</span>`;
+      if (pod.plateBody) pod.plateBody.innerHTML = `<span class="pod-plate-empty">${t("select.openBay")}</span>`;
       if (pod.empty) pod.empty.innerHTML = emptyCopy;
       if (pod.badge) pod.badge.textContent = "";
       if (pod.stats) pod.stats.innerHTML = "";
@@ -377,7 +389,11 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       const empty = duoMode ? `P${slot + 1} — PRESS A<br />TO PICK` : soloEmpty[slot];
       fillPod(slot, cardFor(slot), empty);
       pods[slot].root?.classList.toggle("is-preview", !getSlot(slot) && Boolean(browsing[slot]));
-      pods[slot].plate?.setAttribute("data-role", duoMode ? `P${slot + 1}` : (slot === 0 ? "YOU" : "RIVAL"));
+      // Rendered as visible text by screens.css (content: attr(data-role)), so
+      // it is copy like everything else.
+      pods[slot].plate?.setAttribute("data-role", duoMode
+        ? t("hud.playerTag", { number: slot + 1 })
+        : t(slot === 0 ? "hud.youTag" : "hud.rivalTag"));
       // Every bay is live at once in duo, so each stays armed until it is
       // filled; solo, exactly the bay the flow is on is armed.
       pods[slot].root?.classList.toggle(
@@ -387,10 +403,10 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     });
     if (duoMode) {
       stepEl.textContent = playerCount > 2
-        ? `${slotCount} CONTROLLERS — EVERY PLAYER PICKS THEIR OWN BOT`
-        : "TWO CONTROLLERS — EACH PLAYER PICKS THEIR OWN BOT";
+        ? t("select.duoMany", { count: slotCount })
+        : t("select.duoPair");
     } else {
-      stepEl.textContent = sel.stage === "player" ? "STEP 1 — CHOOSE YOUR BOT" : "STEP 2 — CHOOSE THE OPPONENT";
+      stepEl.textContent = t(sel.stage === "player" ? "select.stepPlayer" : "select.stepOpponent");
     }
     fightBtn.disabled = slots().some((slot) => !getSlot(slot));
     // Once anything is CLAIMED the screen changes job: it stops being a
@@ -519,7 +535,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
   const bannerEl = $("hud-banner");
 
   function botName(i) {
-    return hud.names[i] || (i === 0 ? "PLAYER" : `P${i + 1}`);
+    return hud.names[i] || (i === 0 ? t("hud.playerFallback") : t("hud.playerTag", { number: i + 1 }));
   }
 
   function updateDamage(i) {
@@ -569,11 +585,14 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     countdownEl.hidden = true;
     setClock(MATCH_SECONDS);
     stopClock();
-    setPhase("STAND BY");
+    setPhase(t("hud.standBy"));
   }
 
   function setHudNames() {
-    const fallback = ["PLAYER", "RIVAL", "P3", "P4"];
+    const fallback = [
+      t("hud.playerFallback"), t("hud.rivalFallback"),
+      t("hud.playerTag", { number: 3 }), t("hud.playerTag", { number: 4 }),
+    ];
     // Several people may bring the SAME machine — a mirror match is allowed —
     // and four panels all reading TOMBSTONE tell you nothing about which bar is
     // yours. Only the duplicated ones get a player tag; a bot nobody else
@@ -586,7 +605,9 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       const base = card?.name.toUpperCase() || fallback[i];
       // The tag speaks the screen's own language: with two or more people it is
       // P1..P4, and against the AI it is you and the rival.
-      const tag = (lastMatch?.humans || 0) >= 2 ? `P${i + 1}` : (i === 0 ? "YOU" : "RIVAL");
+      const tag = (lastMatch?.humans || 0) >= 2
+        ? t("hud.playerTag", { number: i + 1 })
+        : t(i === 0 ? "hud.youTag" : "hud.rivalTag");
       hud.names[i] = counts.get(id) > 1 ? `${tag} ${base}` : base;
       if (els.name) els.name.textContent = hud.names[i];
       if (card) els.panel?.style.setProperty("--accent", card.accent);
@@ -655,8 +676,10 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
 
   function showCountdown(value) {
     countdownEl.hidden = false;
-    countdownNum.textContent = value == null ? "READY" : String(value);
+    const copy = value == null ? t("hud.ready") : String(value);
+    countdownNum.textContent = copy;
     countdownNum.classList.toggle("is-word", value == null || String(value).length > 2);
+    countdownNum.classList.toggle("is-long", copy.length > 10);
     countdownNum.classList.remove("pop");
     void countdownNum.offsetWidth;
     countdownNum.classList.add("pop");
@@ -664,14 +687,19 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
 
   function flashFight() {
     countdownEl.hidden = false;
-    countdownNum.textContent = "FIGHT!";
+    const flash = t("hud.fightFlash");
+    countdownNum.textContent = flash;
     countdownNum.classList.add("is-word", "is-fight");
+    // The flash is authored copy and can be a sentence rather than a word
+    // ("It's Robot Fighting Time!"), which at the display size overflows the
+    // screen. Past a handful of characters it wraps and steps down a size.
+    countdownNum.classList.toggle("is-long", flash.length > 10);
     countdownNum.classList.remove("pop");
     void countdownNum.offsetWidth;
     countdownNum.classList.add("pop");
     setTimeout(() => {
       countdownEl.hidden = true;
-      countdownNum.classList.remove("is-fight");
+      countdownNum.classList.remove("is-fight", "is-long");
     }, 900);
   }
 
@@ -704,25 +732,29 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       // VICTORY is you winning. With three or four machines everybody but P1
       // reads as a defeat FOR P1, which is the same question — whose screen is
       // this — so the test does not change.
-      kicker.textContent = winnerIndex === 0 ? "VICTORY" : "DEFEAT";
+      kicker.textContent = t(winnerIndex === 0 ? "results.victory" : "results.defeat");
       kicker.dataset.tone = winnerIndex === 0 ? "win" : "loss";
       // botName carries the player tag when the roster had duplicates, which is
       // the whole question on a results screen for a mirror match: which one.
       nameEl.textContent = botName(winnerIndex);
-      methodEl.textContent = isKO ? "WINS BY KNOCKOUT" : "WINS BY JUDGES DECISION";
+      methodEl.textContent = t(isKO ? "results.winsByKnockout" : "results.winsByDecision");
       imgWrap.innerHTML = card ? `<img src="${card.image}" alt="${card.name}" draggable="false" />` : "";
       wireImage(imgWrap);
       if (card) imgWrap.style.setProperty("--accent", card.accent);
     } else {
-      kicker.textContent = "FULL TIME";
+      kicker.textContent = t("results.fullTime");
       kicker.dataset.tone = "draw";
-      nameEl.textContent = "DRAW";
-      methodEl.textContent = "JUDGES CALL IT EVEN";
+      nameEl.textContent = t("results.draw");
+      methodEl.textContent = t("results.judgesEven");
       imgWrap.innerHTML = "";
     }
-    lineEl.textContent = `FINAL DAMAGE — ${hudSlots()
-      .map((i) => `${botName(i)} ${Math.round(hud.damage[i])}%`)
-      .join(" · ")}`;
+    lineEl.textContent = t("results.finalDamage", {
+      scores: hudSlots()
+        .map((i) => t("results.finalDamageEntry", {
+          name: botName(i), damage: Math.round(hud.damage[i]),
+        }))
+        .join(t("results.finalDamageSeparator")),
+    });
   }
 
   // -------------------------------------------------------------- bus wiring
@@ -743,7 +775,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
         return;
       }
       if (p.killSaws === true || p.killSawsActive === true || p.hazard === "killSaw" || p.phase === "killSaws") {
-        showCallout("KILL SAWS ACTIVE");
+        showCallout(t("hud.killSaws"));
         ticker(`<b>HAZARD</b> — kill saws are live`, "tick-alert");
       }
       // A machine out of a three- or four-way, which is not the end of the
@@ -761,25 +793,25 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
           if (p.count === 3 || p.count === undefined) resetHud();
           stopClock();
           setClock(remaining !== undefined ? remaining : MATCH_SECONDS);
-          setPhase("GET READY");
+          setPhase(t("hud.getReady"));
           showCountdown(typeof p.count === "number" ? p.count : null);
           break;
         case "fight":
           if (lastPhase !== "fight") {
             flashFight();
-            setPhase("FIGHT");
+            setPhase(t("hud.phaseFight"));
           }
           startClock(remaining !== undefined ? remaining : hud.clock.remaining);
           break;
         case "ko":
           stopClock();
-          setPhase("KNOCKOUT");
-          showBanner("KO!");
+          setPhase(t("hud.phaseKnockout"));
+          showBanner(t("hud.bannerKo"));
           break;
         case "timeUp":
           stopClock();
-          setPhase("TIME EXPIRED");
-          showBanner("TIME!");
+          setPhase(t("hud.phaseTimeExpired"));
+          showBanner(t("hud.bannerTime"));
           break;
         case "results":
           stopClock();
@@ -804,7 +836,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       const now = performance.now();
       if (settings.showDamageEvents && amount >= 2 && now - hud.lastTick[i] > 700) {
         hud.lastTick[i] = now;
-        ticker(`<b>${botName(i)}</b> — ${ZONE_LABELS[p.zone] || "HIT"} +${Math.round(amount)}`);
+        ticker(`<b>${botName(i)}</b> — ${t(ZONE_LABELS[p.zone], null, t("hud.zoneUnknown"))} +${Math.round(amount)}`);
       }
     })
   );
@@ -815,7 +847,7 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
       if (!Number.isInteger(i) || i < 0 || i >= hud.bots) return;
       hud.broken[i].add(p.zone);
       renderTags(i);
-      ticker(`<b>${botName(i)}</b> — ${BREAK_LABELS[p.zone] || "PART"} `, "tick-alert");
+      ticker(`<b>${botName(i)}</b> — ${t(BREAK_LABELS[p.zone], null, t("hud.breakUnknown"))} `, "tick-alert");
     })
   );
 
@@ -856,11 +888,11 @@ export function createUI({ bus, on, onAction = () => {} } = {}) {
     render();
   }
 
-  bindToggle($("btn-title-sound"), "soundEnabled", "SOUND: ON", "SOUND: OFF");
-  bindToggle($("set-sound"), "soundEnabled", "ON", "OFF");
-  bindToggle($("set-sampled-sfx"), "sampledSfx", "ON", "OFF");
-  bindToggle($("set-haptics"), "hapticsEnabled", "ON", "OFF");
-  bindToggle($("set-damage-events"), "showDamageEvents", "ON", "OFF");
+  bindToggle($("btn-title-sound"), "soundEnabled", t("title.soundOn"), t("title.soundOff"));
+  bindToggle($("set-sound"), "soundEnabled", t("settings.on"), t("settings.off"));
+  bindToggle($("set-sampled-sfx"), "sampledSfx", t("settings.on"), t("settings.off"));
+  bindToggle($("set-haptics"), "hapticsEnabled", t("settings.on"), t("settings.off"));
+  bindToggle($("set-damage-events"), "showDamageEvents", t("settings.on"), t("settings.off"));
 
   const cameraSel = /** @type {HTMLSelectElement} */ ($("set-camera"));
   if (cameraSel) {

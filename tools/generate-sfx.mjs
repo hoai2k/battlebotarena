@@ -145,6 +145,13 @@ const MANIFEST = [
     prompt: "A short broadcast sting closing out a fight: an industrial metallic hit with a low sub-drop and a brief tail. No melody, no music bed. Punchy." },
   { id: "crowd/cheer_big", takes: 3, seconds: 5, roomy: true, influence: 0.4,
     prompt: "A large indoor arena crowd erupting into a huge cheer and roar after a spectacular hit, building fast then settling. A few thousand people, no chanting, no music, no announcer. Roomy." },
+  // The pre-fight chant. Real BattleBots crowds do this over the countdown:
+  // a rhythmic unison "FIGHT! FIGHT! FIGHT!" that peaks as the lights go. Low
+  // prompt_influence on purpose — pushed harder the model returns one clean
+  // shouted word instead of a few thousand people slightly out of sync, and
+  // being slightly out of sync is the entire sound of a crowd chanting.
+  { id: "crowd/chant_fight", takes: 3, seconds: 6, roomy: true, influence: 0.35,
+    prompt: "A large indoor arena crowd of a few thousand people chanting FIGHT FIGHT FIGHT in unison before a robot combat match starts. Rhythmic, three beats, voices slightly out of sync with each other, stamping and clapping underneath, rising in intensity and energy towards the end. No music, no announcer, no commentary. Roomy live arena recording." },
   { id: "crowd/gasp", takes: 2, seconds: 3, roomy: true, influence: 0.4,
     prompt: "A large arena crowd drawing a collective gasp and letting out a scattered ooh at a near miss. A few thousand people, no cheering, no music, no announcer. Roomy." },
 

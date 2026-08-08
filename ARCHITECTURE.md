@@ -156,9 +156,33 @@ The mix lives in `config.js` (`CONFIG.mix`): SFX, music, crowd, announcer and
 UI as fractions of one master, because the question is never "how loud is the
 music" but "how loud is it compared to the hits".
 
+The crowd is not on a throttle. `game/crowdMood.js` holds the decision — react
+or not, and how loudly — as a pure function of a small mood state, so it runs in
+node: a crowd responds to ESCALATION, suppresses an identical repeat, gets
+progressively hoarser under a steady beating, and recovers over a lull.
+
 `tools/generate-sfx.mjs` regenerates the bank; `tools/sfx-probe.mjs` proves it
 loads in the real page (the bank swallows its own failures by design, so a
-broken bank sounds exactly like a working one from the inside).
+broken bank sounds exactly like a working one from the inside);
+`tools/crowd-probe.mjs` prints and asserts the crowd's behaviour.
+
+## Copy lives in config.js (CONFIG.text), not in the markup
+
+Every user-facing string is in `CONFIG.text`. Static copy is marked up as
+`data-text-key="title.play"` and filled in by `ui/text.js`'s `applyStaticText()`
+before the first screen shows; dynamic copy calls `t("results.finalDamage",
+{ scores })`, with `{braces}` for substitution. The default wording stays in
+index.html as the fallback, so a mistyped key degrades to the old string rather
+than to a blank screen.
+
+The one deliberate exception is the roster copy in `ui/botCards.js` — 28 bots'
+names, taglines and weapon labels, which belong next to the stat bars and accent
+colours they are authored with.
+
+A note for anyone adding copy: keep the CSS hook separate from the words. The
+stat pips take a `key` ("spd") for their colour class and a `label` for what is
+printed, because renaming SPD should not be able to silently drop a bar's
+colour.
 
 ## Sim public API (v2/src/sim/sim.js)
 

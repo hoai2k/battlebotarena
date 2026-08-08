@@ -135,11 +135,207 @@ export const CONFIG = {
      *  object rather than the same one hit again. */
     samplePitchJitter: 0.08,
 
+    /** How the crowd decides whether a thing is worth reacting to.
+     *
+     *  They react to ESCALATION, not to events: the first big hit is enormous,
+     *  the fourth identical one barely registers, and what earns the fifth is
+     *  being WORSE than the fourth. Raise `escalation` and only a real step up
+     *  gets a full-blooded roar; lower it and they are easily impressed.
+     *
+     *  The tell that these are wrong: a long exchange at one level either
+     *  sounds like a stuck sample (too generous) or like an empty room (too
+     *  mean). It should sound like people getting hoarse. */
+    crowd: {
+      /** Seconds. Nothing gets a second reaction inside this, however good. */
+      minGapSeconds: 1.2,
+      /** Seconds a repeat at the SAME level has to wait for its smaller cheer. */
+      steadyGapSeconds: 2.6,
+      /** How much more extreme (0..1) a hit must be to cut in immediately. */
+      escalation: 0.12,
+      /** Seconds over which the last reaction's bar decays back to nothing —
+       *  i.e. how long a hit stays the thing to beat. Only governs what is
+       *  now BENEATH them; a repeat at the same level is judged against the
+       *  bar as set, so a steady beating never drifts into counting as
+       *  escalation just because time passed. */
+      memorySeconds: 14,
+      /** Below this share of the current bar, a repeat is beneath them. */
+      repeatFloorRatio: 0.6,
+      /** Quietest a fatigued repeat gets, as a share of full. Never 0: a crowd
+       *  going completely silent mid-fight reads as a bug. */
+      repeatGainFloor: 0.45,
+      /** How much each reaction dulls the next, and how fast that wears off. */
+      fatigueStep: 0.22,
+      fatigueRecoverySeconds: 9,
+      /** An escalation plays at full voice whatever the fatigue, and adds only
+       *  this share of it — being shown something genuinely bigger cuts
+       *  through a hoarse crowd, and costs them less than a repeat. */
+      escalationFatigueShare: 0.35,
+    },
+
     /** Announcer voice lines (public/sfx/vo). OFF: the takes in the repo came
      *  out of a text-to-SOUND model, not a speech model, so they approximate a
      *  shouted callout rather than saying the word. Turn this on once real
      *  takes replace them — see public/sfx/vo/README.md. */
     announcerVoice: false,
+  },
+
+  // --------------------------------------------------------------------- text
+  // EVERY WORD THE GAME SAYS. Change one here and it changes on screen; there
+  // is no build step and nothing to keep in sync.
+  //
+  // The markup still contains the default copy, because a screen that renders
+  // blank when a key is missing is worse than one showing the old wording —
+  // anything with a `data-text-key` gets overwritten from here at start-up, and
+  // falls back to what is in the HTML if the key does not exist.
+  //
+  // `{braces}` are substitutions filled in by the game. Keep them, move them,
+  // or drop them; text with no braces just loses the number.
+  //
+  // NOT here: the roster copy in `ui/botCards.js` — bot names, taglines and
+  // weapon labels. That is 28 machines' worth of description sitting next to
+  // the stat bars and accent colours it belongs with, and splitting a bot's
+  // name from its card is how the two drift apart. Edit it there.
+  text: {
+    documentTitle: "BattleBot Arena",
+
+    /** The very first overlay, before any module has loaded. */
+    boot: {
+      title: "BATTLEBOT ARENA",
+      detail: "Warming up the pit…",
+    },
+
+    /** The progress overlay: bot models are 10-17MB each, so it is on screen
+     *  for real time and the wording is read. */
+    loading: {
+      title: "LOADING",
+      bots: "Loading Bots",
+      arena: "Preparing Arena",
+      buildingArena: "Building the arena",
+      startingPhysics: "Starting physics",
+      calibratingChassis: "Calibrating chassis",
+      /** Between the two machines on the loading screen. */
+      versus: " vs ",
+    },
+
+    title: {
+      kicker: "ROBOT COMBAT LEAGUE",
+      logoMain: "BATTLEBOT",
+      logoSub: "ARENA",
+      tagline: "3 MINUTES · 2 MACHINES · 1 LEFT STANDING",
+      play: "ENTER THE ARENA",
+      settings: "SETTINGS",
+      soundOn: "SOUND: ON",
+      soundOff: "SOUND: OFF",
+      controls: "W/S DRIVE · A/D TURN · SPACE WEAPON · GAMEPAD READY",
+    },
+
+    select: {
+      stepPlayer: "STEP 1 — CHOOSE YOUR BOT",
+      stepOpponent: "STEP 2 — CHOOSE THE OPPONENT",
+      /** Shown instead of the steps when people bring their own controllers. */
+      duoPair: "TWO CONTROLLERS — EACH PLAYER PICKS THEIR OWN BOT",
+      duoMany: "{count} CONTROLLERS — EVERY PLAYER PICKS THEIR OWN BOT",
+      aiLevel: "AI LEVEL",
+      easy: "EASY",
+      normal: "NORMAL",
+      hard: "HARD",
+      emptyPlayer: "PICK<br />YOUR BOT",
+      emptyOpponent: "PICK THE<br />OPPONENT",
+      emptyP3: "P3 — PRESS A<br />TO PICK",
+      emptyP4: "P4 — PRESS A<br />TO PICK",
+      openBay: "— OPEN BAY —",
+      versus: "VS",
+      fight: "FIGHT",
+      back: "◀ EXIT",
+      rosterLabel: "Bot roster",
+      statSpeed: "SPD",
+      statPower: "PWR",
+      statArmor: "ARM",
+    },
+
+    hud: {
+      standBy: "STAND BY",
+      getReady: "GET READY",
+      phaseFight: "FIGHT",
+      phaseKnockout: "KNOCKOUT",
+      phaseTimeExpired: "TIME EXPIRED",
+      /** The countdown before it has a number to show. */
+      ready: "READY",
+      /** THE START OF THE FIGHT — the big flash as the countdown lands. Long
+       *  copy is fine: the HUD shrinks and wraps it to fit. */
+      fightFlash: "It's Robot Fighting Time!",
+      bannerKo: "KO!",
+      bannerTime: "TIME!",
+      killSaws: "KILL SAWS ACTIVE",
+      hint: "SPACE — WEAPON · SHIFT — BRAKE · ESC — PAUSE",
+      /** Name plates before the roster is known. */
+      playerFallback: "PLAYER",
+      rivalFallback: "RIVAL",
+      /** Tags that disambiguate two people who brought the same machine. */
+      youTag: "YOU",
+      rivalTag: "RIVAL",
+      playerTag: "P{number}",
+      /** The damage ticker. */
+      zoneBody: "BODY",
+      zoneWeapon: "WEAPON",
+      zoneDrive: "DRIVE",
+      zoneUnknown: "HIT",
+      breakWeapon: "WEAPON OUT",
+      breakDrive: "DRIVE DAMAGE",
+      breakBody: "ARMOR BREACH",
+      breakOut: "ELIMINATED",
+      breakUnknown: "PART",
+    },
+
+    pause: {
+      title: "PAUSED",
+      resume: "RESUME",
+      settings: "SETTINGS",
+      exit: "EXIT TO MENU",
+      hint: "START / ESC TO RESUME",
+    },
+
+    results: {
+      victory: "VICTORY",
+      defeat: "DEFEAT",
+      fullTime: "FULL TIME",
+      draw: "DRAW",
+      winsByKnockout: "WINS BY KNOCKOUT",
+      winsByDecision: "WINS BY JUDGES DECISION",
+      judgesEven: "JUDGES CALL IT EVEN",
+      finalDamage: "FINAL DAMAGE — {scores}",
+      finalDamageEntry: "{name} {damage}%",
+      finalDamageSeparator: " · ",
+      rematch: "REMATCH",
+      changeBots: "CHANGE BOTS",
+      exit: "EXIT",
+    },
+
+    settings: {
+      title: "Settings",
+      close: "CLOSE",
+      on: "ON",
+      off: "OFF",
+      sound: "Sound",
+      soundHint: "Everything: impacts, motors, crowd, menus",
+      sampled: "Sampled audio",
+      sampledHint: "Recorded hits and motors, not the synth",
+      haptics: "Haptics",
+      hapticsHint: "Gamepad rumble on hits",
+      damageTicker: "Damage ticker",
+      damageTickerHint: "Per-hit callouts in the HUD",
+      camera: "Camera",
+      cameraLabel: "Camera mode",
+      cameraBattle: "Battle",
+      cameraBot: "Bot",
+      cameraArena: "Arena",
+      difficultyLabel: "AI difficulty",
+    },
+
+    fullscreen: {
+      title: "Fullscreen",
+      label: "Toggle fullscreen",
+    },
   },
 
   // -------------------------------------------------------------------- match

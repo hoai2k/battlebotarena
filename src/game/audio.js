@@ -25,6 +25,7 @@ import { EV } from "../shared/events.js";
 import { settings, onSettingChanged } from "../shared/settings.js";
 import { CONFIG } from "../config.js";
 import { attachSfxContext, preloadSfx, hasSample, takeSample, loadSfxManifest } from "./sfxBank.js";
+import { freshCrowd, crowdVerdict } from "./crowdMood.js";
 
 /** Master level for every sound this module makes. The soundEnabled toggle is
  *  a separate, harder gate: off is 0 whatever this says. */
@@ -319,15 +320,29 @@ const FIRE_SAMPLES = {
   lifterDisc: "weapon/lifter_raise",
 };
 
+// --- Crowd reactions -------------------------------------------------------
+// The decision (react or not, and how loudly) lives in crowdMood.js, which has
+// no Web Audio in it and can therefore be run in node — see tools/crowd-probe.
+// This half only turns a verdict into a sound.
+
+let crowdMood = freshCrowd();
+
+function resetCrowdState() {
+  crowdMood = freshCrowd();
+}
+
 /**
- * Crowd reaction one-shot. Throttled hard and independently of the impact that
- * caused it: a crowd that reacts to every hit in a long exchange stops sounding
- * like a crowd and starts sounding like a stuck sample.
+ * @param {string} id crowd asset
+ * @param {number} magnitude 0..1, how extreme the thing that caused it was
+ * @param {{force?: boolean}} [options] force = a bell-to-bell moment (fight
+ *   start, KO, the chant), which lands regardless of what came before it.
  */
-function crowdReact(id, gain = 1, minGap = 4) {
+function crowdReact(id, magnitude = 1, { force = false } = {}) {
   if (!ready() || CROWD_GAIN <= 0) return;
-  if (minGap > 0 && throttled(`crowd:${id}`, minGap)) return;
-  playSample(id, { gain: gain * CROWD_GAIN * 1.6, jitter: false });
+  const verdict = crowdVerdict(crowdMood, magnitude, ctx.currentTime, CONFIG.audio.crowd, force);
+  crowdMood = verdict.mood;
+  if (!verdict.play) return;
+  playSample(id, { gain: verdict.gain * magnitude * CROWD_GAIN * 1.6, jitter: false });
 }
 
 /**
@@ -855,6 +870,9 @@ export function createGameAudio(bus, { specs = [] } = {}) {
   // Latest spin ratio per bot (EV.WEAPON_SPIN only fires on change; loops
   // still need per-frame keep-alive, so updateFrame replays these).
   const spinState = new Map();
+  // A rematch starts with a fresh crowd: whatever impressed them last round is
+  // not a bar this one has to clear.
+  resetCrowdState();
   let sawsActive = false;
   let crowdActive = false;
   let lastPhase = null;
@@ -883,7 +901,7 @@ export function createGameAudio(bus, { specs = [] } = {}) {
     const isFlame = Boolean(weapon?.flame) && !(appliedImpulse > 0);
     const sampleId = weaponHitSampleId(weapon?.type, intensity, isFlame);
     playImpactProfile("heavyClang", Math.min(1, intensity), point, sampleId);
-    if (intensity > 0.8) crowdReact("crowd/cheer_big", 0.9);
+    if (intensity > 0.8) crowdReact("crowd/cheer_big", Math.min(1, intensity));
   }));
 
   unsubscribes.push(bus.on(EV.WEAPON_SPIN, ({ botIndex, weaponType, ratio }) => {
@@ -903,11 +921,13 @@ export function createGameAudio(bus, { specs = [] } = {}) {
     const intensity = Math.min(1, Math.sqrt(Math.max(0, impulse || 0) / 220));
     playImpactProfile("heavyClang", intensity, point, "hazard/killsaw_launch");
     // A bot going airborne off the saws is the crowd's moment, not the KO.
-    if (intensity > 0.5) crowdReact("crowd/gasp", 0.8);
+    if (intensity > 0.5) crowdReact("crowd/gasp", Math.min(1, intensity));
   }));
 
   unsubscribes.push(bus.on(EV.PART_BREAK, ({ point, zone }) => {
     breakSound(point || null, 6, zone);
+    // A part coming off is the top of the scale — nothing in a fight beats it,
+    // so it is what the bar gets set to.
     crowdReact("crowd/cheer_big", 1);
   }));
 
@@ -935,12 +955,15 @@ export function createGameAudio(bus, { specs = [] } = {}) {
       if (phase === "fight") {
         playSample("match/countdown_beep_final", { gain: 0.6, jitter: false });
         announce("vo/fight");
-        crowdReact("crowd/cheer_big", 1, 0);
+        crowdReact("crowd/cheer_big", 1, { force: true });
       }
       if (phase === "ko") {
         announce("vo/ko");
-        crowdReact("crowd/cheer_big", 1, 0);
+        crowdReact("crowd/cheer_big", 1, { force: true });
       }
+      // The chant runs over the 3-2-1, under the countdown cue, and is the one
+      // crowd sound that is not a reaction to anything in the arena.
+      if (phase === "countdown") crowdReact("crowd/chant_fight", 1, { force: true });
       if (phase === "timeUp") announce("vo/time");
       if (phase === "results") playSample("match/results_sting", { gain: 0.7, jitter: false });
       lastPhase = phase;

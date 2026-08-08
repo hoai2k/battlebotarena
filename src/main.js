@@ -25,6 +25,7 @@ import { createUiAudio } from "./game/uiAudio.js";
 import { createMusic } from "./game/music.js";
 import { PAUSE_DUCK } from "./shared/musicPlayer.js";
 import { CONFIG } from "./config.js";
+import { t } from "./ui/text.js";
 import { createWeaponInputShaper } from "./game/weaponControls.js";
 
 const bus = createEventBus();
@@ -181,7 +182,11 @@ async function startMatch({ botIds, playerBotId, rivalBotId, humanCount, difficu
   // match can start. Aggregate the two downloads into one bar; if either
   // response has no content-length (chunked/gzipped) the whole bar goes
   // indeterminate rather than reporting a half-truth.
-  loader.show({ title: "Loading Bots", detail: specs.map((s) => s.name).join(" vs "), progress: 0 });
+  loader.show({
+    title: t("loading.bots"),
+    detail: specs.map((s) => s.name).join(t("loading.versus")),
+    progress: 0,
+  });
   const modelProgress = specs.map(() => 0);
   const reportModels = () => {
     const known = modelProgress.every((p) => typeof p === "number");
@@ -209,15 +214,15 @@ async function startMatch({ botIds, playerBotId, rivalBotId, humanCount, difficu
   );
   botVisuals.forEach((visual) => stage.scene.add(visual.group));
 
-  loader.setTitle("Preparing Arena");
-  loader.setDetail("Building the arena");
+  loader.setTitle(t("loading.arena"));
+  loader.setDetail(t("loading.buildingArena"));
   loader.setProgress(0.84);
   await nextFrame();
   if (!arenaVisuals) arenaVisuals = createArenaVisuals(stage.scene);
   // Where the start boxes go depends on how many machines are in the box.
   arenaVisuals.setBotCount(specs.length);
 
-  loader.setDetail("Starting physics");
+  loader.setDetail(t("loading.startingPhysics"));
   loader.setProgress(0.9);
   await nextFrame();
   const sim = await createSim({ bots: specs, emit: bus.emit });
@@ -234,7 +239,7 @@ async function startMatch({ botIds, playerBotId, rivalBotId, humanCount, difficu
   // reset to spawn. Shifting the model CONTENTS (not the group) keeps
   // rotations centered on the body.
   const idleInput = { leftDrive: 0, rightDrive: 0, weapon: false, brake: false };
-  loader.setDetail("Calibrating chassis");
+  loader.setDetail(t("loading.calibratingChassis"));
   loader.setProgress(0.96);
   await nextFrame();
   const idleInputs = specs.map(() => idleInput);

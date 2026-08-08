@@ -325,6 +325,14 @@
     ],
     "loop": false
   },
+  "crowd/chant_fight": {
+    "files": [
+      "crowd/chant_fight_1.mp3",
+      "crowd/chant_fight_2.mp3",
+      "crowd/chant_fight_3.mp3"
+    ],
+    "loop": false
+  },
   "crowd/gasp": {
     "files": [
       "crowd/gasp_1.mp3",

@@ -365,6 +365,19 @@
   letter-spacing: 0.04em;
 }
 
+/* The start-of-fight flash is authored copy (CONFIG.text.hud.fightFlash) and
+   may be a sentence rather than a word. At the single-word display size a
+   sentence runs off both edges of the screen, so long copy wraps inside the
+   arena view and steps down to a size that fits three-ish words a line. */
+#hud-countdown-num.is-long {
+  font-size: clamp(2.2rem, 7.5vh, 4.6rem);
+  max-width: min(88vw, 22ch);
+  text-align: center;
+  text-wrap: balance;
+  line-height: 1.05;
+  letter-spacing: 0.02em;
+}
+
 #hud-countdown-num.is-fight {
   background: linear-gradient(180deg, #ffd9a1 0%, var(--red-hot) 45%, var(--red-deep) 100%);
   -webkit-background-clip: text;

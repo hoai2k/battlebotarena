@@ -10,6 +10,8 @@
 // you want when the response has no usable content-length (GLBs served with
 // transfer-encoding: chunked, e.g. behind gzip).
 
+import { t } from "./text.js";
+
 export function createLoader({ root = document } = {}) {
   const el = root.getElementById?.("asset-loader") || root.querySelector?.("#asset-loader") || null;
   const titleEl = el?.querySelector("#asset-loader-title") || null;
@@ -43,7 +45,7 @@ export function createLoader({ root = document } = {}) {
     if (pctEl) pctEl.textContent = `${Math.round(clamped * 100)}%`;
   }
 
-  function show({ title = "Loading", detail = "", progress = null } = {}) {
+  function show({ title = t("loading.title"), detail = "", progress = null } = {}) {
     if (!el) return;
     if (hideTimer) {
       clearTimeout(hideTimer);

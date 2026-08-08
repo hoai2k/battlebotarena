@@ -4,7 +4,7 @@ Every sound the game needs, what triggers it, and the prompt that produced it.
 
 ## Status: generated and wired
 
-**All 131 files in this manifest exist**, in `public/sfx/` (~4 MB of MP3). They
+**All 134 files in this manifest exist**, in `public/sfx/` (~4 MB of MP3). They
 were generated from the prompts below with ElevenLabs' text-to-sound API by
 `tools/generate-sfx.mjs`, which holds the same manifest in machine-readable
 form — that script, not this file, is what a regeneration reads. Editing a
@@ -317,6 +317,7 @@ tool with a hyped sports-announcer reference rather than a text-to-SFX model.
 | `vo/ko` | `phase: "ko"` | 1.2 s | 2 |
 | `vo/time` | `phase: "timeUp"` | 1.0 s | 1 |
 | `crowd/cheer_big` | Big hit, KO, part break | 4 s | 3 |
+| `crowd/chant_fight` | `phase: "countdown"` — over the 3-2-1 | 6 s | 3 |
 | `crowd/gasp` | Near-miss, bot launched by a hazard | 2 s | 2 |
 | `match/results_sting` | `phase: "results"` | 2.5 s | 1 |
 
@@ -334,6 +335,14 @@ tool with a hyped sports-announcer reference rather than a text-to-SFX model.
 - `crowd/cheer_big` — "A large indoor arena crowd erupting into a huge cheer and
   roar after a spectacular hit, building fast then settling. A few thousand
   people, no chanting, no music, no announcer. Roomy, stereo."
+- `crowd/chant_fight` — "A large indoor arena crowd of a few thousand people
+  chanting FIGHT FIGHT FIGHT in unison before a robot combat match starts.
+  Rhythmic, three beats, voices slightly out of sync with each other, stamping
+  and clapping underneath, rising in intensity towards the end. No music, no
+  announcer. Roomy live arena recording." Generated at a LOW prompt influence
+  (0.35) — pushed harder the model returns one clean shouted word instead of a
+  few thousand people slightly out of sync, and being slightly out of sync is
+  the entire sound of a crowd chanting.
 - `crowd/gasp` — "A large arena crowd drawing a collective gasp and letting out
   a scattered 'ooh' at a near-miss. A few thousand people, no cheering, no
   music. Roomy, stereo."
@@ -394,6 +403,27 @@ short, quiet and unmusical; they play under the anthem.
 
 ---
 
+## The crowd reacts to escalation, not to events
+
+`crowd/cheer_big` and `crowd/gasp` are not fired on a timer or a flat throttle.
+`src/game/crowdMood.js` decides, and it models a crowd rather than a cooldown:
+
+- An identical repeat shortly after a reaction gets **nothing** — they have
+  already made that noise.
+- Something **notably more extreme** than the last thing they reacted to cuts
+  straight in at full voice. "Notably" is `CONFIG.audio.crowd.escalation`.
+- A **steady beating at one level** still gets a reaction, quieter each time,
+  down to a floor: they go hoarse, they do not go home.
+- A **lull** brings them back to full strength.
+
+`node tools/crowd-probe.mjs` prints the curve for scripted fights and asserts
+each of those properties, because the difference between "hoarse" and "stopped
+caring" is a couple of exponentials and is very hard to hear.
+
+The chant is the exception, along with the fight start and the KO: those are
+bell-to-bell moments, not reactions, so they land regardless and reset the
+crowd's memory rather than spending it.
+
 ## What shipped, versus what this document asked for
 
 Two things came out different from the brief above, both because of what the
@@ -403,7 +433,13 @@ generator can actually deliver:
   returns; there is no mono or 48 kHz option on the endpoint. Positioned
   sounds are panned in engine anyway, and a stereo source panned is a slightly
   wider image than a mono one, not a broken one.
-- **The announcer is not real.** See § 6 and `public/sfx/vo/README.md`.
+- **The announcer is not real.** See § 6 and `public/sfx/vo/README.md`. The
+  crowd chant is the one piece of "speech" that shipped switched ON, because a
+  chant is a texture — a few thousand people roughly in unison — where the
+  model's inability to enunciate is much closer to the real thing than it is
+  for a single announcer. It has still not been verified word-for-word by
+  anyone; if it turns out to be an unintelligible roar, it is a perfectly good
+  pre-fight crowd bed either way, and `CONFIG.mix.crowd` turns it down.
 
 Everything else — the tiers, the variant counts, the loop treatment, the dry
 no-reverb rule appended to every prompt — is as specified.

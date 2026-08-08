@@ -18,8 +18,8 @@
     <div id="boot-loader" class="loader-overlay is-open" role="status" aria-live="polite">
       <div class="loader-panel">
         <span class="loader-spinner" aria-hidden="true"></span>
-        <span class="loader-title">BATTLEBOT ARENA</span>
-        <span class="loader-detail">Warming up the pit&hellip;</span>
+        <span class="loader-title" data-text-key="boot.title">BATTLEBOT ARENA</span>
+        <span class="loader-detail" data-text-key="boot.detail">Warming up the pit&hellip;</span>
         <span class="loader-bar loader-bar-indeterminate" aria-hidden="true"><i></i></span>
       </div>
     </div>
@@ -30,13 +30,13 @@
     <div id="asset-loader" class="loader-overlay" hidden role="status" aria-live="polite">
       <div class="loader-panel">
         <span class="loader-spinner" aria-hidden="true"></span>
-        <span id="asset-loader-title" class="loader-title">LOADING</span>
+        <span id="asset-loader-title" class="loader-title" data-text-key="loading.title">LOADING</span>
         <span id="asset-loader-detail" class="loader-detail"></span>
         <span id="asset-loader-bar" class="loader-bar"><i id="asset-loader-fill"></i></span>
         <span id="asset-loader-pct" class="loader-pct"></span>
       </div>
     </div>
-    <button id="btn-fullscreen" type="button" title="Fullscreen" aria-label="Toggle fullscreen"
+    <button id="btn-fullscreen" type="button" title="Fullscreen" aria-label="Toggle fullscreen" data-text-key="fullscreen.label" data-text-attr="aria-label"
       style="position:fixed;top:14px;right:14px;z-index:60;width:40px;height:40px;background:rgba(10,12,16,0.72);border:1px solid rgba(255,255,255,0.22);color:#fff;font:700 18px/1 system-ui;cursor:pointer;border-radius:4px;">⛶</button>
     <div id="app">
       <!-- ================================================== TITLE -->
@@ -63,21 +63,21 @@
               <use href="#saw-teeth" transform="rotate(330 50 50)" />
             </g>
           </svg>
-          <span class="kicker">ROBOT COMBAT LEAGUE</span>
+          <span class="kicker" data-text-key="title.kicker">ROBOT COMBAT LEAGUE</span>
           <h1 class="title-logo">
-            <span class="title-logo-main" data-text="BATTLEBOT">BATTLEBOT</span>
-            <span class="title-logo-sub"><i class="stripe" aria-hidden="true"></i><b>ARENA</b><i class="stripe" aria-hidden="true"></i></span>
+            <span class="title-logo-main" data-text="BATTLEBOT" data-text-key="title.logoMain">BATTLEBOT</span>
+            <span class="title-logo-sub"><i class="stripe" aria-hidden="true"></i><b data-text-key="title.logoSub">ARENA</b><i class="stripe" aria-hidden="true"></i></span>
           </h1>
-          <p class="title-tagline">3 MINUTES &middot; 2 MACHINES &middot; 1 LEFT STANDING</p>
+          <p class="title-tagline" data-text-key="title.tagline">3 MINUTES &middot; 2 MACHINES &middot; 1 LEFT STANDING</p>
           <div class="title-actions">
-            <button id="btn-title-fight" class="btn btn-primary btn-xl" type="button"><span>ENTER THE ARENA</span></button>
+            <button id="btn-title-fight" class="btn btn-primary btn-xl" type="button"><span data-text-key="title.play">ENTER THE ARENA</span></button>
             <div class="title-secondary">
-              <button id="btn-title-settings" class="btn btn-sm" type="button"><span>SETTINGS</span></button>
+              <button id="btn-title-settings" class="btn btn-sm" type="button"><span data-text-key="title.settings">SETTINGS</span></button>
               <button id="btn-title-sound" class="btn btn-sm btn-toggle" type="button" aria-pressed="false"><span data-toggle-label>SOUND: OFF</span></button>
             </div>
           </div>
         </div>
-        <div class="title-footnote">W/S DRIVE &middot; A/D TURN &middot; SPACE WEAPON &middot; GAMEPAD READY</div>
+        <div class="title-footnote" data-text-key="title.controls">W/S DRIVE &middot; A/D TURN &middot; SPACE WEAPON &middot; GAMEPAD READY</div>
       </section>
 
       <!-- ============================================= BOT SELECT -->
@@ -93,14 +93,14 @@
         <div class="screen-backdrop"></div>
         <canvas id="preview-canvas" aria-hidden="true"></canvas>
         <header class="select-head">
-          <button id="btn-select-back" class="btn btn-sm" type="button"><span>&#9668; EXIT</span></button>
-          <h2 id="sel-step" class="select-step">STEP 1 — CHOOSE YOUR BOT</h2>
-          <div class="difficulty" role="group" aria-label="AI difficulty">
-            <span class="difficulty-label">AI LEVEL</span>
+          <button id="btn-select-back" class="btn btn-sm" type="button"><span data-text-key="select.back">&#9668; EXIT</span></button>
+          <h2 id="sel-step" class="select-step" data-text-key="select.stepPlayer">STEP 1 — CHOOSE YOUR BOT</h2>
+          <div class="difficulty" role="group" aria-label="AI difficulty" data-text-key="settings.difficultyLabel" data-text-attr="aria-label">
+            <span class="difficulty-label" data-text-key="select.aiLevel">AI LEVEL</span>
             <span class="difficulty-buttons">
-              <button type="button" data-difficulty="easy">EASY</button>
-              <button type="button" data-difficulty="normal">NORMAL</button>
-              <button type="button" data-difficulty="hard">HARD</button>
+              <button type="button" data-difficulty="easy" data-text-key="select.easy">EASY</button>
+              <button type="button" data-difficulty="normal" data-text-key="select.normal">NORMAL</button>
+              <button type="button" data-difficulty="hard" data-text-key="select.hard">HARD</button>
             </span>
           </div>
         </header>
@@ -108,14 +108,14 @@
           <div id="pod-player" class="preview-pod pod-player is-armed">
             <!-- data-nav-*: stepping across the stage stops at FIGHT rather
                  than jumping pod to pod (see gamepadNav's hintedNext). -->
-            <button id="slot-player" class="pod-plate" type="button" data-role="YOU" data-nav-right="#btn-fight">
+            <button id="slot-player" class="pod-plate" type="button" data-role="YOU" data-text-key="hud.youTag" data-text-attr="data-role" data-nav-right="#btn-fight">
               <span class="pod-plate-body"></span>
             </button>
             <div id="pod-view-player" class="pod-view">
               <!-- The baked stand-in, shown while the real model downloads. Sized
                    and placed by engine/posters.js; empty until a bot is staged. -->
               <img id="pod-poster-player" class="pod-poster" alt="" hidden draggable="false" />
-              <span class="pod-empty">PICK<br />YOUR BOT</span>
+              <span class="pod-empty" data-text-key="select.emptyPlayer">PICK<br />YOUR BOT</span>
               <span class="pod-loading loader-spinner" hidden></span>
             </div>
             <div class="pod-foot">
@@ -125,9 +125,9 @@
             </div>
           </div>
           <div class="select-mid">
-            <span class="vs-label">VS</span>
+            <span class="vs-label" data-text-key="select.versus">VS</span>
             <button id="btn-fight" class="btn btn-primary btn-xl" type="button" disabled
-                    data-nav-left="#slot-player" data-nav-right="#slot-rival"><span>FIGHT</span></button>
+                    data-nav-left="#slot-player" data-nav-right="#slot-rival"><span data-text-key="select.fight">FIGHT</span></button>
             <div class="pod-controls-hint">
               R-STICK ORBIT &middot; LT ZOOM<br />
               RT / RB / LB / LT RUN THE WEAPONS<br />
@@ -135,14 +135,14 @@
             </div>
           </div>
           <div id="pod-rival" class="preview-pod pod-rival">
-            <button id="slot-rival" class="pod-plate" type="button" data-role="RIVAL" data-nav-left="#btn-fight">
+            <button id="slot-rival" class="pod-plate" type="button" data-role="RIVAL" data-text-key="hud.rivalTag" data-text-attr="data-role" data-nav-left="#btn-fight">
               <span class="pod-plate-body"></span>
             </button>
             <div id="pod-view-rival" class="pod-view">
               <!-- The baked stand-in, shown while the real model downloads. Sized
                    and placed by engine/posters.js; empty until a bot is staged. -->
               <img id="pod-poster-rival" class="pod-poster" alt="" hidden draggable="false" />
-              <span class="pod-empty">PICK THE<br />OPPONENT</span>
+              <span class="pod-empty" data-text-key="select.emptyOpponent">PICK THE<br />OPPONENT</span>
               <span class="pod-random-glyph" aria-hidden="true">?</span>
               <span class="pod-loading loader-spinner" hidden></span>
             </div>
@@ -161,7 +161,7 @@
             </button>
             <div id="pod-view-p3" class="pod-view">
               <img id="pod-poster-p3" class="pod-poster" alt="" hidden draggable="false" />
-              <span class="pod-empty">P3 — PRESS A<br />TO PICK</span>
+              <span class="pod-empty" data-text-key="select.emptyP3">P3 — PRESS A<br />TO PICK</span>
               <span class="pod-random-glyph" aria-hidden="true">?</span>
               <span class="pod-loading loader-spinner" hidden></span>
             </div>
@@ -177,7 +177,7 @@
             </button>
             <div id="pod-view-p4" class="pod-view">
               <img id="pod-poster-p4" class="pod-poster" alt="" hidden draggable="false" />
-              <span class="pod-empty">P4 — PRESS A<br />TO PICK</span>
+              <span class="pod-empty" data-text-key="select.emptyP4">P4 — PRESS A<br />TO PICK</span>
               <span class="pod-random-glyph" aria-hidden="true">?</span>
               <span class="pod-loading loader-spinner" hidden></span>
             </div>
@@ -188,20 +188,20 @@
             </div>
           </div>
         </div>
-        <div id="bot-grid" class="bot-grid" role="listbox" aria-label="Bot roster"></div>
+        <div id="bot-grid" class="bot-grid" role="listbox" aria-label="Bot roster" data-text-key="select.rosterLabel" data-text-attr="aria-label"></div>
       </section>
 
       <!-- ================================================== MATCH -->
       <section id="screen-match" class="screen screen-match" data-screen-name="match" aria-hidden="true">
         <div id="pause-overlay" hidden
           style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;background:rgba(6,8,10,0.62);z-index:30;pointer-events:auto;">
-          <div style="font:italic 900 64px/1 'Arial Black',system-ui;letter-spacing:0.08em;color:#fff;text-shadow:0 4px 24px rgba(0,0,0,0.8);transform:skewX(-8deg);">PAUSED</div>
+          <div style="font:italic 900 64px/1 'Arial Black',system-ui;letter-spacing:0.08em;color:#fff;text-shadow:0 4px 24px rgba(0,0,0,0.8);transform:skewX(-8deg);" data-text-key="pause.title">PAUSED</div>
           <div style="display:flex;flex-direction:column;gap:12px;min-width:280px;">
-            <button id="btn-pause-resume" class="btn btn-primary" type="button"><span>RESUME</span></button>
-            <button id="btn-pause-settings" class="btn" type="button"><span>SETTINGS</span></button>
-            <button id="btn-pause-exit" class="btn" type="button"><span>EXIT TO MENU</span></button>
+            <button id="btn-pause-resume" class="btn btn-primary" type="button"><span data-text-key="pause.resume">RESUME</span></button>
+            <button id="btn-pause-settings" class="btn" type="button"><span data-text-key="pause.settings">SETTINGS</span></button>
+            <button id="btn-pause-exit" class="btn" type="button"><span data-text-key="pause.exit">EXIT TO MENU</span></button>
           </div>
-          <div style="font-size:12px;font-weight:700;letter-spacing:0.3em;color:#ffb320;">START / ESC TO RESUME</div>
+          <div style="font-size:12px;font-weight:700;letter-spacing:0.3em;color:#ffb320;" data-text-key="pause.hint">START / ESC TO RESUME</div>
         </div>
 <!-- Bot panels stack down each side of the clock: players one and three on
              the left, two and four on the right, which is the same reading order
@@ -227,7 +227,7 @@
           </div>
           <div class="hud-clock-wrap">
             <div id="hud-clock" class="hud-clock" aria-live="polite">3:00</div>
-            <div id="hud-phase" class="hud-phase">STAND BY</div>
+            <div id="hud-phase" class="hud-phase" data-text-key="hud.standBy">STAND BY</div>
           </div>
           <div class="hud-side hud-side-right">
             <div class="hud-bot hud-bot-rival">
@@ -249,25 +249,25 @@
           </div>
         </div>
         <div id="hud-ticker" class="hud-ticker" aria-live="polite"></div>
-        <div id="hud-callout" class="hud-callout" aria-live="assertive" hidden><span>KILL SAWS ACTIVE</span></div>
+        <div id="hud-callout" class="hud-callout" aria-live="assertive" hidden><span data-text-key="hud.killSaws">KILL SAWS ACTIVE</span></div>
         <div id="hud-countdown" class="hud-countdown" hidden><span id="hud-countdown-num">3</span></div>
-        <div id="hud-banner" class="hud-banner" aria-live="assertive" hidden>KO!</div>
-        <div class="hud-hint">SPACE — WEAPON &middot; SHIFT — BRAKE &middot; ESC — PAUSE</div>
+        <div id="hud-banner" class="hud-banner" aria-live="assertive" hidden data-text-key="hud.bannerKo">KO!</div>
+        <div class="hud-hint" data-text-key="hud.hint">SPACE — WEAPON &middot; SHIFT — BRAKE &middot; ESC — PAUSE</div>
       </section>
 
       <!-- ================================================ RESULTS -->
       <section id="screen-results" class="screen screen-results" data-screen-name="results" aria-hidden="true">
         <div class="screen-backdrop"></div>
         <div class="results-panel panel-cut">
-          <span id="res-kicker" data-tone="draw">FULL TIME</span>
+          <span id="res-kicker" data-tone="draw" data-text-key="results.fullTime">FULL TIME</span>
           <div id="res-image" class="res-image"></div>
           <h2 id="res-winner-name">—</h2>
-          <div id="res-method">WINS BY KNOCKOUT</div>
+          <div id="res-method" data-text-key="results.winsByKnockout">WINS BY KNOCKOUT</div>
           <div id="res-line"></div>
           <div class="results-actions">
-            <button id="btn-rematch" class="btn btn-primary" type="button"><span>REMATCH</span></button>
-            <button id="btn-change" class="btn" type="button"><span>CHANGE BOTS</span></button>
-            <button id="btn-res-title" class="btn" type="button"><span>EXIT</span></button>
+            <button id="btn-rematch" class="btn btn-primary" type="button"><span data-text-key="results.rematch">REMATCH</span></button>
+            <button id="btn-change" class="btn" type="button"><span data-text-key="results.changeBots">CHANGE BOTS</span></button>
+            <button id="btn-res-title" class="btn" type="button"><span data-text-key="results.exit">EXIT</span></button>
           </div>
         </div>
       </section>
@@ -276,32 +276,32 @@
       <div id="settings-modal" class="modal" hidden>
         <div class="modal-panel panel-cut">
           <div class="modal-head">
-            <h3 class="modal-title">Settings</h3>
-            <button id="btn-settings-close" class="btn btn-sm" type="button"><span>CLOSE</span></button>
+            <h3 class="modal-title" data-text-key="settings.title">Settings</h3>
+            <button id="btn-settings-close" class="btn btn-sm" type="button"><span data-text-key="settings.close">CLOSE</span></button>
           </div>
           <div class="modal-body">
             <div class="setting-row">
-              <span class="setting-label">Sound<span class="setting-hint">Everything: impacts, motors, crowd, menus</span></span>
+              <span class="setting-label" data-text-key="settings.sound">Sound<span class="setting-hint" data-text-key="settings.soundHint">Everything: impacts, motors, crowd, menus</span></span>
               <button id="set-sound" class="switch-btn" type="button" aria-pressed="false" data-toggle-label>OFF</button>
             </div>
             <div class="setting-row">
-              <span class="setting-label">Sampled audio<span class="setting-hint">Recorded hits and motors, not the synth</span></span>
+              <span class="setting-label" data-text-key="settings.sampled">Sampled audio<span class="setting-hint" data-text-key="settings.sampledHint">Recorded hits and motors, not the synth</span></span>
               <button id="set-sampled-sfx" class="switch-btn" type="button" aria-pressed="false" data-toggle-label>OFF</button>
             </div>
             <div class="setting-row">
-              <span class="setting-label">Haptics<span class="setting-hint">Gamepad rumble on hits</span></span>
+              <span class="setting-label" data-text-key="settings.haptics">Haptics<span class="setting-hint" data-text-key="settings.hapticsHint">Gamepad rumble on hits</span></span>
               <button id="set-haptics" class="switch-btn" type="button" aria-pressed="false" data-toggle-label>OFF</button>
             </div>
             <div class="setting-row">
-              <span class="setting-label">Damage ticker<span class="setting-hint">Per-hit callouts in the HUD</span></span>
+              <span class="setting-label" data-text-key="settings.damageTicker">Damage ticker<span class="setting-hint" data-text-key="settings.damageTickerHint">Per-hit callouts in the HUD</span></span>
               <button id="set-damage-events" class="switch-btn" type="button" aria-pressed="false" data-toggle-label>OFF</button>
             </div>
             <div class="setting-row">
-              <span class="setting-label">Camera</span>
-              <select id="set-camera" class="select" aria-label="Camera mode">
-                <option value="battle">Battle</option>
-                <option value="bot">Bot</option>
-                <option value="arena">Arena</option>
+              <span class="setting-label" data-text-key="settings.camera">Camera</span>
+              <select id="set-camera" class="select" aria-label="Camera mode" data-text-key="settings.cameraLabel" data-text-attr="aria-label">
+                <option value="battle" data-text-key="settings.cameraBattle">Battle</option>
+                <option value="bot" data-text-key="settings.cameraBot">Bot</option>
+                <option value="arena" data-text-key="settings.cameraArena">Arena</option>
               </select>
             </div>
           </div>
