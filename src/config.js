@@ -45,7 +45,7 @@ export const CONFIG = {
     /** The fight: impacts, weapons, motors, hazards. Louder than the score
      *  because it is the thing you are DOING — the score is what it happens
      *  over. This is the number to drop if the clangs are burying the music. */
-    sfx: 1,
+    sfx: 0.6,
 
     /** The soundtrack, as a share of the master. Half the level of the fight:
      *  a spinner hit has to be able to land ON something. */
