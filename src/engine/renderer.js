@@ -67,10 +67,21 @@ export function createRenderer(canvas) {
   // black rectangle — everyone can see where the other two went.
   const overviewCamera = new THREE.PerspectiveCamera(52, 1, 0.05, 140);
 
-  /** Viewport rects, in GL coordinates (origin bottom-left), reading order. */
+  // The size setViewport/setScissor speak, which is NOT canvas.width/height.
+  // three multiplies whatever it is given by the renderer's pixel ratio, so a
+  // rect measured in drawing-buffer pixels is scaled a SECOND time: on any
+  // HiDPI display (pixel ratio 2) player one's half came out full-screen and
+  // everyone else's landed off the edge, which read as "split screen is broken,
+  // I only get one view". CSS pixels are the unit; three does the rest.
+  const cssSize = new THREE.Vector2();
+  function viewSize() {
+    renderer.getSize(cssSize);
+    return { w: Math.max(1, Math.round(cssSize.x)), h: Math.max(1, Math.round(cssSize.y)) };
+  }
+
+  /** Viewport rects, in CSS pixels with the GL origin (bottom-left), reading order. */
   function viewRects(count) {
-    const w = canvas.width;
-    const h = canvas.height;
+    const { w, h } = viewSize();
     if (count <= 1) return [[0, 0, w, h]];
     // Two players get the full height each — a wide letterbox reads far better
     // for a chase camera than a quarter of the screen would.
@@ -108,8 +119,7 @@ export function createRenderer(canvas) {
      *  with them (HUD panels, on-screen labels). Fractions of the canvas, with
      *  y measured from the TOP so it can go straight into CSS. */
     viewLayout(count) {
-      const h = canvas.height || 1;
-      const w = canvas.width || 1;
+      const { w, h } = viewSize();
       return viewRects(count).map(([x, y, vw, vh]) => ({
         left: x / w, top: (h - y - vh) / h, width: vw / w, height: vh / h,
       }));
@@ -117,7 +127,8 @@ export function createRenderer(canvas) {
     resize,
     render() {
       renderer.setScissorTest(false);
-      renderer.setViewport(0, 0, canvas.width, canvas.height);
+      const { w, h } = viewSize();
+      renderer.setViewport(0, 0, w, h);
       renderer.render(scene, camera);
     },
     /**
