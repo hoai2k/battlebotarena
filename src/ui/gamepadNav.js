@@ -3,9 +3,18 @@
 // createGamepadNav({ screens, onBack, onStart }) -> { start, stop, dispose, ... }
 //
 // Pure DOM: no three/rapier/sim imports (see ARCHITECTURE.md layering).
-// Polls navigator.getGamepads() on rAF while a MENU screen is active. On the
-// "match" screen it goes inert so it never fights game/input.js, which owns the
-// pad during play.
+// Polls navigator.getGamepads() on a fixed 16ms timer — NOT on rAF, which is
+// paced by how fast the screen draws and drops whole presses on a screen as
+// heavy as bot select (see POLL_INTERVAL_MS). On the "match" screen it goes
+// inert so it never fights game/input.js, which owns the pad during play.
+//
+// JOINING. A pad is a player from the moment the page can see it, and any
+// input — stick, d-pad or button — puts that player to work browsing the
+// roster. What the page can SEE is not ours to decide: browsers withhold
+// gamepads until a button is pressed on one (the Gamepad API's
+// anti-fingerprinting gesture, which Chromium grants for button presses only,
+// never for stick movement). All we control is what happens after, so the
+// press that buys that visibility is spent on joining and nothing else.
 //
 // Button mapping (standard mapping, matching game/input.js conventions):
 //   axes[0]/axes[1]  left stick  -> directional move (deadzone 0.5)
@@ -50,6 +59,14 @@ const NATIVELY_FOCUSABLE = new Set(["BUTTON", "SELECT", "INPUT", "TEXTAREA", "A"
 const DEADZONE = 0.5;
 const REPEAT_DELAY_MS = 450;
 const REPEAT_RATE_MS = 160;
+// The pad is SAMPLED ON A TIMER, not on requestAnimationFrame. A gamepad has no
+// events — a press exists only in the samples that catch it — and the bot select
+// screen draws four lit 3D bays, so its animation frames come minutes apart in
+// GPU terms: measured on that screen, rAF fired twice in 4.3 seconds while a
+// 16ms timer fired 82 times. Every press that began and ended between two of
+// those frames was lost, which is what made a second player's pick land only
+// sometimes. A timer keeps sampling at pad rate however slowly the scene draws.
+const POLL_INTERVAL_MS = 16;
 
 const BTN_A = 0;
 const BTN_B = 1;
@@ -127,14 +144,18 @@ export function createGamepadNav({
   /** @type {HTMLElement|null} */
   let modalReturnEl = null;
   let running = false;
-  let rafId = 0;
+  let pollId = 0;
   let lastScreenKey = "";
   let padCount = 0;
 
   // Edge/repeat state per cursor: direction repeat + face-button edges.
+  // `resync` means "the next sample is the first look at this pad" — see
+  // applyPad: whatever is already held then is adopted rather than read as a
+  // press, so the button that WAKES a controller does not also act with it.
   const padState = Array.from({ length: MAX_CURSORS }, () => ({
     held: { dir: /** @type {string|null} */ (null), since: 0, next: 0 },
     btnPrev: { a: false, b: false, start: false, select: false },
+    resync: true,
   }));
 
   // ------------------------------------------------------------------ context
@@ -607,6 +628,22 @@ export function createGamepadNav({
     const state = padState[player];
     const { held, btnPrev } = state;
     const t = now();
+    // FIRST LOOK AT THIS PAD. Browsers hide a gamepad from the page until
+    // somebody presses a button on it (the Gamepad API's anti-fingerprinting
+    // gesture), so the very first sample of a controller usually arrives with
+    // that button still down. Reading it as an edge meant the press that merely
+    // WOKE the pad also picked whatever bot the cursor happened to land on, and
+    // the player never chose it. Adopt the held state instead: joining costs
+    // one press, choosing costs the next.
+    if (state.resync) {
+      state.resync = false;
+      btnPrev.a = a;
+      btnPrev.b = b;
+      btnPrev.start = st;
+      btnPrev.select = se;
+      // A stick already deflected is left to fall through: moving is how a
+      // controller says "I am here and I am browsing", and it costs nothing.
+    }
     if (!dir) {
       held.dir = null;
     } else if (held.dir !== dir) {
@@ -633,15 +670,21 @@ export function createGamepadNav({
 
   function clearPadState(player) {
     padState[player].held.dir = null;
+    // Anything held while we were not watching is not a press we get to act on
+    // when we look again — the next sample re-adopts whatever is down.
+    padState[player].resync = true;
     const p = padState[player].btnPrev;
     p.a = p.b = p.start = p.select = false;
   }
 
   function poll() {
-    rafId = requestAnimationFrame(poll);
-
     const list = pads();
     if (list.length !== padCount) {
+      // A pad slot that just appeared has never been sampled; one that just
+      // went away must not leave a stale "was held" behind it.
+      for (let i = Math.min(padCount, list.length); i < MAX_CURSORS; i += 1) {
+        padState[i].resync = true;
+      }
       padCount = list.length;
       onPlayerCountChange?.(padCount);
     }
@@ -760,14 +803,14 @@ export function createGamepadNav({
     onPlayerCountChange?.(padCount);
     syncContext();
     seedCursors();
-    rafId = requestAnimationFrame(poll);
+    pollId = setInterval(poll, POLL_INTERVAL_MS);
   }
 
   function stopNav() {
     if (!running) return;
     running = false;
-    cancelAnimationFrame(rafId);
-    rafId = 0;
+    clearInterval(pollId);
+    pollId = 0;
     window.removeEventListener("keydown", onKeyDown);
     document.removeEventListener("focusin", onFocusIn, true);
     document.removeEventListener("pointerdown", onPointerDown, true);

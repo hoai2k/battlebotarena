@@ -952,6 +952,13 @@ A on a free card takes it, A on your own card drops it, A on the other player's
 card does nothing. With 0-1 pads the screen keeps the sequential YOU → RIVAL
 flow, and mouse/keyboard always act as player 1. Only cursor 0 takes real DOM
 focus; cursor 1 is a class-only ring, since a document has one active element.
+The pad is sampled on a fixed 16ms timer rather than on rAF: a gamepad has no
+events, so a press exists only in the samples that catch it, and this screen's
+animation frames are seconds apart while models parse and shaders compile — a
+brisk tap fell between two of them and never happened. A pad's first sample
+ADOPTS whatever is held rather than reading it as a press, so the button that
+wakes a controller (browsers hide gamepads until one is pressed) joins the
+player without also claiming a bot for them.
 
 ## What v2 deliberately drops (v1 had it)
 
