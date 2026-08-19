@@ -14,19 +14,21 @@
 import { chromium } from "playwright";
 import fs from "node:fs";
 
+const PAGE_URL = process.env.BBA_URL || "http://localhost:4173/index.html";
+
 const out = process.argv[2] || "/tmp/split";
 const dpr = Number(process.argv[3] || 2);
 fs.mkdirSync(out, { recursive: true });
 
-const browser = await chromium.launch({
-  executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
-  args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--disable-gpu-sandbox", "--no-sandbox"],
-});
+const CHROME = "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
+const ARGS = ["--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--disable-gpu-sandbox", "--no-sandbox"];
+
+const browser = await chromium.launch({ executablePath: CHROME, args: ARGS });
 const page = await browser.newPage({ viewport: { width: 900, height: 560 }, deviceScaleFactor: dpr });
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
-await page.goto("http://localhost:4173/index.html");
+await page.goto(PAGE_URL);
 await page.waitForFunction("window.__bba2 !== undefined", null, { timeout: 60000 });
 
 const ROSTERS = { 1: ["duck", "biteforce"], 2: ["duck", "biteforce"], 3: ["duck", "biteforce", "tombstone"] };
@@ -56,4 +58,44 @@ for (const humans of [1, 2, 3]) {
     + `  ${errors.length ? `ERRORS: ${errors.slice(0, 2).join(" | ")}` : "ok"}`,
   );
 }
+// --- and again after the window MOVES BETWEEN DISPLAYS ------------------------
+// A laptop screen and a TV do not share a pixel ratio, and dragging a window
+// between them changes it with no resize event to announce it. The viewports
+// have to follow, or the split goes wrong on whichever screen was not the one
+// the game booted on.
+// A fresh browser: three matches have already run in the one above, and under
+// a software renderer that is enough to make a fourth page time out booting.
 await browser.close();
+const mover = await chromium.launch({ executablePath: CHROME, args: ARGS });
+for (const [from, to] of [[1, 2], [2, 1]]) {
+  const page = await mover.newPage({ viewport: { width: 800, height: 500 }, deviceScaleFactor: from });
+  const cdp = await page.context().newCDPSession(page);
+  await page.goto(PAGE_URL);
+  await page.waitForFunction("window.__bba2 !== undefined", null, { timeout: 60000 });
+  await page.evaluate(async () => {
+    await window.__bba2.startMatch({ botIds: ["duck", "biteforce", "tombstone"], humanCount: 3 });
+  });
+  await page.waitForTimeout(5000);
+  await cdp.send("Emulation.setDeviceMetricsOverride", { width: 800, height: 500, deviceScaleFactor: to, mobile: false });
+  // The correction rides the next DRAWN frame, so wait for one rather than for
+  // a clock: three software-rendered viewports at 1600x1000 can go seconds
+  // between frames here, where real hardware is 16ms away.
+  const want = `${800 * to}x${500 * to}`;
+  const settled = await page
+    .waitForFunction((size) => {
+      const canvas = document.querySelector("#scene");
+      return `${canvas.width}x${canvas.height}` === size;
+    }, want, { timeout: 60000 })
+    .then(() => true, () => false);
+  const state = await page.evaluate(() => {
+    const canvas = document.querySelector("#scene");
+    return { dpr: window.devicePixelRatio, buffer: `${canvas.width}x${canvas.height}`, views: window.__bba2.splitViews };
+  });
+  console.log(
+    `3 humans  dpr ${from} -> ${state.dpr}  buffer ${state.buffer} (want ${want})`
+    + `  views ${state.views}  ${settled && state.views === 3 ? "ok" : "MISMATCH"}`,
+  );
+  await page.screenshot({ path: `${out}/moved-${from}-to-${to}.png`, timeout: 120000 });
+  await page.close();
+}
+await mover.close();

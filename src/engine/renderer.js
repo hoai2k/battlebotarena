@@ -4,7 +4,11 @@ import { arenaEnvironment } from "./environment.js";
 
 export function createRenderer(canvas) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  // Capped at 2: past that the fill rate costs more than the sharpness is worth
+  // on a 4K panel. Re-read on every resize rather than fixed here, because it
+  // MOVES — see watchPixelRatio.
+  const pixelRatio = () => Math.min(window.devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(pixelRatio());
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -42,12 +46,29 @@ export function createRenderer(canvas) {
   function resize() {
     const width = canvas.clientWidth || window.innerWidth;
     const height = canvas.clientHeight || window.innerHeight;
+    renderer.setPixelRatio(pixelRatio());
     renderer.setSize(width, height, false);
     camera.aspect = width / height;
     camera.updateProjectionMatrix();
   }
   window.addEventListener("resize", resize);
   resize();
+
+  // THE PIXEL RATIO MOVES, AND NO EVENT IS WORTH TRUSTING. Drag the window from
+  // a laptop screen to a TV and devicePixelRatio changes under you — and if the
+  // window keeps its CSS size across the move, NO resize event fires at all
+  // (measured: ratio 1 -> 2, zero resize events; the matchMedia resolution
+  // query flips its `matches` without dispatching `change` either). Left alone
+  // the renderer keeps the ratio it booted with: half the TV's resolution for
+  // the rest of the session in one direction, four times the pixels in the
+  // other — and that one costs frames on a big panel.
+  //
+  // So the draw path asks instead of waiting to be told. One float compare per
+  // frame, sitting in front of the only code that reads the canvas size, which
+  // is the one place it cannot be checked too late.
+  function syncPixelRatio() {
+    if (renderer.getPixelRatio() !== pixelRatio()) resize();
+  }
 
   // PER-PLAYER CAMERAS for local multiplayer, up to four of them.
   //
@@ -126,6 +147,7 @@ export function createRenderer(canvas) {
     },
     resize,
     render() {
+      syncPixelRatio();
       renderer.setScissorTest(false);
       const { w, h } = viewSize();
       renderer.setViewport(0, 0, w, h);
@@ -137,6 +159,7 @@ export function createRenderer(canvas) {
      * @param {number} count 2-4
      */
     renderSplit(count = 2) {
+      syncPixelRatio();
       const players = Math.min(4, Math.max(2, count | 0));
       const rects = viewRects(players);
       renderer.setScissorTest(true);
