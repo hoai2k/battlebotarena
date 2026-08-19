@@ -99,8 +99,17 @@ export function createArenaVisualRoot({ layout, hazards: hazardFactories, assetB
 
   const textureLoader = new THREE.TextureLoader();
   const disposables = [];
+  // Extra tilings of an image that is still downloading, waiting on it.
+  // See retile(): the mark that says "upload me" has to wait for the pixels.
+  const pendingViews = new Map();
+
   function loadTexture(path, repeat = [1, 1]) {
-    const texture = textureLoader.load(assetBase + path);
+    const texture = textureLoader.load(assetBase + path, () => {
+      pendingViews.get(texture)?.forEach((view) => {
+        view.needsUpdate = true;
+      });
+      pendingViews.delete(texture);
+    });
     texture.colorSpace = THREE.SRGBColorSpace;
     texture.wrapS = THREE.RepeatWrapping;
     texture.wrapT = THREE.RepeatWrapping;
@@ -109,6 +118,30 @@ export function createArenaVisualRoot({ layout, hazards: hazardFactories, assetB
     disposables.push(texture);
     return texture;
   }
+
+  /**
+   * The SAME image tiled at a second scale — the floor pattern and the arena
+   * floor are one PNG at two densities. A clone shares the source, so this
+   * costs no extra download, but Texture.copy() marks the clone for update the
+   * instant it is made and these files are megabytes: the image is still in
+   * flight, and a texture marked for update with nothing behind it makes the
+   * renderer warn "no image data found" once per rendered frame until it lands.
+   * So withhold the mark and raise it from the load callback, when there is
+   * something to upload. `version` is the counter `needsUpdate = true` bumps;
+   * putting it back to 0 is how a premature mark is taken off again.
+   */
+  function retile(texture, repeat) {
+    const view = texture.clone();
+    view.repeat.set(...repeat);
+    if (view.image === null) {
+      view.version = 0;
+      if (!pendingViews.has(texture)) pendingViews.set(texture, []);
+      pendingViews.get(texture).push(view);
+    }
+    disposables.push(view);
+    return view;
+  }
+
   function loadPlainTexture(path) {
     const texture = textureLoader.load(assetBase + path);
     texture.colorSpace = THREE.SRGBColorSpace;
@@ -578,10 +611,7 @@ export function createArenaVisualRoot({ layout, hazards: hazardFactories, assetB
   root.userData.screwHazards = [];
   root.userData.killSawHazards = [];
 
-  const arenaFloorTexture = floorTileTexture.clone();
-  arenaFloorTexture.repeat.set(WIDTH / 4.25, LENGTH / 4.25);
-  arenaFloorTexture.needsUpdate = true;
-  disposables.push(arenaFloorTexture);
+  const arenaFloorTexture = retile(floorTileTexture, [WIDTH / 4.25, LENGTH / 4.25]);
 
   const arenaFloorMat = new THREE.MeshStandardMaterial({ color: 0x858b86, roughness: 0.48, metalness: 0.35, map: arenaFloorTexture });
   const glassMat = new THREE.MeshStandardMaterial({
