@@ -134,15 +134,36 @@
 <script type="module">
   // The code lives in config.js so there is one place to set it, and this page
   // reads it from there rather than keeping a second copy to fall out of date.
+  //
+  // Cache-busted, because the two halves of this page expire independently:
+  // GitHub Pages serves everything with max-age=600, so for ten minutes after a
+  // deploy a browser can hold a FRESH copy of this HTML and a STALE copy of
+  // config.js — and then this page confidently reports the old setting. A
+  // dashboard that lies about what is deployed is worse than a slow one, and
+  // the cost of always asking is one 20KB file on a page nobody loads twice.
   const dash = document.querySelector("#dash");
   let code = "";
+  let failure = null;
   try {
-    ({ CONFIG: { stats: { goatCounterCode: code } } } = await import("../src/config.js"));
-  } catch {
-    code = "";
+    ({ CONFIG: { stats: { goatCounterCode: code } } } =
+      await import(`../src/config.js?fresh=${Date.now()}`));
+  } catch (error) {
+    // NOT the same as "no code set", and it must not look like it: the setup
+    // instructions below would send someone off to configure a thing that is
+    // already configured, which is exactly the wrong direction to point them.
+    failure = error;
   }
 
-  if (code) {
+  if (failure) {
+    dash.innerHTML = `
+      <div class="panel unset">
+        <p style="margin-top:0"><strong>Could not read the configuration.</strong>
+        This page could not load <code>src/config.js</code>, so it cannot say whether
+        analytics is on. That is a problem with this page, not with the counting —
+        if a code is set, the game is still recording.</p>
+        <p style="margin-bottom:0;color:var(--dim);font-size:.9rem">${String(failure)}</p>
+      </div>`;
+  } else if (code) {
     dash.innerHTML = `
       <div class="panel">
         <p style="margin-top:0">The dashboard is live. Countries, referrers, browsers and every
