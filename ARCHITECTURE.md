@@ -154,7 +154,12 @@ to the DOM at document level so the UI layer never has to call into game code.
 
 The mix lives in `config.js` (`CONFIG.mix`): SFX, music, crowd, announcer and
 UI as fractions of one master, because the question is never "how loud is the
-music" but "how loud is it compared to the hits".
+music" but "how loud is it compared to the hits". The set is NORMALISED — the
+loudest layer sits at exactly 1, so `master: 1` is the loudest the game goes.
+Changing one layer means dividing the whole set by its new largest member;
+nothing may exceed 1, because past it music clamps (it plays through an
+`<audio>` element) while the effects keep climbing into their compressor, and
+the balance the file exists to protect stops holding.
 
 The crowd is not on a throttle. `game/crowdMood.js` holds the decision — react
 or not, and how loudly — as a pure function of a small mood state, so it runs in

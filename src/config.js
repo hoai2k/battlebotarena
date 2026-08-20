@@ -38,6 +38,20 @@ export const CONFIG = {
   // Everything is 0..1 and everything below is a fraction of `master`, so
   // raising the master lifts the whole game and keeps the balance intact.
   // The sound ON/OFF toggle is a separate, harder gate: off is off.
+  //
+  // THIS SET IS NORMALISED, and has to stay that way: the loudest layer sits at
+  // exactly 1, so `master: 1` is as loud as the game goes and there is no
+  // headroom being left on the table. The authored balance was ×1/0.9 quieter
+  // than it needed to be, so every number here was scaled by that one factor —
+  // the same factor, which is the only way the mix survives being made louder.
+  // The announcer is the layer that reached the ceiling first and defines it.
+  //
+  // Adjusting one layer means re-normalising the set: divide every number by
+  // the largest of them, so the loudest is 1 again and the ratios are whatever
+  // you just decided they should be. Nothing may exceed 1 — above it music
+  // silently clamps (it plays through an <audio> element, which is limited to
+  // 0..1) while the effects keep climbing into their compressor, and the two
+  // stop being in any fixed relationship at all.
   mix: {
     /** Everything the game plays sits under this. */
     master: 1,
@@ -45,25 +59,26 @@ export const CONFIG = {
     /** The fight: impacts, weapons, motors, hazards. Louder than the score
      *  because it is the thing you are DOING — the score is what it happens
      *  over. This is the number to drop if the clangs are burying the music. */
-    sfx: 0.6,
+    sfx: 0.6667,
 
     /** The soundtrack, as a share of the master. Half the level of the fight:
      *  a spinner hit has to be able to land ON something. */
-    music: 0.5,
+    music: 0.5556,
 
     /** The crowd bed. Deliberately quiet — it is the room the fight is in, not
      *  a participant, and it is the first thing that sounds fake when it is up
      *  too loud. Its own knob because it is the layer people most often want
      *  gone without touching anything else. */
-    crowd: 0.35,
+    crowd: 0.3889,
 
     /** Announcer callouts, over the top of both. Slightly hot on purpose:
-     *  a callout that loses to a spinner is a callout nobody hears. */
-    announcer: 0.9,
+     *  a callout that loses to a spinner is a callout nobody hears. This is the
+     *  loudest thing in the game and therefore the one pinned to the ceiling. */
+    announcer: 1,
 
     /** Menu and HUD clicks. Under everything — UI that competes with the game
      *  is UI that gets turned off. */
-    ui: 0.5,
+    ui: 0.5556,
   },
 
   // -------------------------------------------------------------------- music
