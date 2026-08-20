@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>BattleBot Arena — Stats</title>
+<link rel="icon" href="../public/icons/favicon.ico" sizes="any" />
+<style>
+  :root {
+    --bg: #0c0e10;
+    --panel: #16191c;
+    --line: #262b30;
+    --text: #e8edf2;
+    --dim: #939ba4;
+    --accent: #ff4d3d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 3rem 1.25rem 4rem;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1 {
+    margin: 0 0 .25rem;
+    font-size: clamp(1.6rem, 4vw, 2.2rem);
+    font-style: italic;
+    letter-spacing: -.02em;
+    text-transform: uppercase;
+  }
+  .sub { margin: 0 0 2.5rem; color: var(--dim); }
+  h2 {
+    margin: 2.5rem 0 .75rem;
+    font-size: .8rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1.25rem 1.4rem;
+  }
+  .cta {
+    display: inline-block;
+    margin-top: .35rem;
+    padding: .7rem 1.3rem;
+    border-radius: 7px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .cta:hover { filter: brightness(1.1); }
+  .unset { border-left: 3px solid var(--accent); }
+  code {
+    background: #000;
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: .12em .45em;
+    font-size: .88em;
+  }
+  pre {
+    background: #000;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: .9rem 1rem;
+    overflow-x: auto;
+  }
+  pre code { background: none; border: 0; padding: 0; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--dim); font-size: .74rem; letter-spacing: .1em; text-transform: uppercase; font-weight: 600; }
+  td:first-child { white-space: nowrap; color: var(--accent); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86em; }
+  ul { padding-left: 1.15rem; }
+  li { margin: .3rem 0; }
+  a { color: #7fb2ff; }
+  .yes::before { content: "✓ "; color: #63c47b; }
+  .no::before  { content: "✗ "; color: var(--accent); }
+  footer { margin-top: 3rem; color: var(--dim); font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Arena Stats</h1>
+  <p class="sub">Who is out there, and what they do when they get here.</p>
+
+  <div id="dash"></div>
+
+  <h2>What gets recorded</h2>
+  <div class="panel">
+    <p style="margin-top:0">Every visit reports, on its own, with nothing sent by the game:</p>
+    <ul>
+      <li><strong>Country</strong> — worked out from the IP at the moment of the request; the address itself is never stored.</li>
+      <li><strong>Browser and OS</strong>, <strong>screen width</strong>, <strong>language</strong>.</li>
+      <li><strong>Referrer</strong> — the page someone followed a link from, which is how an unexpected visitor gets explained.</li>
+    </ul>
+    <p>The game adds only what a pageview cannot know:</p>
+    <table>
+      <thead><tr><th>Event</th><th>Means</th></tr></thead>
+      <tbody>
+        <tr><td>match-start-<em>n</em>p</td><td>A fight began, with <em>n</em> people holding controllers.</td></tr>
+        <tr><td>bot-<em>name</em></td><td>One per machine in that fight — the roster, ranked by what people actually bring.</td></tr>
+        <tr><td>match-end-<em>cause</em></td><td>How it finished: <code>damage</code>, <code>immobilized</code> or <code>judges</code>.</td></tr>
+        <tr><td>winner-<em>name</em></td><td>The machine that won, or <code>winner-draw</code>.</td></tr>
+        <tr><td>match-length-…</td><td>How long the fight lasted, bucketed.</td></tr>
+        <tr><td>setup-pads-<em>n</em></td><td>Controllers plugged in at the first fight.</td></tr>
+        <tr><td>setup-pixel-ratio-<em>n</em></td><td>The display's pixel ratio. Here because it is what hid the split-screen bug.</td></tr>
+        <tr><td>error-…</td><td>A JavaScript error, by message, capped at five per visit.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>What does not get recorded</h2>
+  <div class="panel">
+    <ul style="list-style:none;padding:0">
+      <li class="no">No IP addresses stored.</li>
+      <li class="no">No cookies, no localStorage, no tracker id — nothing is written to a visitor's browser.</li>
+      <li class="no">No individual people. Everything is a count.</li>
+      <li class="yes">Nothing at all from <code>localhost</code> or <code>file://</code>, so local play and the probes in <code>tools/</code> never reach the numbers.</li>
+      <li class="yes">Nothing at all when no code is configured — the script is not even loaded.</li>
+    </ul>
+  </div>
+
+  <footer>
+    <a href="../index.html">← Back to the game</a>
+  </footer>
+</main>
+
+<script type="module">
+  // The code lives in config.js so there is one place to set it, and this page
+  // reads it from there rather than keeping a second copy to fall out of date.
+  const dash = document.querySelector("#dash");
+  let code = "";
+  try {
+    ({ CONFIG: { stats: { goatCounterCode: code } } } = await import("../src/config.js"));
+  } catch {
+    code = "";
+  }
+
+  if (code) {
+    dash.innerHTML = `
+      <div class="panel">
+        <p style="margin-top:0">The dashboard is live. Countries, referrers, browsers and every
+        event below are on it, going back as far as the day it was switched on.</p>
+        <a class="cta" href="https://${code}.goatcounter.com" target="_blank" rel="noopener">
+          Open the dashboard →</a>
+        <p style="margin-bottom:0;color:var(--dim);font-size:.9rem">
+          Private to your GoatCounter login unless you set the site to public.</p>
+      </div>`;
+  } else {
+    // Not an error state — it is the shipped default, and saying so beats an
+    // empty page that reads like something broke.
+    dash.innerHTML = `
+      <div class="panel unset">
+        <p style="margin-top:0"><strong>Nothing is being recorded yet.</strong> No code is
+        configured, so the game loads no analytics script and sends nothing anywhere.</p>
+        <p>To switch it on:</p>
+        <ol>
+          <li>Make a free site at <a href="https://www.goatcounter.com/signup" target="_blank" rel="noopener">goatcounter.com/signup</a>
+              — pick a code, which becomes <code>yourcode.goatcounter.com</code>.</li>
+          <li>Put it in <code>src/config.js</code>:
+            <pre><code>stats: {
+  goatCounterCode: "yourcode",
+},</code></pre>
+          </li>
+          <li>Push to <code>main</code>. The Pages deploy carries it live, and this page
+              turns into a link to the dashboard.</li>
+        </ol>
+        <p style="margin-bottom:0">To keep your own visits out of the counts, run
+        <code>localStorage.setItem('skipgc', 't')</code> in the browser console once,
+        on the deployed site, in each browser you play in.</p>
+      </div>`;
+  }
+</script>
+</body>
+</html>

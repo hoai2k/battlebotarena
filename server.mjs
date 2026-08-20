@@ -65,7 +65,17 @@ async function handle(request, response) {
   const path = normalize(join(root, requested));
   if (!path.startsWith(root)) return sendError(response, 403, "Forbidden");
 
-  const info = await stat(path).catch(() => null);
+  let info = await stat(path).catch(() => null);
+  // A directory asked for without its trailing slash. GitHub Pages redirects
+  // these, so /stats works there; without this it would 404 only locally, which
+  // is the worst place for a route to differ from production.
+  if (info?.isDirectory()) {
+    const index = await stat(join(path, "index.html")).catch(() => null);
+    if (index?.isFile()) {
+      response.writeHead(301, { location: `${url.pathname}/${url.search}` });
+      return response.end();
+    }
+  }
   if (!info || !info.isFile()) return sendError(response, 404, "Not found");
 
   const ext = extname(path);

@@ -34,6 +34,7 @@ what the change touches:
 | renderer, cameras, viewports | `node tools/split-probe.mjs /tmp/shots` |
 | menus, gamepad navigation | `node tools/menu-input-probe.mjs` |
 | a bot's model or animation | `node tools/boot-probe.mjs <ids> /tmp/shots` |
+| analytics, or anything off-origin | `node tools/stats-probe.mjs` |
 
 All of them need the server up: `node server.mjs` (port 4173). The probes use
 Playwright — `npm i --no-save playwright` if it is missing.

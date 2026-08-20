@@ -52,7 +52,7 @@ src/
   shared/           Event bus, settings store, music player
   sim/              Physics: Rapier world, vehicles, weapons, hazards (headless,
                     no DOM or three.js — this is what the tests exercise)
-  game/             Match state, AI, input, audio, music
+  game/             Match state, AI, input, audio, music, analytics
   assets/           Bot catalog (stats) + GLB loader with placeholder fallback
   engine/           Renderer, cameras, effects, arena visuals
   ui/               Screens, HUD, gamepad menu navigation
@@ -61,6 +61,7 @@ public/
   reference/        Bot photos used by the UI
   arena/            Arena textures and decals
   music/            Soundtrack
+stats/              The /stats page: what is counted, and a link to the numbers
 vendor/             three.js + Rapier (so the game needs no network)
 tools/              Dev utilities: sim tests, model pipeline, model viewer
 v1/                 The original game, still playable at /v1/ — it now fights
@@ -70,6 +71,36 @@ v1/                 The original game, still playable at /v1/ — it now fights
 
 Architecture contracts — module boundaries, the event bus, and the physics
 blueprint — are documented in [ARCHITECTURE.md](ARCHITECTURE.md).
+
+## Stats
+
+The game is a static site on GitHub Pages, which keeps no log anyone can read,
+so there is no way to know whether anybody is playing without asking the browser
+to say so. `/stats` explains what is counted and links to the numbers.
+
+It is **off as shipped**. `CONFIG.stats.goatCounterCode` in `src/config.js` is
+empty, and while it is empty `game/stats.js` loads no script, opens no
+connection and registers no listeners — the game still runs with the network
+unplugged. Set it to a [GoatCounter](https://www.goatcounter.com) site code to
+switch it on:
+
+```js
+stats: {
+  goatCounterCode: "yourcode",   // yourcode.goatcounter.com
+},
+```
+
+A plain pageview already reports country, browser, OS, screen width, language
+and referrer; the game adds only what a pageview cannot know — fights started
+and how many people were holding controllers, machines brought, how fights
+ended and who won, controllers connected, display pixel ratio, and JavaScript
+errors by message. No IP is stored, nothing is written to a visitor's browser,
+and `count.js` refuses to report from `localhost` or `file://`, so local play
+and everything in `tools/` stays out of the numbers.
+
+To keep your own visits out once it is live, run
+`localStorage.setItem('skipgc', 't')` in the console on the deployed site, once
+per browser.
 
 ## Development
 

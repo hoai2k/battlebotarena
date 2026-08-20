@@ -23,6 +23,7 @@ import { createInput } from "./game/input.js";
 import { createGameAudio, initAppAudio } from "./game/audio.js";
 import { createUiAudio } from "./game/uiAudio.js";
 import { createMusic } from "./game/music.js";
+import { createStats } from "./game/stats.js";
 import { PAUSE_DUCK } from "./shared/musicPlayer.js";
 import { CONFIG } from "./config.js";
 import { t } from "./ui/text.js";
@@ -59,6 +60,9 @@ function matchBotCount() {
 }
 // Music is app-level, not per-session: it follows EV.MATCH phases on the bus.
 const music = createMusic(bus);
+// Analytics, and only if config.js carries a code — see game/stats.js. App-level
+// for the same reason as the music: it watches the bus across whole sessions.
+const stats = createStats({ on: bus.on });
 // Menu audio is app-level for the same reason, and the sample bank starts
 // downloading here rather than at the first fight — the menus are where the
 // first click happens, and a click that arrives before the bank is silent.
@@ -281,6 +285,7 @@ async function startMatch({ botIds, playerBotId, rivalBotId, humanCount, difficu
   loader.setProgress(1);
   loader.hide();
   uiAudio.matchReady();
+  stats.matchStarted({ botIds: ids, humans });
   match.start?.();
 }
 

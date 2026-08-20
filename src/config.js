@@ -117,6 +117,25 @@ export const CONFIG = {
     },
   },
 
+  // -------------------------------------------------------------------- stats
+  // Web analytics. OFF unless a code is set here, and there is no other switch:
+  // an empty code means game/stats.js adds no script, opens no connection and
+  // registers no listeners, which is what keeps the promise that this thing
+  // runs with the network unplugged.
+  //
+  // The game is served from GitHub Pages, which keeps no log we can read, so
+  // the counting has to happen in the browser and land somewhere else.
+  // GoatCounter stores no IP, no cookie and no tracker id — the country comes
+  // from the IP at the moment of the request and the IP itself is not kept
+  // (https://www.goatcounter.com/help/privacy). Its count.js also refuses to
+  // report from localhost or file://, so `node server.mjs` and every probe in
+  // tools/ stay out of the numbers without anyone remembering to make them.
+  stats: {
+    /** The subdomain of a goatcounter.com site: "mygame" for
+     *  mygame.goatcounter.com. Empty disables analytics entirely. */
+    goatCounterCode: "",
+  },
+
   // -------------------------------------------------------------------- audio
   audio: {
     /** Master level for the sound effects, 0..1. Comes from `mix` above, which

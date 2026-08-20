@@ -161,6 +161,14 @@ nothing may exceed 1, because past it music clamps (it plays through an
 `<audio>` element) while the effects keep climbing into their compressor, and
 the balance the file exists to protect stops holding.
 
+`game/stats.js` is the only module that talks to anything off-origin, and it is
+inert unless `CONFIG.stats.goatCounterCode` is set — no script, no request, no
+listener. It reads the bus for one thing only, the `results` phase, because that
+is the single message emitted exactly once per fight; everything else on EV.MATCH
+fires per frame, per countdown tick or per pause. What a fight WAS — which
+machines, how many humans — comes from `main.js` calling `matchStarted()`, since
+that is where those facts are known rather than inferred.
+
 The crowd is not on a throttle. `game/crowdMood.js` holds the decision — react
 or not, and how loudly — as a pure function of a small mood state, so it runs in
 node: a crowd responds to ESCALATION, suppresses an identical repeat, gets
