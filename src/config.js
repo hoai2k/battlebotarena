@@ -132,8 +132,17 @@ export const CONFIG = {
   // tools/ stay out of the numbers without anyone remembering to make them.
   stats: {
     /** The subdomain of a goatcounter.com site: "mygame" for
-     *  mygame.goatcounter.com. Empty disables analytics entirely. */
-    goatCounterCode: "",
+     *  mygame.goatcounter.com. Empty disables analytics entirely.
+     *
+     *  PER SITE, NOT PER PERSON. One login owns as many sites as you like and
+     *  each has its own code; "hoai" is this account's first one and is named
+     *  after the account only because that is what got typed at signup. Two
+     *  games pointed at one code share a dashboard, and while their PAGEVIEWS
+     *  still separate by path, their EVENTS do not: an event is recorded as a
+     *  bare name with no path attached, so another game's `match-start-2p`
+     *  would land in the same row as this one's, with nothing to tell them
+     *  apart afterwards. A game with custom events wants its own site. */
+    goatCounterCode: "hoai",
   },
 
   // -------------------------------------------------------------------- audio

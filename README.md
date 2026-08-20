@@ -78,17 +78,24 @@ The game is a static site on GitHub Pages, which keeps no log anyone can read,
 so there is no way to know whether anybody is playing without asking the browser
 to say so. `/stats` explains what is counted and links to the numbers.
 
-It is **off as shipped**. `CONFIG.stats.goatCounterCode` in `src/config.js` is
-empty, and while it is empty `game/stats.js` loads no script, opens no
-connection and registers no listeners — the game still runs with the network
-unplugged. Set it to a [GoatCounter](https://www.goatcounter.com) site code to
-switch it on:
+It runs on [GoatCounter](https://www.goatcounter.com), and the site code is the
+only switch:
 
 ```js
 stats: {
-  goatCounterCode: "yourcode",   // yourcode.goatcounter.com
+  goatCounterCode: "hoai",   // hoai.goatcounter.com; "" turns it all off
 },
 ```
+
+Empty it and `game/stats.js` loads no script, opens no connection and registers
+no listeners, so the game still runs with the network unplugged.
+
+**The code is per site, not per person.** One login owns as many sites as you
+like, each with its own code. Two games sharing a code share a dashboard, and
+while their pageviews still separate by path, their events do not — an event is
+stored as a bare name with no path attached, so one game's `match-start-2p`
+lands in the same row as another's. A game with custom events wants its own
+site.
 
 A plain pageview already reports country, browser, OS, screen width, language
 and referrer; the game adds only what a pageview cannot know — fights started
