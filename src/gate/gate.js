@@ -27,6 +27,12 @@
  *  - The code itself is never stored. The endpoint answers with an id and a
  *    name, and those are what is kept, so the browser holds no reusable secret.
  *
+ * TO SEE THE DOOR AGAIN once you hold a pass — which the owner needs whenever
+ * testing an invite, and nobody else ever needs — add `?gatereset=1` to the
+ * URL, or call `gateReset()` in the console. Both forget this browser's pass
+ * and put the door back. Neither is a way *in*: forgetting a pass can only ever
+ * cost you the door you were through, so there is nothing to protect here.
+ *
  * IT IS OFF WHEN RUN LOCALLY. On localhost, a file:// page, or a private LAN
  * address, `openGate` resolves immediately and this file may as well not exist
  * — so `npm start`, the test tooling and any local automation never meet it.
@@ -44,6 +50,8 @@ const ENDPOINT = 'https://script.google.com/macros/s/AKfycbx5Jp9z8XG0nnk60z5zccD
 const PASS_STORE = 'gate.pass';
 
 const INVITE_PARAM = 'invite';
+/** Forget this browser's pass and show the door again. For testing invites. */
+const RESET_PARAM = 'gatereset';
 
 /** Hosts where the door stands open: local development and local automation. */
 function isLocal() {
@@ -144,11 +152,25 @@ function codeFromUrl() {
   } catch { return null; }
 }
 
-function stripInviteFromUrl() {
+/**
+ * Take the gate's own parameters back out of the address bar once they are
+ * spent.
+ *
+ * An invite link is a small secret and the address bar is the least private
+ * place on a computer: screenshotted, read over shoulders, bookmarked,
+ * autocompleted, and pasted into group chats by people meaning to share the
+ * game rather than their own invite. Wiping it costs nothing — the pass is
+ * stored by the time this runs — and leaves a clean URL to share.
+ *
+ * `gatereset` is stripped for a duller reason: left in place it would fire
+ * again on the next reload, and testing an invite would mean being thrown back
+ * to the door every time.
+ */
+function stripGateParams(...names) {
   try {
     const url = new URL(location.href);
-    if (!url.searchParams.has(INVITE_PARAM)) return;
-    url.searchParams.delete(INVITE_PARAM);
+    if (!names.some((n) => url.searchParams.has(n))) return;
+    for (const n of names) url.searchParams.delete(n);
     history.replaceState(null, '', url.pathname + (url.search || '') + url.hash);
   } catch { /* nothing worth failing a boot over */ }
 }
@@ -216,12 +238,31 @@ function buildDoor(opts) {
  * @param {{title: string, blurb: string, game: string, warm?: (signal: AbortSignal) => void}} opts
  */
 export function openGate(opts) {
+  // A console escape hatch for the owner, always available: forget this
+  // browser's pass and come back to the door. Handy when testing an invite,
+  // and harmless — forgetting a pass cannot let anybody in.
+  try { window.gateReset = () => { clearPass(); location.reload(); }; } catch { /* sealed window */ }
+
   if (!gateEnabled()) return Promise.resolve();
+
+  // `?gatereset=1` before anything reads the pass, so this turn sees no pass
+  // and puts the door up.
+  try {
+    if (new URL(location.href).searchParams.has(RESET_PARAM)) {
+      clearPass();
+      // Strip it now rather than on the way through the door: the reset has
+      // already happened, and left in the bar it would fire again on every
+      // reload — so testing an invite would mean being thrown back to the door
+      // each time. An `invite` alongside it is left alone; it has not been
+      // spent yet.
+      stripGateParams(RESET_PARAM);
+    }
+  } catch { /* an exotic URL is not worth failing a boot over */ }
 
   const pass = readPass();
   if (pass) {
     pingSession(pass, opts.game);
-    stripInviteFromUrl();
+    stripGateParams(INVITE_PARAM, RESET_PARAM);
     return Promise.resolve();
   }
 
@@ -240,7 +281,7 @@ export function openGate(opts) {
       settled = true;
       writePass(p);
       pingSession(p, opts.game);
-      stripInviteFromUrl();
+      stripGateParams(INVITE_PARAM, RESET_PARAM);
       door.close();
       resolve();
     };
