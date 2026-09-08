@@ -8,6 +8,14 @@
     <link rel="stylesheet" href="./src/colliderTweaker.css?v=collider-tweaker-1" />
   </head>
   <body class="collider-tweaker-page">
+    <!-- The door, as a curtain: this page loads behind it. Nothing links
+         here, and the veil is what a passer-by meets. Off on localhost —
+         see the gate module for why and for `?gatetest=1`. -->
+    <script type="module">
+      import { openGate } from "../src/gate/gate.js";
+      openGate({ title: "BattleBot Arena — colliders", blurb: "This game is for friends of Hoai Nguyen. Use your invite link, or enter your code below.", game: "battlebotarena-v1-colliders" });
+    </script>
+
     <div id="app">
       <canvas id="scene"></canvas>
       <aside class="panel collider-tweaker-panel">

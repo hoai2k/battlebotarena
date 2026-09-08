@@ -14,6 +14,14 @@
 </script>
 </head>
 <body>
+    <!-- The door, as a curtain: this page loads behind it. Nothing links
+         here, and the veil is what a passer-by meets. Off on localhost —
+         see the gate module for why and for `?gatetest=1`. -->
+    <script type="module">
+      import { openGate } from "../src/gate/gate.js";
+      openGate({ title: "BattleBot Arena — tools", blurb: "This game is for friends of Hoai Nguyen. Use your invite link, or enter your code below.", game: "battlebotarena-tools" });
+    </script>
+
 <!--
   Poster baker. Renders ONE bot on the select screen's own plinth, on a
   transparent background, and hands the PNG back through window.__poster for
