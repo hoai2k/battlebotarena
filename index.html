@@ -324,6 +324,16 @@
       }
     </script>
     <script type="module">
+      // The door first. It is off on localhost, so `npm start` and the local
+      // tooling never meet it; on the deployed site a friend's invite link
+      // spends itself here with nothing to click. See src/gate/gate.js.
+      import { openGate } from "./src/gate/gate.js";
+      await openGate({
+        title: "BattleBot Arena",
+        blurb: "This game is for friends of Hoai Nguyen. Use your invite link, or enter your code below.",
+        game: "battlebotarena",
+      });
+
       // Boot: main.js (integrator-owned) wires renderer + sim + game + UI.
       // If it is missing or fails to load, fall back to UI preview mode so the
       // screens stay verifiable — createUI with a stub bus and logged actions.
