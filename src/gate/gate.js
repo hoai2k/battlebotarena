@@ -1,4 +1,15 @@
 /**
+ * THE PORTABLE COPY OF THE DOOR — the reference implementation the other games
+ * carry, kept here beside `Code.gs` so the whole gate lives in one place.
+ *
+ * This repository does not load this file: it is a Vite/TypeScript site and
+ * uses `src/gate/gate.ts`, which is the same door in the same shape. The other
+ * six games are no-build static sites and carry this one byte-identically.
+ * IF YOU CHANGE ONE, CHANGE BOTH — they are two expressions of one design, and
+ * the moment they disagree the games start disagreeing about who is let in.
+ *
+ * ---
+ *
  * The door: a one-time invite code in front of the game.
  *
  * Self-contained on purpose — no imports, no build step, no dependencies. Drop
@@ -203,6 +214,8 @@ const CSS = `
 }
 .gate-veil button:hover { background: linear-gradient(180deg, #7fd1ff, #2f6b96); }
 .gate-veil button:disabled { opacity: 0.5; cursor: default; }
+.gate-veil .gate-back { background: transparent; border-color: transparent; opacity: 0.65; }
+.gate-veil .gate-back:hover { background: transparent; opacity: 1; text-decoration: underline; }
 .gate-veil .gate-note { font-size: 12px; color: #71808f; max-width: 26rem; min-height: 1.2em; }
 .gate-veil .gate-bad { color: #ff9a7a; }
 `;
@@ -235,7 +248,16 @@ function buildDoor(opts) {
  * Resolves when the player may pass. Never rejects: a door that throws on the
  * boot path is a white screen, so every failure ends at a retry.
  *
- * @param {{title: string, blurb: string, game: string, warm?: (signal: AbortSignal) => void}} opts
+ * `opts.dismissible` offers a way out of the door. A game has nothing behind
+ * its door, so there is nowhere to go back to and no button to draw. A page
+ * that uses the door as a *redeem box* — the arcade library, which is public
+ * and merely hides the locked cards — does have something behind it, and
+ * stranding a visitor on a veil they cannot dismiss would be a bug rather than
+ * a policy. When set, `openGate` resolves on "Back" WITHOUT a pass, so a caller
+ * that cares must check `readPass()` rather than assume resolution means
+ * admission.
+ *
+ * @param {{title: string, blurb: string, game: string, dismissible?: boolean, warm?: (signal: AbortSignal) => void}} opts
  */
 export function openGate(opts) {
   // A console escape hatch for the owner, always available: forget this
@@ -303,6 +325,20 @@ export function openGate(opts) {
     };
     go.onclick = submit;
     input.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
+
+    if (opts.dismissible) {
+      const back = document.createElement('button');
+      back.textContent = 'Back';
+      back.className = 'gate-back';
+      back.onclick = () => {
+        if (settled) return;
+        settled = true;
+        warming.abort();
+        door.close();
+        resolve();          // resolved WITHOUT a pass — see GateOptions.dismissible
+      };
+      door.slot.append(back);
+    }
 
     const fromLink = codeFromUrl();
     if (fromLink) {
