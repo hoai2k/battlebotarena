@@ -48,6 +48,16 @@
  * address, `openGate` resolves immediately and this file may as well not exist
  * — so `npm start`, the test tooling and any local automation never meet it.
  * Append `?gatetest=1` to see the real door on a local server.
+ *
+ * THE OWNER HAS A SECOND, INDEPENDENT WAY IN: public access, flipped from the
+ * Invites menu in the Sheet. While it is on, `openGate` treats every visitor
+ * without a pass as though already admitted — no code, no door — WITHOUT
+ * writing a pass for any of them. That is the whole shape of it: it is a
+ * temporary state re-asked on every visit by anyone who does not already hold
+ * one, never a stored one, so turning it back off shows the door again on the
+ * very next load, with nothing to clear first. A friend who already holds a
+ * real pass never reaches the check at all, and the toggle never touches
+ * theirs — see `publicAccessOn` and the top of `openGate`.
  */
 
 /** Where the guest list lives. Not a secret: it ships in this file either way. */
@@ -63,6 +73,18 @@ const PASS_STORE = 'gate.pass';
 const INVITE_PARAM = 'invite';
 /** Forget this browser's pass and show the door again. For testing invites. */
 const RESET_PARAM = 'gatereset';
+
+/**
+ * The identity a session ping and a Signins row carry while public access is
+ * on. Distinct from any real friend's name so it can never collide with one
+ * in the Who tab, and never written to PASS_STORE — the switch never leaves
+ * anything behind for the browser to hold onto.
+ *
+ * MUST MATCH THE SERVER'S PUBLIC_NAME EXACTLY (`Code.gs`), and the same
+ * literal in `mando/src/gate/gate.ts` — three files that cannot share a
+ * constant, so the string itself is the contract.
+ */
+const PUBLIC_ID = '(public access)';
 
 /** Hosts where the door stands open: local development and local automation. */
 function isLocal() {
@@ -139,6 +161,33 @@ function clientInfo() {
     ua: safe(() => navigator.userAgent, '').slice(0, 300),
     ref: safe(() => document.referrer, '').slice(0, 300),
   };
+}
+
+/**
+ * Ask the endpoint whether the owner has switched the code off for everyone,
+ * temporarily.
+ *
+ * A GET, not a POST: nothing is being spent, nothing is logged as an invite
+ * attempt, and a plain cross-origin GET needs no preflight — the same reason
+ * the health check this answers is a GET. Anything short of a clean "yes" —
+ * a blocked request, a timeout, a malformed reply, the deployment itself
+ * being unreachable — reads as "no". That is the safe default: the code
+ * stays required unless the owner's own switch says otherwise, never because
+ * a network hiccup did.
+ *
+ * Exported so a page that never opens the door — the arcade library, which
+ * only shows it as a sign-in box — can still ask this on its own, to decide
+ * whether to render the locked cards at all.
+ */
+export async function publicAccessOn() {
+  if (!gateEnabled()) return false;
+  try {
+    const res = await fetch(ENDPOINT);
+    const body = await res.json();
+    return body?.publicAccess === true;
+  } catch {
+    return false;
+  }
 }
 
 /** Fire-and-forget. Carries an id, never a code, so it cannot be replayed in. */
@@ -289,65 +338,83 @@ export function openGate(opts) {
   }
 
   return new Promise((resolve) => {
-    const door = buildDoor(opts);
-    let settled = false;
-
-    // The door is up and the connection is idle: somebody here is about to
-    // play, so let the host start pulling down what comes next. Refusing a
-    // visitor aborts it; being admitted deliberately does not.
+    // Starts the instant there is no pass, before the public-access check
+    // below has even answered: either way the game is coming — behind a door
+    // about to show, or straight through with nothing to wait on — so there
+    // is no reason to make that one round trip hold up the other.
     const warming = new AbortController();
     try { if (opts.warm) opts.warm(warming.signal); } catch (e) { console.warn('[gate] warm hook threw', e); }
 
-    const admit = (p) => {
-      if (settled) return;
-      settled = true;
-      writePass(p);
-      pingSession(p, opts.game);
-      stripGateParams(INVITE_PARAM, RESET_PARAM);
-      door.close();
-      resolve();
-    };
+    publicAccessOn().then((isPublic) => {
+      if (isPublic) {
+        // The owner's own switch, not an invite: nothing is written to
+        // PASS_STORE, so a real friend's pass is untouched either way this
+        // goes, and this is asked again on every visit by anyone who does
+        // not hold one — turning the switch back off shows the door on the
+        // very next load, with no stored state to clear first.
+        pingSession({ id: PUBLIC_ID, name: PUBLIC_ID }, opts.game);
+        stripGateParams(INVITE_PARAM, RESET_PARAM);
+        resolve();
+        return;
+      }
+      openDoor();
+    });
 
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.placeholder = 'invite code';
-    input.autocomplete = 'off';
-    input.spellcheck = false;
-    input.setAttribute('aria-label', 'invite code');
-    const go = document.createElement('button');
-    go.textContent = 'Enter';
-    door.slot.append(input, go);
+    function openDoor() {
+      const door = buildDoor(opts);
+      let settled = false;
 
-    const submit = () => {
-      const code = input.value.trim();
-      if (code === '') { input.focus(); return; }
-      redeem(code, { door, opts, admit, warming, input, go });
-    };
-    go.onclick = submit;
-    input.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
-
-    if (opts.dismissible) {
-      const back = document.createElement('button');
-      back.textContent = 'Back';
-      back.className = 'gate-back';
-      back.onclick = () => {
+      const admit = (p) => {
         if (settled) return;
         settled = true;
-        warming.abort();
+        writePass(p);
+        pingSession(p, opts.game);
+        stripGateParams(INVITE_PARAM, RESET_PARAM);
         door.close();
-        resolve();          // resolved WITHOUT a pass — see GateOptions.dismissible
+        resolve();
       };
-      door.slot.append(back);
-    }
 
-    const fromLink = codeFromUrl();
-    if (fromLink) {
-      // An invite link spends itself. The form stays underneath so a bad code
-      // lands somewhere the visitor can correct it.
-      input.value = fromLink;
-      redeem(fromLink, { door, opts, admit, warming, input, go });
-    } else {
-      input.focus();
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'invite code';
+      input.autocomplete = 'off';
+      input.spellcheck = false;
+      input.setAttribute('aria-label', 'invite code');
+      const go = document.createElement('button');
+      go.textContent = 'Enter';
+      door.slot.append(input, go);
+
+      const submit = () => {
+        const code = input.value.trim();
+        if (code === '') { input.focus(); return; }
+        redeem(code, { door, opts, admit, warming, input, go });
+      };
+      go.onclick = submit;
+      input.onkeydown = (e) => { if (e.key === 'Enter') submit(); };
+
+      if (opts.dismissible) {
+        const back = document.createElement('button');
+        back.textContent = 'Back';
+        back.className = 'gate-back';
+        back.onclick = () => {
+          if (settled) return;
+          settled = true;
+          warming.abort();
+          door.close();
+          resolve();          // resolved WITHOUT a pass — see GateOptions.dismissible
+        };
+        door.slot.append(back);
+      }
+
+      const fromLink = codeFromUrl();
+      if (fromLink) {
+        // An invite link spends itself. The form stays underneath so a bad code
+        // lands somewhere the visitor can correct it.
+        input.value = fromLink;
+        redeem(fromLink, { door, opts, admit, warming, input, go });
+      } else {
+        input.focus();
+      }
     }
   });
 }
