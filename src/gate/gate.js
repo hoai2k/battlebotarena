@@ -49,15 +49,17 @@
  * — so `npm start`, the test tooling and any local automation never meet it.
  * Append `?gatetest=1` to see the real door on a local server.
  *
- * THE OWNER HAS A SECOND, INDEPENDENT WAY IN: public access, flipped from the
- * Invites menu in the Sheet. While it is on, `openGate` treats every visitor
- * without a pass as though already admitted — no code, no door — WITHOUT
- * writing a pass for any of them. That is the whole shape of it: it is a
- * temporary state re-asked on every visit by anyone who does not already hold
- * one, never a stored one, so turning it back off shows the door again on the
- * very next load, with nothing to clear first. A friend who already holds a
- * real pass never reaches the check at all, and the toggle never touches
- * theirs — see `publicAccessOn` and the top of `openGate`.
+ * THE OWNER HAS A SECOND, INDEPENDENT WAY IN: public access, controlled by
+ * ONE EDITABLE CONSTANT ON GITHUB — `publicAccess` in `/public-access.json`,
+ * at the root of this repository. Flip it, commit to `main`, done: no Apps
+ * Script, no Sheet, nothing to redeploy. While it is `true`, `openGate` treats
+ * every visitor without a pass as though already admitted — no code, no door
+ * — WITHOUT writing a pass for any of them. That is the whole shape of it: a
+ * temporary state re-read on every visit by anyone who does not already hold
+ * one, never a stored one, so setting it back to `false` shows the door again
+ * on the very next load, with nothing to clear first. A friend who already
+ * holds a real pass never reaches the check at all, and the switch never
+ * touches theirs — see `publicAccessOn` and the top of `openGate`.
  */
 
 /** Where the guest list lives. Not a secret: it ships in this file either way. */
@@ -75,16 +77,27 @@ const INVITE_PARAM = 'invite';
 const RESET_PARAM = 'gatereset';
 
 /**
- * The identity a session ping and a Signins row carry while public access is
- * on. Distinct from any real friend's name so it can never collide with one
- * in the Who tab, and never written to PASS_STORE — the switch never leaves
- * anything behind for the browser to hold onto.
+ * The identity a session ping carries while public access is on. Distinct
+ * from any real friend's name so it can never collide with one in the Who
+ * tab, and never written to PASS_STORE — the switch never leaves anything
+ * behind for the browser to hold onto.
  *
- * MUST MATCH THE SERVER'S PUBLIC_NAME EXACTLY (`Code.gs`), and the same
- * literal in `mando/src/gate/gate.ts` — three files that cannot share a
- * constant, so the string itself is the contract.
+ * The server treats it like any other client-supplied name — `handleSession_`
+ * validates nothing, as documented at its own definition — so this is a
+ * client-side convention, not a contract the endpoint has to know about. Keep
+ * it the same as the identical literal in `mando/src/gate/gate.ts` anyway, so
+ * a public-access session pinged by either kind of game reads as the same one
+ * row rather than two.
  */
 const PUBLIC_ID = '(public access)';
+
+/**
+ * Where the owner's editable constant lives: root-relative, so it resolves to
+ * the one copy under whichever hostname is asking — `games.hoai.net` and its
+ * pre-redirect twin `hoai2k.github.io` are the same GitHub Pages deployment,
+ * same file, same answer.
+ */
+const PUBLIC_ACCESS_URL = '/public-access.json';
 
 /** Hosts where the door stands open: local development and local automation. */
 function isLocal() {
@@ -164,16 +177,25 @@ function clientInfo() {
 }
 
 /**
- * Ask the endpoint whether the owner has switched the code off for everyone,
- * temporarily.
+ * Ask whether the owner has switched the code off for everyone, temporarily,
+ * by reading `/public-access.json` — see `PUBLIC_ACCESS_URL` and the header.
+ * THIS FILE IS THE OWNER'S EDITABLE CONSTANT: edit it directly on GitHub,
+ * commit to `main`, and every game and this library pick it up on their next
+ * visit from anyone without a pass. Nothing else to touch.
  *
- * A GET, not a POST: nothing is being spent, nothing is logged as an invite
- * attempt, and a plain cross-origin GET needs no preflight — the same reason
- * the health check this answers is a GET. Anything short of a clean "yes" —
- * a blocked request, a timeout, a malformed reply, the deployment itself
- * being unreachable — reads as "no". That is the safe default: the code
- * stays required unless the owner's own switch says otherwise, never because
- * a network hiccup did.
+ * Same-origin, so unlike every other request this file makes there is no CORS
+ * to think about at all. The query string is a cache-buster: GitHub Pages
+ * serves this site with `Cache-Control: max-age=600` (measured), and that
+ * caching lives at the CDN edge, upstream of anything a browser's own
+ * `cache` option can reach — a unique query on every request is what actually
+ * forces a fresh copy rather than up to ten minutes of a stale one.
+ * `cache: 'no-store'` additionally skips the browser's own cache, belt and
+ * braces.
+ *
+ * Anything short of a clean `true` — a 404, a network hiccup, invalid JSON
+ * from a slipped hand-edit, the deployment being unreachable — reads as "no".
+ * That is the safe default: the code stays required unless the file plainly
+ * says otherwise, never because a network hiccup did.
  *
  * Exported so a page that never opens the door — the arcade library, which
  * only shows it as a sign-in box — can still ask this on its own, to decide
@@ -182,7 +204,7 @@ function clientInfo() {
 export async function publicAccessOn() {
   if (!gateEnabled()) return false;
   try {
-    const res = await fetch(ENDPOINT);
+    const res = await fetch(`${PUBLIC_ACCESS_URL}?t=${Date.now()}`, { cache: 'no-store' });
     const body = await res.json();
     return body?.publicAccess === true;
   } catch {
